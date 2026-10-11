@@ -1,0 +1,9 @@
+{
+  "name": "matcher-ui-tests",
+  "private": true,
+  "description": "MatchER's browser suites: Playwright (playwright-core) against a throwaway server. See tests/ui/README.md.",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright-core": "1.64.0"
+  }
+}

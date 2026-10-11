@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# downloaded model files (re-fetched and checksum-verified on first run)
+models/*.onnx
+models/*.task
+models/*.json
+models/*.npz
+# your photo libraries: previews, database, exports
+data/
+# the browser suites' npm packages (tests/ui/setup.sh installs them; their output lives in $MATCHER_UI_TMP)
+tests/ui/node_modules/
+# your private planning transcripts and local agent settings
+original chats/
+.claude/settings.local.json
