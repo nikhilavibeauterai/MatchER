@@ -45,7 +45,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libopengl0 libportaudio2 libgtk-3-0 libnss3 libasound2 libgbm1 xvfb
+          sudo apt-get install -y libegl1 libgles2 libgl1 libopengl0 libportaudio2 libgtk-3-0 libnss3 libasound2 libgbm1 xvfb
       - name: Install checked Python dependencies
         run: |
           python -m pip install --require-hashes --only-binary=:all: -r requirements.lock
@@ -113,6 +113,8 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: MatchER-${{ runner.os }}-x64
+          retention-days: 1
+          compression-level: 0
           if-no-files-found: error
           path: |
             dist/desktop/*.AppImage

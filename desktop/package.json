@@ -33,7 +33,7 @@
       "synopsis": "Find your favourite photos through play",
       "desktop": {"entry": {"Keywords": "photo;organizer;culling;local;AI;tournament;"}}
     },
-    "deb": {"artifactName": "MatchER-${version}-linux-x64.${ext}", "depends": ["libgtk-3-0", "libnss3", "libasound2", "libgbm1", "libgl1", "libegl1", "libopengl0", "libglib2.0-0", "xdg-utils"]},
+    "deb": {"artifactName": "MatchER-${version}-linux-x64.${ext}", "depends": ["libgtk-3-0", "libnss3", "libasound2", "libgbm1", "libgl1", "libegl1", "libgles2", "libopengl0", "libglib2.0-0", "xdg-utils"]},
     "appImage": {"artifactName": "MatchER-${version}-linux-x64.${ext}"},
     "win": {"target": [{"target": "nsis", "arch": ["x64"]}], "icon": "assets/icon.ico"},
     "nsis": {"oneClick": false, "perMachine": false, "allowElevation": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "deleteAppDataOnUninstall": false}

@@ -168,7 +168,8 @@ def _decode_raw(src: str | Path | bytes, max_edge: int | None, name: str) -> Dec
     if taken is None and name:
         taken = taken_from_name(Path(name).name)
         taken_src = "filename" if taken else ""
-    with rawpy.imread(io.BytesIO(src) if isinstance(src, bytes) else str(src)) as raw:
+    # Python's file handles keep Unicode paths working with LibRaw on Windows too.
+    with (io.BytesIO(src) if isinstance(src, bytes) else open(src, "rb")) as f, rawpy.imread(f) as raw:
         half = bool(max_edge) and max(raw.sizes.width, raw.sizes.height) >= 2 * max_edge
         rgb = raw.postprocess(use_camera_wb=True, half_size=half, output_bps=8)
     im = Image.fromarray(rgb, "RGB")

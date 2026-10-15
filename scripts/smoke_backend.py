@@ -63,9 +63,14 @@ def main():
                 assert len(list(Path(sample["path"]).rglob("*.jpg"))) == 13
                 if a.analyze:
                     request("/api/library", {"path": sample["path"], "mode": "gallery"})
-                    deadline = time.monotonic() + 600
+                    deadline = time.monotonic() + 240
+                    phase, reported = None, 0
                     while time.monotonic() < deadline:
                         state = request("/api/state")["library"]
+                        progress = state.get("progress") or {}
+                        if progress.get("phase") != phase or time.monotonic() - reported > 10:
+                            phase, reported = progress.get("phase"), time.monotonic()
+                            print(json.dumps({k: progress.get(k) for k in ("phase", "done", "total")}), flush=True)
                         if not state["analyzing"]:
                             assert state["analyzed"], state.get("progress")
                             break

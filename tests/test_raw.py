@@ -47,7 +47,7 @@ def test_raw_extensions_count_as_photos():
 
 def test_a_raw_file_decodes_through_libraw_with_its_exif(tmp_path, monkeypatch):
     raws = _fake_raw(monkeypatch)
-    src = tmp_path / "DSC_0001.NEF"
+    src = tmp_path / "Café 猫 DSC_0001.NEF"
     src.write_bytes(b"not really raw")
     d = imageio.decode(src, max_edge=400)
     assert d.fmt == "RAW" and (d.width, d.height) == (4000, 3000) and max(d.image.size) == 400
@@ -56,6 +56,18 @@ def test_a_raw_file_decodes_through_libraw_with_its_exif(tmp_path, monkeypatch):
     full = imageio.decode(src)
     assert full.image.size == (4000, 3000) and not raws[-1].calls[-1]["half_size"]
     assert np.asarray(full.image)[0, -1, 0] == 255  # the picture came through, not a placeholder
+
+
+def test_raw_decoder_receives_an_open_stream_for_unicode_paths(tmp_path, monkeypatch):
+    raws = _fake_raw(monkeypatch, 600, 400)
+    def read(stream):
+        assert stream.read() == b"synthetic raw bytes"
+        raws.append(_Raw(600, 400))
+        return raws[-1]
+    sys.modules["rawpy"].imread = read
+    src = tmp_path / "旅行 photo.dng"
+    src.write_bytes(b"synthetic raw bytes")
+    assert imageio.decode(src).image.size == (600, 400)
 
 
 def test_a_raw_file_without_exif_takes_its_date_from_its_name(tmp_path, monkeypatch):

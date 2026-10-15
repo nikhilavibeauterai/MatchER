@@ -32,6 +32,6 @@ const {_electron} = require('../tests/ui/node_modules/playwright-core');
     console.log(JSON.stringify({ok: true, native_folder_cancel: true, isolated_renderer: true, clean_exit: true}));
   } finally {
     if (electron) await electron.close();
-    fs.rmSync(tmp, {recursive: true, force: true});
+    fs.rmSync(tmp, {recursive: true, force: true, maxRetries: 10, retryDelay: 100});
   }
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -24,6 +24,19 @@ def licenses():
     shutil.copyfile(python_license, dest / "Python" / "LICENSE.txt")
     inventory.append({"name": "Python", "version": sys.version.split()[0], "license": "PSF-2.0",
                       "notices": ["Python/LICENSE.txt"]})
+    if sys.platform.startswith("linux"):
+        # These native libraries come from the build OS, rather than a Python wheel.
+        packages = ("libglvnd0", "libgles2", "libegl1", "libportaudio2", "libasound2", "libjack-jackd2-0", "libgcc-s1", "libstdc++6", "libffi8")
+        for package in packages:
+            src = Path("/usr/share/doc") / package / "copyright"
+            if src.is_file():
+                target = dest / "system" / package / "copyright"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, target)
+        for package in ("libglvnd", "portaudio", "alsa-lib", "jack2", "gcc-libs", "libffi"):
+            directory = Path("/usr/share/licenses") / package
+            if directory.is_dir():
+                shutil.copytree(directory, dest / "system" / package, dirs_exist_ok=True)
     for dist in sorted(metadata.distributions(), key=lambda d: d.metadata["Name"].lower()):
         name = dist.metadata["Name"]
         files = []

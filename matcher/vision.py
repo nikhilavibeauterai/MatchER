@@ -38,7 +38,9 @@ class FaceDetector:
 
     def __init__(self, score: float = 0.6):
         self.score = score
-        self.det = cv2.FaceDetectorYN.create(str(MODELS["yunet"].path), "", (320, 320), score, 0.3, 5000)
+        # Native filename APIs do not all accept Unicode Windows user folders; Python opens the files.
+        weights = np.frombuffer(MODELS["yunet"].path.read_bytes(), dtype=np.uint8)
+        self.det = cv2.FaceDetectorYN.create("onnx", weights, np.empty(0, np.uint8), (320, 320), score, 0.3, 5000)
 
     def _run(self, bgr: np.ndarray) -> np.ndarray:
         h, w = bgr.shape[:2]
@@ -75,7 +77,8 @@ class FaceEmbedder:
     """SFace identity embedding (128-d, unit length); cosine above ~0.36 means same person."""
 
     def __init__(self):
-        self.rec = cv2.FaceRecognizerSF.create(str(MODELS["sface"].path), "")
+        weights = np.frombuffer(MODELS["sface"].path.read_bytes(), dtype=np.uint8)
+        self.rec = cv2.FaceRecognizerSF.create("onnx", weights, np.empty(0, np.uint8))
 
     def embed(self, bgr: np.ndarray, face_row: np.ndarray) -> np.ndarray:
         aligned = self.rec.alignCrop(bgr, face_row.reshape(1, -1))
@@ -101,7 +104,7 @@ class FaceMesh:
 
         self._mp = mp
         opts = vision.FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=str(MODELS["landmarker"].path)),
+            base_options=BaseOptions(model_asset_buffer=MODELS["landmarker"].path.read_bytes()),
             running_mode=vision.RunningMode.IMAGE, num_faces=1,
             min_face_detection_confidence=0.3, min_face_presence_confidence=0.3,
             output_face_blendshapes=True, output_facial_transformation_matrixes=True)
