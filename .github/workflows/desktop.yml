@@ -143,4 +143,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           TAG="$(node -p "'v' + require('./desktop/package.json').version")"
-          gh release create "$TAG" installers/* --target "$GITHUB_SHA" --draft --prerelease --title "MatchER $TAG preview" --generate-notes
+          # The workflow token creates the tag so publishing this draft does not start a second build.
+          if ! gh api "repos/$GH_REPO/git/ref/tags/$TAG" --silent 2>/dev/null; then
+            gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" --silent
+          fi
+          gh release create "$TAG" installers/* --verify-tag --draft --prerelease --title "MatchER $TAG preview" --generate-notes
