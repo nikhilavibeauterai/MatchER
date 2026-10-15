@@ -12,7 +12,8 @@ No model weights, saves or personal photos go into an installer.
 
 Build natively on Windows x64 or Linux x64, with Python 3.13 and Node.js 24 LTS. Linux CI uses Ubuntu 22.04
 to avoid accidentally requiring a newer glibc. Build on the oldest Linux distribution you intend to support.
-Windows needs no developer compiler: runtime wheels and PyInstaller provide the native libraries.
+Windows needs the x64 Visual C++ Redistributable on the build machine (the hosted runner provides it),
+with no developer compiler required. The build includes its required app-local DLLs alongside portable Python.
 
 ```sh
 python -m venv .venv

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -30,6 +31,17 @@ def build():
     dest.mkdir(parents=True)
     with zipfile.ZipFile(archive) as bundle:
         bundle.extractall(dest)
+    # LibRaw needs the C++ and OpenMP runtimes too. App-local copies keep installation per-user.
+    system = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32"
+    runtime_files = []
+    for name in ("msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "msvcp140_atomic_wait.dll",
+                 "msvcp140_codecvt_ids.dll", "concrt140.dll", "vcomp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"):
+        src = system / name
+        if src.is_file():
+            shutil.copyfile(src, dest / name)
+            runtime_files.append(name)
+    if not {"msvcp140.dll", "vcomp140.dll"} <= set(runtime_files):
+        raise RuntimeError("Install the Visual C++ x64 Redistributable on the build machine first (no compiler is required).")
     # Isolated from system Python, with our wheels and their normal DLL loaders enabled.
     pth = next(dest.glob("python*._pth"))
     stdlib = next(dest.glob("python*.zip")).name
@@ -39,6 +51,15 @@ def build():
                     "--no-compile", "--target", str(packages), "-r", str(ROOT / "requirements.lock")], check=True)
     shutil.copytree(ROOT / "matcher", packages / "matcher", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copytree(ROOT / "build" / "licenses", dest / "_internal" / "licenses")
+    notice = dest / "_internal" / "licenses" / "Microsoft-VC-Runtime"
+    notice.mkdir(parents=True)
+    (notice / "NOTICE.txt").write_text(
+        "Microsoft Visual C++ Runtime Redistributable libraries.\nCopyright Microsoft Corporation.\n"
+        "These app-local system runtime components retain their Microsoft license terms:\n"
+        "https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/\n"
+        "Redistribution and deployment documentation:\n"
+        "https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files\n\n"
+        + "\n".join(runtime_files) + "\n", encoding="utf-8")
     for name in ("LICENSE", "SOURCE.md", "THIRD_PARTY_NOTICES.md"):
         shutil.copyfile(ROOT / name, dest / "_internal" / name)
     (dest / "matcher-backend.cmd").write_text('@echo off\n"%~dp0python.exe" -X utf8 -m matcher %*\n', encoding="utf-8")
