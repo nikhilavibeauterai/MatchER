@@ -88,8 +88,8 @@ jobs:
         env:
           MATCHER_DESKTOP: ${{ github.workspace }}\dist\desktop\win-unpacked\MatchER.exe
       - name: Write checksums
-      # The installer is exercised separately from the unpacked app.
         run: python scripts/checksums.py
+      # The installer is exercised separately from the unpacked app.
       - name: Install, launch and uninstall on Windows
         if: runner.os == 'Windows'
         shell: pwsh

@@ -37,3 +37,6 @@ include = ["matcher*"]
 
 [tool.setuptools.package-data]
 matcher = ["static/**/*", "demo/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
