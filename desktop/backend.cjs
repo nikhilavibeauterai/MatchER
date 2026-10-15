@@ -12,9 +12,9 @@ function readyURL(raw) {
 }
 
 function startBackend({packaged, resources, root, data, models, log}) {
-  const executable = packaged ? path.join(resources, 'backend', process.platform === 'win32' ? 'matcher-backend.exe' : 'matcher-backend') :
+  const executable = packaged ? path.join(resources, 'backend', process.platform === 'win32' ? 'python.exe' : 'matcher-backend') :
     (process.env.MATCHER_PYTHON || path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
-  const args = [...(packaged ? [] : ['-m', 'matcher']), '--desktop', '--no-browser', '--port', '0', '--data', data];
+  const args = [...(packaged && process.platform !== 'win32' ? [] : ['-X', 'utf8', '-m', 'matcher']), '--desktop', '--no-browser', '--port', '0', '--data', data];
   const child = spawn(executable, args, {cwd: packaged ? path.dirname(executable) : root,
     env: {...process.env, MATCHER_DATA: data, MATCHER_MODELS: models, PYTHONUNBUFFERED: '1', PYTHONUTF8: '1'},
     stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true});

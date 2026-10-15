@@ -59,14 +59,14 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             python -c "import os; from matcher import __version__; assert os.environ['GITHUB_REF_NAME'] == 'v' + __version__"
           fi
-      - name: Freeze backend
+      - name: Bundle backend
         run: python scripts/build_backend.py
       - name: Smoke-test Linux backend and public sample analysis
         if: runner.os == 'Linux'
         run: python scripts/smoke_backend.py dist/backend/matcher-backend/matcher-backend --analyze
       - name: Smoke-test Windows backend and public sample analysis
         if: runner.os == 'Windows'
-        run: python scripts/smoke_backend.py dist/backend/matcher-backend/matcher-backend.exe --analyze
+        run: python scripts/smoke_backend.py dist/backend/matcher-backend/python.exe --analyze
       - name: Test application
         run: python -m pytest -q
       - name: Install checked desktop dependencies

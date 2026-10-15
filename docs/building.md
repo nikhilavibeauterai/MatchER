@@ -1,7 +1,9 @@
 # Build and release
 
-The desktop app is Electron around the existing local Flask app, served by Waitress. A PyInstaller **onedir**
-backend contains Python and native dependencies. Electron starts that exact child on a random loopback port,
+The desktop app is Electron around the existing local Flask app, served by Waitress. Linux uses a PyInstaller
+**onedir** backend; Windows bundles the official portable CPython runtime and the normal, hash-checked wheels.
+The Windows runtime URL and published SHA-256 are pinned in `packaging/python-windows.json`.
+Electron starts that exact child on a random loopback port,
 keeps its private link in the main process and exposes only native folder selection through an isolated preload.
 Closing the window sends a stop command over the child's stdin; EOF also stops it if the parent disappears.
 No model weights, saves or personal photos go into an installer.
@@ -25,7 +27,7 @@ Check the actual frozen backend, including native imports, multiprocessing spawn
 HTTP, the offline sample and shutdown:
 
 ```sh
-# Windows: dist\backend\matcher-backend\matcher-backend.exe
+# Windows: use dist\backend\matcher-backend\python.exe instead; the checker adds -m matcher.
 python scripts/smoke_backend.py dist/backend/matcher-backend/matcher-backend
 # Add --analyze to download models into a throwaway dir and scan the public sample too.
 ```

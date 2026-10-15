@@ -61,6 +61,10 @@ def main():
     if sys.version_info[:2] != (3, 13):
         raise SystemExit("Build with Python 3.13, matching the runtime lock.")
     licenses()
+    if sys.platform == "win32":
+        from build_windows_runtime import build
+        build()
+        return
     subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--distpath", str(ROOT / "dist" / "backend"),
                     "--workpath", str(ROOT / "build" / "pyinstaller"), str(ROOT / "packaging" / "backend.spec")], check=True, cwd=ROOT)
 

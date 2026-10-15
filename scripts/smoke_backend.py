@@ -23,14 +23,15 @@ def main():
     ap.add_argument("--analyze", action="store_true", help="also download models into the scratch dir and analyze the public sample")
     a = ap.parse_args()
     executable = a.executable.resolve()
+    command = [str(executable)] + (["-X", "utf8", "-m", "matcher"] if executable.name.lower() == "python.exe" else [])
     with tempfile.TemporaryDirectory(prefix="matcher package Zoë ") as tmp:
         env = {**os.environ, "MATCHER_DATA": str(Path(tmp) / "saves"), "MATCHER_MODELS": str(Path(tmp) / "models"), "PYTHONUTF8": "1"}
         if env.get("MATCHER_DIAGNOSTICS") == "1":
             env["MATCHER_DIAGNOSTIC_DIR"] = str(Path(tmp) / "diagnostics")
-        subprocess.run([str(executable), "--self-test"], check=True, env=env, timeout=120)
+        subprocess.run([*command, "--self-test"], check=True, env=env, timeout=120)
         lines = queue.Queue()
         with (Path(tmp) / "startup.log").open("w+", encoding="utf-8") as log:
-            child = subprocess.Popen([str(executable), "--desktop", "--port", "0"], stdin=subprocess.PIPE,
+            child = subprocess.Popen([*command, "--desktop", "--port", "0"], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8", env=env)
             def read():
                 for line in child.stdout:
