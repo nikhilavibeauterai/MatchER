@@ -24,6 +24,7 @@ jobs:
     env:
       PYTHONUTF8: '1'
       OPENBLAS_NUM_THREADS: '2'
+      MATCHER_DIAGNOSTICS: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

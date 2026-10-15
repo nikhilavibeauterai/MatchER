@@ -13,6 +13,7 @@ import json
 import os
 import threading
 import time
+import sys
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
 from pathlib import Path
 
@@ -28,10 +29,20 @@ _W: dict = {}
 
 
 def _init_worker() -> None:
+    if os.environ.get("MATCHER_DIAGNOSTICS") == "1":
+        print(f"Worker {os.getpid()}: loading native models", file=sys.stderr, flush=True)
     cv2.setNumThreads(1)
     from .vision import FaceDetector, FaceEmbedder, FaceMesh
 
-    _W["det"], _W["emb"], _W["mesh"] = FaceDetector(), FaceEmbedder(), FaceMesh()
+    _W["det"] = FaceDetector()
+    if os.environ.get("MATCHER_DIAGNOSTICS") == "1":
+        print(f"Worker {os.getpid()}: face detector loaded", file=sys.stderr, flush=True)
+    _W["emb"] = FaceEmbedder()
+    if os.environ.get("MATCHER_DIAGNOSTICS") == "1":
+        print(f"Worker {os.getpid()}: face embedder loaded", file=sys.stderr, flush=True)
+    _W["mesh"] = FaceMesh()
+    if os.environ.get("MATCHER_DIAGNOSTICS") == "1":
+        print(f"Worker {os.getpid()}: native models ready", file=sys.stderr, flush=True)
     # Native models reserve address space first. Bound the decoder's additional working memory afterwards.
     try:
         import resource

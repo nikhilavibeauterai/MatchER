@@ -76,7 +76,7 @@ def main():
                             break
                         time.sleep(.5)
                     else:
-                        raise AssertionError("public sample analysis timed out")
+                        raise AssertionError(f"public sample analysis timed out: {state.get('progress')}")
                 child.stdin.write("stop\n")
                 child.stdin.flush()
                 assert child.wait(timeout=120) == 0, "backend did not stop cleanly"
