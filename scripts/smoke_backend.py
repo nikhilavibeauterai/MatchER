@@ -25,6 +25,8 @@ def main():
     executable = a.executable.resolve()
     with tempfile.TemporaryDirectory(prefix="matcher package Zoë ") as tmp:
         env = {**os.environ, "MATCHER_DATA": str(Path(tmp) / "saves"), "MATCHER_MODELS": str(Path(tmp) / "models"), "PYTHONUTF8": "1"}
+        if env.get("MATCHER_DIAGNOSTICS") == "1":
+            env["MATCHER_DIAGNOSTIC_DIR"] = str(Path(tmp) / "diagnostics")
         subprocess.run([str(executable), "--self-test"], check=True, env=env, timeout=120)
         lines = queue.Queue()
         with (Path(tmp) / "startup.log").open("w+", encoding="utf-8") as log:
@@ -64,10 +66,14 @@ def main():
                 if a.analyze:
                     request("/api/library", {"path": sample["path"], "mode": "gallery"})
                     deadline = time.monotonic() + 240
-                    phase, reported = None, 0
+                    phase, reported, reading_since = None, 0, None
                     while time.monotonic() < deadline:
                         state = request("/api/state")["library"]
                         progress = state.get("progress") or {}
+                        if progress.get("phase") == "reading" and progress.get("done") == 0:
+                            reading_since = reading_since or time.monotonic()
+                            if env.get("MATCHER_DIAGNOSTICS") == "1" and time.monotonic() - reading_since > 70:
+                                raise AssertionError("The public sample's first reading result stalled.")
                         if progress.get("phase") != phase or time.monotonic() - reported > 10:
                             phase, reported = progress.get("phase"), time.monotonic()
                             print(json.dumps({k: progress.get(k) for k in ("phase", "done", "total")}), flush=True)
@@ -90,6 +96,8 @@ def main():
                 log.flush()
                 log.seek(0)
                 sys.stderr.write(re.sub(r"([?&]k=)[A-Za-z0-9_-]+", r"\1[private]", log.read()))
+                for trace in sorted((Path(tmp) / "diagnostics").glob("*.log")):
+                    sys.stderr.write(trace.name + "\n" + trace.read_text(encoding="utf-8", errors="replace"))
                 raise
             finally:
                 if child.poll() is None:
