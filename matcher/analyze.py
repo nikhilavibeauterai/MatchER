@@ -308,12 +308,16 @@ class Analyzer:
         try:
             self.previews.mkdir(parents=True, exist_ok=True)
             self.thumbs.mkdir(parents=True, exist_ok=True)
+            self._set("listing")
+            self._sync_files()  # An empty folder should not download models just to report that it is empty.
             self._set("models")
             from . import models
 
-            models.ensure(lambda name, done, total: self.progress.update(phase="models", done=done, total=total, detail=name))
-            self._set("listing")
-            self._sync_files()
+            if not models.ensure(lambda name, done, total: self.progress.update(phase="models", done=done, total=total, detail=name),
+                                 cancelled=self.cancel.is_set):
+                return
+            if self.cancel.is_set():
+                return
             self._phase1()
             if self.cancel.is_set():
                 return

@@ -37,6 +37,8 @@ def client(tmp_path, fake_prompts):
     library.refresh(store)
     store.set_meta("analyzed_at", time.time())
     store.set_meta("source", str(src.resolve()))
+    library.release(store)
+    store.close()
     app = create_app(data, allowed_hosts={"localhost"})
     app.config["MATCHER"].open(src, start=False)
     c = app.test_client()

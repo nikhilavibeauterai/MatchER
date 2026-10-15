@@ -46,7 +46,7 @@ def test_original_path_is_exact_take_unicode_and_read_only(paths, monkeypatch):
         row = session.store.one("SELECT rel FROM photos WHERE id=?", (pid,))
         assert reply.get_json() == {"photo": pid, "rel": row["rel"], "original_path": str(source / row["rel"])}
     assert session.store.conn().total_changes == before
-    assert client.get("/api/photo/2").get_json()["original_path"].endswith("Day one/猫's photo 100%.jpg")
+    assert client.get("/api/photo/2").get_json()["original_path"].endswith(str(Path("Day one") / "猫's photo 100%.jpg"))
 
 
 @pytest.mark.parametrize("value", ["0", "99999", "-1", "not-a-number", "1.5"])
@@ -56,7 +56,8 @@ def test_original_path_rejects_unknown_or_invalid_ids(paths, value):
     assert client.get(f"/api/photo/{value}").status_code == 404
 
 
-@pytest.mark.parametrize("rel", ["../outside.jpg", "/outside.jpg", "folder/../../outside.jpg", "", ".", "bad\0name.jpg"])
+@pytest.mark.parametrize("rel", ["../outside.jpg", "/outside.jpg", "folder/../../outside.jpg", "", ".", "bad\0name.jpg",
+                                 "C:/outside.jpg", "C:outside.jpg", "\\outside.jpg", "folder\\..\\outside.jpg"])
 def test_original_path_rejects_absolute_or_traversing_stored_paths(paths, rel):
     client, session, _ = paths
     client.get("/?k=synthetic-key")

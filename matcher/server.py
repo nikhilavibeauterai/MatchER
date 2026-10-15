@@ -18,7 +18,7 @@ import time
 from functools import wraps
 from collections import Counter, OrderedDict
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import numpy as np
 from flask import Flask, abort, g, jsonify, redirect, request, send_file, send_from_directory
@@ -2365,7 +2365,8 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         if row is None:
             abort(404, "Unknown photo.")
         rel = Path(row["rel"])
-        if not row["rel"] or "\0" in row["rel"] or rel.is_absolute() or ".." in rel.parts or not rel.parts:
+        windows = PureWindowsPath(row["rel"])
+        if not row["rel"] or "\0" in row["rel"] or rel.anchor or windows.anchor or ".." in rel.parts or ".." in windows.parts or not rel.parts:
             abort(400, "This photo has an invalid original file path.")
         # Keep the imported spelling (including symlinks) without opening or resolving the original file.
         return jsonify(photo=pid, rel=row["rel"], original_path=os.path.abspath(s.source / rel))

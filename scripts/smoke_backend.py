@@ -22,7 +22,7 @@ def main():
     ap.add_argument("--analyze", action="store_true", help="also download models into the scratch dir and analyze the public sample")
     a = ap.parse_args()
     executable = a.executable.resolve()
-    with tempfile.TemporaryDirectory(prefix="matcher-package-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="matcher package Zoë ") as tmp:
         env = {**os.environ, "MATCHER_DATA": str(Path(tmp) / "saves"), "MATCHER_MODELS": str(Path(tmp) / "models"), "PYTHONUTF8": "1"}
         subprocess.run([str(executable), "--self-test"], check=True, env=env, timeout=120)
         lines = queue.Queue()

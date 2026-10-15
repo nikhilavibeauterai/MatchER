@@ -6,7 +6,7 @@ const path = require('node:path');
 const {_electron} = require('../tests/ui/node_modules/playwright-core');
 
 (async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'matcher-window-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'matcher window Zoë '));
   const executablePath = process.env.MATCHER_DESKTOP || require('../desktop/node_modules/electron');
   let electron, base;
   try {

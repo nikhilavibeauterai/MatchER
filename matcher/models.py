@@ -98,15 +98,20 @@ def missing() -> list[ModelFile]:
     return out
 
 
-def ensure(progress: Callable[[str, int, int], None] | None = None) -> None:
-    """Download any missing model, verifying size and SHA-256 before it is used."""
+def ensure(progress: Callable[[str, int, int], None] | None = None,
+           cancelled: Callable[[], bool] | None = None) -> bool:
+    """Download and verify missing models. A stopped scan leaves no partial file behind."""
+    if cancelled and cancelled():
+        return False
     todo = missing()
     if not todo:
-        return
+        return True
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     total = sum(m.size for m in todo)
     done = 0
     for m in todo:
+        if cancelled and cancelled():
+            return False
         fd, tmp = tempfile.mkstemp(prefix=f".{m.filename}.", dir=MODELS_DIR)
         os.close(fd)
         try:
@@ -123,6 +128,8 @@ def ensure(progress: Callable[[str, int, int], None] | None = None) -> None:
                     done += len(block)
                     if progress:
                         progress(m.filename, done, total)
+                    if cancelled and cancelled():
+                        return False
             if os.path.getsize(tmp) != m.size or h.hexdigest() != m.sha256:
                 raise RuntimeError(f"{m.filename}: download failed verification (size or SHA-256 mismatch)")
             os.replace(tmp, m.path)
@@ -131,3 +138,4 @@ def ensure(progress: Callable[[str, int, int], None] | None = None) -> None:
                 os.unlink(tmp)
     if missing():
         raise RuntimeError("model files still missing after download")
+    return True
