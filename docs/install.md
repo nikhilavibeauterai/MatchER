@@ -89,6 +89,9 @@ uses the private link printed in the terminal. Never post that link in an issue.
   builds use the operating system's dialog directly.
 - **Browser says locked:** open the exact link printed by your source launcher. The desktop app handles it for you.
 - **Slow first scan:** models run on the CPU. Large libraries need time; progress is retained if you stop and resume.
+- **Missing native library in a Linux source install:** Debian/Ubuntu users can install `libgl1`, `libegl1`,
+  `libopengl0` and `libportaudio2` with their package manager. Desktop packages bundle the Python libraries;
+  the `.deb` declares its desktop system dependencies.
 
 If a release has no installers yet, it is still building or awaiting checks. The source launchers work independently;
 [build instructions](building.md) describe how the same desktop packages are made.

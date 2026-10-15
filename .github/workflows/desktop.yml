@@ -50,13 +50,6 @@ jobs:
         run: |
           python -m pip install --require-hashes --only-binary=:all: -r requirements.lock
           python -m pip install --require-hashes -r packaging/requirements.lock
-      - name: Test application
-        run: python -m pytest -q
-      - name: Install checked desktop dependencies
-        run: |
-          npm ci --prefix desktop
-          npm ci --prefix tests/ui
-          npm test --prefix desktop
       - name: Check versions
         shell: bash
         run: |
@@ -73,6 +66,13 @@ jobs:
       - name: Smoke-test Windows backend and public sample analysis
         if: runner.os == 'Windows'
         run: python scripts/smoke_backend.py dist/backend/matcher-backend/matcher-backend.exe --analyze
+      - name: Test application
+        run: python -m pytest -q
+      - name: Install checked desktop dependencies
+        run: |
+          npm ci --prefix desktop
+          npm ci --prefix tests/ui
+          npm test --prefix desktop
       - name: Build installers
         run: npm run dist --prefix desktop
         env:

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import subprocess
 import sys
 import tempfile
@@ -80,6 +81,11 @@ def main():
                 except (urllib.error.URLError, ConnectionError, TimeoutError):
                     pass
                 print(json.dumps({"ok": True, "authenticated_http": True, "offline_sample": 13, "analysis": a.analyze, "clean_exit": True}))
+            except BaseException:
+                log.flush()
+                log.seek(0)
+                sys.stderr.write(re.sub(r"([?&]k=)[A-Za-z0-9_-]+", r"\1[private]", log.read()))
+                raise
             finally:
                 if child.poll() is None:
                     child.stdin.close()

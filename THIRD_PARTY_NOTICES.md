@@ -6,7 +6,7 @@ the dependency license files and a version inventory collected from the build en
 notices with redistributed packages. Source dependencies are pinned in `requirements.lock` and
 `desktop/package-lock.json`.
 
-- Python: [PSF license](https://docs.python.org/3/license.html).
+- Python: [PSF license](https://docs.python.org/3/license.html), also included at `_internal/licenses/Python/LICENSE.txt`.
 - Electron: [MIT](https://github.com/electron/electron/blob/main/LICENSE); Chromium and its libraries have
   their own notices in the shipped `LICENSES.chromium.html`.
 - The photo stack includes NumPy, Pillow, pillow-heif/libheif, rawpy/LibRaw, OpenCV, MediaPipe,
