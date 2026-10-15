@@ -17,7 +17,7 @@ def fetch(term, folder, want, licence_ok):
     got, off = 0, 0
     while got < want and off < 200:
         q = {"action": "query", "format": "json", "generator": "search", "gsrnamespace": 6, "gsrlimit": 25, "gsroffset": off,
-             "gsrsearch": f"filetype:bitmap {term}", "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1600,
+             "gsrsearch": f"filetype:bitmap {term}", "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1280,
              "iiextmetadatafilter": "LicenseShortName"}
         pages = json.loads(get("https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(q))).get("query", {}).get("pages", {})
         off += 25

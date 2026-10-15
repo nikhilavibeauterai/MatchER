@@ -14,3 +14,14 @@ tests/ui/node_modules/
 # your private planning transcripts and local agent settings
 original chats/
 .claude/settings.local.json
+# Local planning and captures are not release material.
+HANDOFF.md
+sample_screenshots/
+.env
+.env.*
+!.env.example
+node_modules/
+build/
+dist/
+*.egg-info/
+.ruff_cache/

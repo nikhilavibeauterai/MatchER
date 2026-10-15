@@ -18,7 +18,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.click('.mode-card[data-mode="me"]');
   await page.fill("#path", LIB);
   await page.click("#use-path");
-  await page.waitForSelector("#an-go, .journey", { timeout: 300000 }); if (await page.$("#an-go")) { res.reveal = await page.$eval(".an-reveal", (e) => e.innerText.replace(/\s+/g, " ").slice(0, 160)).catch(() => null); await page.screenshot({ path: OUT + "/" + "me_e2e-reveal.png" }); await page.click("#an-go"); } await page.waitForSelector(".journey");
+  await page.waitForSelector("#an-go, .journey", { timeout: 300000 }); if (await page.$("#an-go")) { res.reveal = await page.$eval(".an-reveal", (e) => e.innerText.replace(/\s+/g, " ").slice(0, 160)).catch(() => null); await page.screenshot({ path: OUT + "/" + "me_e2e-reveal.png" }); await page.click("#an-go"); } await page.waitForSelector(".journey").catch(async(e)=>{console.error(JSON.stringify({url:page.url(),text:await page.locator('#main').innerText(),problems}));await page.screenshot({path:OUT+"/failure-me_e2e.png"});throw e;});
   await page.click("#open-menu");
   res.peopleInMenu = !!(await page.$('#menu[open] a[href="#people"]'));
   await page.keyboard.press("Escape");
@@ -35,7 +35,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
     res.miniUndo = back.type === "mini" && back.round === r1.round;
   }
   for (let k = 0; k < 30 && (await page.$("#stage.mini-stage")); k++) { await page.keyboard.press("ArrowLeft"); await settle(); await page.waitForTimeout(150); }
-  await page.goto(BASE + "/#duel");
+  await page.goto(BASE + "/#duel?stage=open");
   await page.waitForSelector("#stage .side img");
   await settle();
   const seq = [];
@@ -45,7 +45,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   res.undoChain = JSON.stringify(back) === JSON.stringify(seq.slice().reverse());
   res.question = await page.$eval("#duel-q", (q) => q.textContent.trim());
   await page.keyboard.press("f"); await page.waitForTimeout(400);
-  res.filterOn = await page.$$eval("#stage .side img", (i) => i.map((x) => x.style.filter));
+  res.filterOn = await page.$$eval("#stage .side .window > img", (i) => i.map((x) => x.style.filter));
   await page.keyboard.press("f"); await page.keyboard.press("c"); await page.waitForTimeout(300);
   res.cropToggled = await page.$eval("#crop-btn span", (s) => s.textContent);
   await page.keyboard.press("c");
@@ -55,12 +55,12 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.goto(BASE + "/#people");
   await page.waitForSelector("#not-me");
   res.undoBefore = !!(await page.$("#people-undo"));
-  await page.click("#not-me");
+  await page.click("#not-me"); await page.click("#modal [data-answer=yes]");
   await page.waitForTimeout(2500);
   await page.waitForSelector("#people-undo", { timeout: 15000 }).catch(() => {});
   res.undoOffered = !!(await page.$("#people-undo"));
   await page.screenshot({ path: OUT + "/m-people.png" });
-  if (res.undoOffered) { await page.click("#people-undo"); await page.waitForTimeout(2500); }
+  if (res.undoOffered) { await page.locator('h1').click();await page.keyboard.press('z'); await page.waitForTimeout(2500); }
   await page.goto(BASE + "/#people");
   await page.waitForSelector("#not-me");
   res.undoGone = !(await page.$("#people-undo"));

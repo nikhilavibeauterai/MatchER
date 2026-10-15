@@ -1,0 +1,319 @@
+/* ================================================================ paper
+   MatchER's look: the fluorescent colour wash and the photos are the world; everything else is written or drawn on
+   a scrap of ruled paper. This sheet comes last and restyles the chrome in one place: the tokens (paper, ink,
+   markers), the hand fonts, the scrap itself (one rule for every chrome container), buttons, keys, chips, inputs,
+   the HUD, the stage frames and the writing on the polaroids. Photos keep their cards (app.css); the developer panel
+   keeps its dark glass. Caveat and Patrick Hand are bundled under /static/fonts (SIL Open Font License). */
+
+@font-face { font-family: "Patrick Hand"; src: url(/static/fonts/patrick-hand.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: "Caveat"; src: url(/static/fonts/caveat.woff2) format("woff2"); font-weight: 400 700; font-display: swap; }
+
+:root {
+  --paper: #f7f2e6; --paper-2: #efe6d2; --ink: #2a241f; --pencil: #7f7265; --rule: #b9cfe6; --margin-line: #e9a49d;
+  --marker: #ff6b5b; --marker-2: #ff8a6c; --highlight: #ffe867; --sticky: #fff3a6; --green: #2f9f6d; --gold: #e0a919;
+  --panel: var(--paper); --panel-2: var(--paper-2); --line: #cbbb9f; --text: var(--ink); --muted: #6a5e53; --faint: #6b6054;
+  --accent: #e94e3d; --accent-soft: rgba(233, 78, 61, 0.16); --good: #2f9f6d; --warn: #c8871a; --radius: 8px;
+  --font: "Patrick Hand", "Comic Neue", "Segoe Print", "Bradley Hand", cursive, sans-serif;
+  --display: "Caveat", "Patrick Hand", "Segoe Print", cursive;
+  --hand: "Caveat", "Patrick Hand", cursive;
+  /* A hand-drawn edge: uneven radii read as a pen going round the corner. */
+  --scrap-round: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  --scrap-border: 1.5px solid var(--pencil);
+  --scrap-shadow: 0 1px 0 #0000001a, 0 8px 20px #00000040;
+  --ruled: repeating-linear-gradient(transparent 0 25px, var(--rule) 25px 26px);
+  --margin: linear-gradient(90deg, transparent 0 24px, var(--margin-line) 24px 25.5px, transparent 25.5px);
+  --paper-ink: var(--ink);
+  color-scheme: light;
+}
+body { font-size: 16px; line-height: 1.45; }
+h1, h2, h3, h4 { font-family: var(--display); font-weight: 700; letter-spacing: 0; }
+h1 { font-size: 40px; background: none; -webkit-background-clip: initial; background-clip: initial; -webkit-text-fill-color: currentColor; color: var(--ink); }
+h2 { font-size: 27px; }
+h3 { font-size: 21px; }
+a { color: var(--accent); }
+::selection { background: var(--highlight); color: var(--ink); }
+* { scrollbar-color: var(--pencil) transparent; }
+
+/* ---------- the scrap: every chrome container is a piece of paper */
+.card, .rail-card, .help-pop, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .save-card, .mode-card, .an-panel,
+.tb-section, .mission, .activity-deck, .filter-catalogue, .vn-catalog, .sugg-card, .bins, .bin, .bin-editor, .finals-bracket, .bm,
+.lr-bar, .mini-bar, #toast, .reward-note, .achv, .stat-chip, .chip, .stat-grid, .taste, .next-cup, .onboard-body > *, .twin-ask,
+.added-list, .stage-results, .title-road, .result-strip, .filter-outcome, #game-help-hint, #journey-title, .twords, .gt-rows li,
+.ko-match, .tb-roster, .tile, .gsec, .cup-row, .people > *, .up-next, .crew, .deck-note, .swipe-card .why, .side .stack:not(.paper > *),
+.team-chip, .bar-hint, .selection-help, .map-note, .lede, .screen-head h1, .duel-head .question, .duel-head .meter, .mini-round,
+.sea-tag, .vn-hint, .filter-thinking, .filter-result, .empty:not(.loading), .steps .step, .trophy-stats > *, .history-action, .tag-call h2 {
+  background: var(--paper); color: var(--ink); border: var(--scrap-border); border-radius: var(--scrap-round); box-shadow: var(--scrap-shadow);
+  text-shadow: none;
+}
+/* Reading surfaces are ruled sheets with a margin; their lines are 26px apart and the text sits on them. */
+.card, .rail-card, .help-pop, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .mode-card, .save-card, .an-panel, .activity-deck,
+.taste, .next-cup, .onboard-body > *, .tb-section, .gsec, .tile.open, .people > * {
+  background: var(--margin), var(--ruled) 0 7px / 100% 26px, var(--paper); line-height: 26px; padding-left: 32px;
+}
+.help-pop, .pop-card, .twords, #toast, .reward-note, .achv, #game-help-hint { font-family: var(--hand); font-size: 19px; line-height: 24px; }
+.help-pop b, .pop-card b { color: var(--accent); }
+.stat-chip, .chip, .stat-chip b, .mini-round, .team-chip, .filter-outcome, .twords, #journey-title { font-family: var(--hand); font-size: 18px; font-weight: 700; color: var(--ink); }
+.stat-chip b, .filter-outcome b { font-size: 21px; color: var(--accent); }
+.stat-chip.good b { color: var(--good); } .stat-chip.warn b { color: var(--warn); }
+#toast { padding: 8px 16px; color: var(--ink); background: var(--highlight); border-color: var(--ink); }
+.empty:not(.loading) { padding: 24px 28px; font-family: var(--hand); font-size: 22px; height: auto; margin: auto; }
+
+/* ---------- buttons, keys, inputs: ink on paper */
+.btn, .seg-btn, .help-btn, .menu-btn, #game-help, .chip-btn, .finals-bracket-toggle, .gt-toggle, .bin-place, .shot-select:focus-visible {
+  font-family: var(--hand); font-size: 19px; font-weight: 700; line-height: 1.1; color: var(--ink);
+  background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--scrap-round); box-shadow: 2px 2px 0 #2a241f40;
+  text-shadow: none; backdrop-filter: none;
+}
+.btn:hover, .seg-btn:hover, .help-btn:hover, .menu-btn:hover, #game-help:hover { background: var(--highlight); border-color: var(--ink); color: var(--ink); box-shadow: 1px 1px 0 #2a241f40; }
+.btn:active { transform: translate(1px, 1px); box-shadow: 0 0 0 #0000; }
+.btn.primary, .action-bar .btn.primary, .journey-step.ready { background: var(--marker); border-color: #8d2c22; color: #2b0f0b; box-shadow: 2px 2px 0 #8d2c2266; }
+.btn.primary:hover, .journey-step.ready:hover { background: var(--marker-2); border-color: #8d2c22; }
+.btn.ghost { border-style: dashed; border-color: var(--pencil); }
+.btn.big { font-size: 22px; padding: 12px 20px; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.5; }
+.seg { background: transparent; border: 0; gap: 4px; }
+.seg-btn.on { background: var(--highlight); }
+kbd { font: 700 13px/1.35 var(--font); color: var(--ink); background: transparent; border: 1.3px solid var(--ink); border-bottom-width: 2.2px; border-radius: 5px 7px 6px 5px; }
+.btn.primary kbd, .journey-step.ready kbd { border-color: #2b0f0b; color: #2b0f0b; }
+input[type=text], input[type=search], input[type=number], select, textarea {
+  font-family: var(--hand); font-size: 19px; color: var(--ink); background: transparent; border: 0; border-bottom: 1.5px solid var(--ink); border-radius: 0; padding: 4px 6px;
+}
+input[type=text]:focus, select:focus, textarea:focus { outline: 0; border-bottom-color: var(--accent); box-shadow: 0 3px 0 -1px var(--highlight); }
+input[type=range] { accent-color: var(--marker); }
+input[type=checkbox] { accent-color: var(--marker); }
+body.sea-on .screen:not(.filter-stage) :is(.screen-head, .screen-bar) .btn.ghost, body.sea-on .screen:not(.filter-stage) .screen-head .help-btn,
+body.sea-on .controls .btn.ghost, .filter-review-controls .btn, body.sea-on #view-duel.crown-play #controls .btn, #topbar .save-chip, #topbar .menu-btn, #game-help {
+  background: var(--paper); border: 1.5px solid var(--ink); color: var(--ink); box-shadow: 2px 2px 0 #2a241f40; backdrop-filter: none;
+}
+.filter-review-controls .btn { font-family: var(--hand); font-size: 17px; }
+.filter-review-controls .btn.big { font-size: 18px; padding: 4px 6px; gap: 4px; }
+.filter-review-controls kbd { font-size: 11px; min-width: 18px; padding: 0 4px; }
+.filter-review-controls [data-decision=aside] { background: #ffd1cc; }
+.filter-review-controls [data-decision=keep] { background: #cdeedd; color: var(--ink); }
+.filter-review-controls [data-tune=toward] { background: #ffd8e6; color: var(--ink); border-color: var(--ink); }
+.filter-review-controls [data-tune=toward] span::before { color: #e2356f; }
+.filter-review-controls [data-tune=away] { background: #e8e4dc; color: var(--ink); border-color: var(--ink); }
+.filter-review-controls [data-tune] small, .filter-review-controls [data-tune] kbd { color: var(--muted); }
+.filter-review-controls [data-tune] kbd { border: 0; }
+
+/* ---------- the HUD: medallions, title and the way forward are drawn on paper */
+#journey-dock .tico { border: 1.5px solid var(--ink); background: var(--paper); border-radius: 50% 48% 52% 50% / 48% 52% 48% 52%; box-shadow: 1.5px 1.5px 0 #2a241f40; }
+#journey-dock .tnode.here .tico { background: var(--highlight); border-color: var(--ink); box-shadow: 0 0 0 3px #ffe86766, 1.5px 1.5px 0 #2a241f40; }
+#journey-dock .tnode:hover .tico { border-color: var(--accent); }
+#journey-dock .tnode .tcheck { color: var(--green); }
+#journey-title { font-family: var(--hand); font-size: 26px; font-weight: 700; color: var(--ink); padding: 0 14px; background: transparent; background-clip: padding-box; border: 0; box-shadow: none; text-shadow: none; }
+#journey-dock .journey-step { color: var(--ink); font-family: var(--hand); font-weight: 700; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50% 48% 52% 50% / 48% 52% 48% 52%; box-shadow: 1.5px 1.5px 0 #2a241f40; width: 44px; height: 44px; font-size: 30px; }
+#journey-dock .journey-step.empty { visibility: hidden; }
+#journey-dock .journey-step.ready { width: max-content; border-radius: var(--scrap-round); font-size: 19px; font-family: var(--hand); background: var(--marker); border: 1.5px solid #8d2c22; color: #2b0f0b; box-shadow: 2px 2px 0 #8d2c2266; }
+#journey-dock .journey-step.ready:hover { background: var(--marker-2); }
+/* The compact arrow keeps the same touch target as its desktop slot when its words are hidden. */
+@media (max-width: 1189px) {
+  #journey-dock .journey-step.ready { width: 44px; max-width: 44px; padding: 0; border-radius: 50% 48% 52% 50% / 48% 52% 48% 52%; font-size: 30px; }
+}
+#journey-dock .twords { color: var(--ink); background: var(--paper); }
+#journey-dock .tlabel { font-family: var(--hand); font-size: 15px; }
+#topbar .save-chip { border-radius: var(--scrap-round); border-color: var(--pencil); box-shadow: none; }
+#topbar .chip-name { font-family: var(--hand); font-size: 17px; font-weight: 700; color: var(--ink); }
+#topbar .chip-lvl { color: var(--accent); font-family: var(--hand); font-size: 14px; }
+#topbar .save-chip .xpbar { background: #0001; } .xpbar i { background: var(--marker); }
+#topbar .menu-btn, #game-help { border-radius: 50% 48% 52% 50% / 48% 52% 48% 52%; color: var(--ink); }
+#game-help[aria-pressed=true] { background: var(--highlight); border-color: var(--ink); color: var(--ink); }
+#game-help-hint { color: var(--ink); background: transparent; border: 0; box-shadow: none; font-size: 18px; padding: 0 12px; }
+.reward-note { color: var(--ink); background: var(--highlight); }
+.reward-note:hover { background: var(--highlight); border-color: var(--ink); }
+
+/* ---------- panes and stages: the cards sit straight on the wash; chrome around them is paper */
+.arena .side, .twin-arena .side, .swipe-card, #view-duel.crown-play .side { background: transparent; border-color: transparent; box-shadow: none; }
+.arena .side::after { display: none; }
+.arena .slot:hover .side, .side.won { border-color: transparent; box-shadow: none; }
+.arena .slot:hover .side .paper, .twin-arena .side:hover .paper { box-shadow: 0 0 0 3px var(--highlight), var(--scrap-shadow); }
+.side.won .paper, .side.won > .print > img { box-shadow: 0 0 0 4px var(--green), var(--scrap-shadow); }
+.side .toss { font-family: var(--hand); font-size: 17px; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: var(--scrap-round); }
+.tile { background: var(--paper-2); border: 1.5px dashed var(--pencil); border-radius: var(--scrap-round); box-shadow: var(--scrap-shadow); }
+.tile .meta, .tile .rank, .tile .badge, .ftile-actions span, .tile .flags .flag { font-family: var(--hand); color: var(--ink); background: transparent; font-size: 16px; }
+.tile .rank, .tile .badge { background: var(--highlight); border: 1.2px solid var(--ink); border-radius: var(--scrap-round); padding: 0 8px; }
+.ftile-actions { background: linear-gradient(transparent, #f7f2e6ee); }
+.podium .pod-step { font-family: var(--hand); color: var(--ink); background: var(--paper); border: var(--scrap-border); border-bottom: 0; border-radius: 12px 12px 0 0; }
+.gold .pod-step { background: var(--highlight); color: var(--ink); }
+.bm, .bs { color: var(--ink); } .bs { background: transparent; } .bs span { color: var(--muted); } .bs.win { background: var(--highlight); } .bs.win span { color: var(--ink); }
+.lr-bar { color: var(--ink); } .lr-bar b, .lr-big { color: var(--accent); } .lr-record { background: var(--highlight); color: var(--ink); border: 1.2px solid var(--ink); }
+.mission { background: var(--paper); } .mission-name b { color: var(--ink); } .activity-deck h2 { color: var(--accent); letter-spacing: 0; text-transform: none; font-size: 22px; }
+.quest-clear.empty { background: var(--margin), var(--ruled) 0 7px / 100% 26px, var(--paper); }
+.achv small { color: var(--accent); }
+.ring-bg { stroke: #0001; } .ring-fg { stroke: var(--green); }
+.meter .bar, .conf { background: #0001; }
+.save-art { border-radius: 6px 6px 0 0; }
+.save-chip img, .rank-pop img { border: 1.5px solid var(--ink); }
+.onboard-body > * .btn, .save-card .btn { font-size: 18px; }
+
+/* ---------- writing on the polaroids: counts, seeds, tags and badges in handwriting */
+.paper > .stack, .paper > .role, .photo-sea .ps-item .ps-stack, .ps-badge, .ps-rank, .side .stack, .team-chip b, .filter-result {
+  font-family: var(--hand); font-weight: 700; color: var(--paper-ink); text-shadow: none;
+}
+.photo-sea .ps-item .ps-stack { font-size: 12cqw; rotate: -2deg; }
+.paper > .stack, .paper > .role { font-size: max(12px, 5.2cqw); rotate: -1.5deg; }
+.ps-badge, .ps-rank, .tile .rank { background: var(--highlight); color: var(--ink); border: 1.2px solid var(--ink); border-radius: var(--scrap-round); rotate: -4deg; }
+.vn-tag, .ps-tag, .tag-chip, .vn-lasso-tag, .sea-tag, .inspect-tag-edit .chip, .suggest .chip {
+  font-family: var(--hand); font-size: 18px; font-style: italic; font-weight: 700; color: var(--ink); background: var(--paper);
+  border: 1.3px solid var(--ink); border-radius: var(--scrap-round); box-shadow: 1.5px 1.5px 0 #2a241f33; text-shadow: none;
+}
+.vn-lasso-tag { rotate: -2deg; }
+.filter-result { border-color: var(--ink); background: var(--paper); }
+.filter-result.pass { color: var(--green); } .filter-result.fail { color: var(--accent); }
+
+/* The developer panel stays dark glass; it is a tool, not part of the game. */
+#dev-panel, #dev-panel .btn, #dev-panel input, #dev-panel .dev-num { font-family: var(--font); color: #e8e6e1; }
+#dev-panel .btn { background: #1d2024; border-color: #3a3f46; border-radius: 8px; box-shadow: none; font-size: 13px; }
+#dev-panel input[type=number] { background: #0d0e10; border: 1px solid #2a2e34; border-radius: 6px; font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .btn:active { transform: none; } }
+
+/* ---------- the notebook strip: the HUD row is one sheet of college-ruled paper torn out and turned sideways
+   (blue rules running up and down after a left pad, the red margin line along the bottom, three punched holes and
+   a perforated torn edge along the bottom). Everything in the HUD is written straight onto it. */
+body:not(.no-bar) #topbar::before {
+  content: ""; position: fixed; z-index: -1; top: 0; left: 10px; right: 10px; height: calc(var(--hud-height) - 4px); pointer-events: none;
+  background:
+    linear-gradient(0deg, transparent 0 27px, var(--margin-line) 27px 28.5px, transparent 28.5px),
+    linear-gradient(90deg, var(--paper) 0 54px, transparent 54px),
+    repeating-linear-gradient(90deg, transparent 0 25px, var(--rule) 25px 26.5px),
+    var(--paper);
+  box-shadow: 0 3px 0 #0001, 0 10px 24px #00000055;
+  -webkit-mask-image:
+    radial-gradient(circle at 7% calc(100% - 15px), transparent 0 6px, #000 7px),
+    radial-gradient(circle at 48% calc(100% - 15px), transparent 0 6px, #000 7px),
+    radial-gradient(circle at 91% calc(100% - 15px), transparent 0 6px, #000 7px),
+    linear-gradient(#000, #000) top / 100% calc(100% - 7px) no-repeat,
+    repeating-linear-gradient(120deg, #000 0 5px, transparent 5px 9px) bottom / 100% 7px no-repeat;
+  -webkit-mask-composite: source-in, source-in, source-in, source-over;
+  mask-image:
+    radial-gradient(circle at 7% calc(100% - 15px), transparent 0 6px, #000 7px),
+    radial-gradient(circle at 48% calc(100% - 15px), transparent 0 6px, #000 7px),
+    radial-gradient(circle at 91% calc(100% - 15px), transparent 0 6px, #000 7px),
+    linear-gradient(#000, #000) top / 100% calc(100% - 7px) no-repeat,
+    repeating-linear-gradient(120deg, #000 0 5px, transparent 5px 9px) bottom / 100% 7px no-repeat;
+  mask-composite: intersect, intersect, intersect, add;
+}
+body:not(.no-bar) #topbar { z-index: 11; isolation: isolate; height: var(--hud-height); }
+body:not(.no-bar) #journey-dock { z-index: 12; }
+body:not(.no-bar) #game-help-hint { z-index: 13; }
+#journey-dock .tico, #journey-dock .journey-step, #topbar .menu-btn { box-shadow: none; }
+#journey-dock .tnode.here .tico { box-shadow: 0 0 0 3px #ffe86766; }
+#journey-dock .journey-step.ready { box-shadow: 2px 2px 0 #8d2c2266; }
+
+/* ---------- one wobble rule reaches every card, wherever its sea lives */
+img[src^="/img/t/"]:not(.world-fly, .window img, .picture img), img[src^="/img/p/"]:not(.world-fly, .window img, .picture img), .print > .paper {
+  --wobble-cycle: calc(var(--wobble-period) * (1 + (var(--r2, 0.5) * 2 - 1) * var(--wobble-speed-spread)));
+  animation: cardwobble var(--wobble-cycle) ease-in-out infinite; animation-delay: calc(-1 * var(--r1, 0) * var(--wobble-delay-spread) * var(--wobble-cycle)); }
+@media (prefers-reduced-motion: reduce) { img[src^="/img/"], .print > .paper { animation: none; } }
+
+/* ---------- nothing dark is left under the chrome: panes, decks and standings sit on the wash or on paper */
+body.sea-on .side, body.sea-on .twin-arena .side, body.sea-on .swipe-card, .swipe-card, .deck { background: transparent; border-color: transparent; }
+#group-table, .group-table { background: var(--margin), var(--ruled) 0 7px / 100% 26px, var(--paper); color: var(--ink); border: var(--scrap-border); border-radius: var(--scrap-round); box-shadow: var(--scrap-shadow); padding: 10px 14px 10px 32px; }
+.gt-title, .gt-head b, .gt-toggle, .gt-description, .tb-roster, .tb-section h3, .tb-section b { color: var(--ink); font-family: var(--hand); }
+.gt-toggle { border: 0; box-shadow: none; background: transparent; font-size: 19px; }
+.gt-rows li { color: var(--ink); } .gt-rows li.through { background: #dff3e8; }
+.bins-head, .bins-head b, .screen-rail > h2, .screen-rail > h3, .rail-card h3, .sugg-card h3 { font-family: var(--hand); color: var(--ink); }
+.bins-head { background: var(--paper); border: var(--scrap-border); border-radius: var(--scrap-round); box-shadow: var(--scrap-shadow); padding: 6px 12px; }
+.stage-results, .tb-groups.kickoff .tb-group, .filter-update > span, .quest-clear.empty, .crown-text, .achv {
+  background: var(--margin), var(--ruled) 0 7px / 100% 26px, var(--paper); color: var(--ink); border: var(--scrap-border); border-radius: var(--scrap-round); box-shadow: var(--scrap-shadow); backdrop-filter: none; }
+.crown-text { color: var(--accent); font-family: var(--display); }
+#view-duel.crown-play .role { background: transparent; }
+.tile { border: 1.5px solid var(--pencil); }
+.help-btn, #game-help { font-family: var(--display); font-size: 22px; }
+.duel-head .learnt, .learnt { color: var(--green); font-family: var(--hand); font-size: 16px; background: var(--paper); padding: 0 8px; border-radius: var(--scrap-round); }
+.vn-lasso-tag.is-group, .vn-lasso-tag.is-auto { color: var(--ink); }
+
+#journey-title { pointer-events: auto; cursor: pointer; }
+#journey-title:hover { text-decoration: underline wavy var(--accent); }
+
+
+/* ---------- leaderboard and reveal tiles: the card is the tile. A reveal tile wears its rank; the leaderboard's one
+   big card carries a square sticky note with everything the sorter knows, and the group wobbles as one (app.css). */
+.board .tile, .reveal-strip .tile { background: none; border: 0; box-shadow: none; overflow: visible; }
+.tile-pile > .meta.sticky { background: var(--sticky); color: var(--ink); border-radius: 2px 2px 4px 3px; box-shadow: 0 1px 1px #0003, 0 6px 14px #0004; }
+.tile-pile > .meta.sticky::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 14%; background: linear-gradient(#00000012, transparent); pointer-events: none; }
+.tile-pile > .meta.sticky .conf { background: #0000000f; }
+.tile-pile > .meta.sticky .flags .flag { background: transparent; border-bottom: 1.2px solid var(--pencil); border-radius: 0; }
+.board-card .note-rank { font-family: var(--display); color: var(--accent); }
+.edit-sheet .btn[aria-pressed="true"], #toolbelt .btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.user-note .note-text { font-family: var(--hand); color: var(--ink); }
+:is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-select) > .meta.sticky.user-note { background: var(--sticky); color: var(--ink); border-radius: 2px 2px 4px 3px; box-shadow: 0 1px 1px #0003, 0 6px 14px #0004; }
+.board-card .note-tags span { white-space: nowrap; }
+.board-arrow { font-family: var(--display); }
+.board-arrow.btn.ghost { background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); }
+.board-arrow.btn.ghost:hover { background: var(--highlight); }
+.board-card .chin { font-family: var(--hand); color: var(--paper-ink); }
+
+/* ---------- ink on paper: inside a piece of paper there is no other piece of paper. What sits on a sheet, a scrap or
+   a sticky note is written or drawn on it: buttons are underlined or circled words (a marker swipe for the one way
+   forward, a highlighter for what is switched on), chips are underlined words, keys are small drawn boxes, bars are
+   pencil lines. Only polaroids and sticky notes lie on paper. Chrome that floats on the wash keeps its own scrap. */
+:is(.card, .rail-card, .help-pop, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .save-card, .mode-card, .an-panel, .tb-section,
+    .mission, .activity-deck, .filter-catalogue, .vn-catalog, .sugg-card, .bins, .bin-editor, .finals-bracket, .taste, .next-cup, .onboard-body > *,
+    .twin-ask, .gsec, .tile.open, .edit-sheet, .toolbelt, .stat-grid, .people > *, .up-next, .crew, .deck-note, .added-list, .stage-results,
+    .result-strip, .map-note, .lede, .meta.sticky, .selection-help, .twords, #topbar::before, .tb-roster, .trophy-stats > *, .steps .step)
+  :is(.btn, .seg-btn, .chip-btn, .stat-chip, .chip, .team-chip, .tag-chip, .bin, .cup-row, .gt-rows li, .ko-match, .history-action, .achv,
+      .mini-bar, .bm, .lr-bar, .sea-tag, .flag, .mini-round, .filter-outcome, .reward-note, .seg) {
+  background: transparent; border-color: transparent; box-shadow: none; text-shadow: none; backdrop-filter: none; }
+:is(.card, .rail-card, .help-pop, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .save-card, .mode-card, .an-panel, .tb-section,
+    .mission, .activity-deck, .filter-catalogue, .vn-catalog, .sugg-card, .bins, .bin-editor, .finals-bracket, .taste, .next-cup, .onboard-body > *,
+    .twin-ask, .gsec, .tile.open, .edit-sheet, .toolbelt, .stat-grid, .people > *, .up-next, .crew, .deck-note, .added-list, .stage-results,
+    .result-strip, .map-note, .lede, .meta.sticky, .selection-help, .twords, .tb-roster, .trophy-stats > *, .steps .step)
+  :is(.btn, .seg-btn, .chip-btn, .bin) {
+  border: 0; border-bottom: 1.6px solid var(--ink); border-radius: 0; padding-left: 4px; padding-right: 4px; }
+:is(.card, .rail-card, .help-pop, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .save-card, .mode-card, .an-panel, .tb-section,
+    .mission, .activity-deck, .filter-catalogue, .vn-catalog, .sugg-card, .bins, .bin-editor, .finals-bracket, .taste, .next-cup, .onboard-body > *,
+    .twin-ask, .gsec, .tile.open, .edit-sheet, .toolbelt, .stat-grid, .people > *, .up-next, .crew, .deck-note, .added-list, .stage-results,
+    .result-strip, .map-note, .lede, .meta.sticky, .selection-help, .twords, .tb-roster, .trophy-stats > *, .steps .step)
+  :is(.stat-chip, .chip, .team-chip, .tag-chip, .flag, .mini-round, .filter-outcome, .sea-tag) {
+  border: 0; border-bottom: 1.2px solid var(--pencil); border-radius: 0; padding: 0 3px; }
+/* What is switched on or chosen is gone over with the highlighter; the one way forward with the coral marker. */
+:is(.card, .rail-card, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .save-card, .mode-card, .tb-section, .filter-catalogue, .vn-catalog,
+    .bins, .bin-editor, .finals-bracket, .gsec, .tile.open, .edit-sheet, .toolbelt, .meta.sticky, .onboard-body > *)
+  :is(.btn[aria-pressed="true"], .seg-btn.on, .tag-chip.on, .btn.on, .bin.hot, .bin.fit, .chip-btn.on) {
+  background: var(--highlight); color: var(--ink); border-color: var(--ink); border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; }
+:is(.card, .rail-card, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .save-card, .mode-card, .tb-section, .finals-bracket, .gsec, .edit-sheet, .onboard-body > *)
+  :is(.btn.primary) { background: var(--marker); color: #2b0f0b; border: 0; border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; box-shadow: none; padding: 4px 10px; }
+:is(.card, .rail-card, .pop-card, #menu, .inspect-card, .stage-done, .quest-clear, .save-card, .mode-card, .tb-section, .finals-bracket, .gsec, .edit-sheet, .onboard-body > *)
+  :is(.btn:hover, .seg-btn:hover, .chip-btn:hover) { background: var(--highlight); box-shadow: none; border-color: var(--ink); }
+/* A drawn box for a match on the bracket sheet, a pencil frame for a bin. */
+.finals-bracket .bm { border: 1.4px solid var(--pencil); border-radius: 4px 9px 5px 8px / 8px 4px 9px 5px; background: transparent; box-shadow: none; }
+.bins .bin { border: 0; border-bottom: 1.6px solid var(--pencil); background: transparent; box-shadow: none; }
+.bins .bin-place, .bins .bin-emoji, .bins .bin-edit { background: transparent; border: 0; box-shadow: none; border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; }
+.bins .bin:hover .bin-place, .bins .bin.hot .bin-place, .bins .bin.fit .bin-place, .bins .bin.current .bin-place { background: var(--highlight); }
+.bins .bin.current { border-bottom-color: var(--green); }
+/* The standings: a row that goes through is gone over with the highlighter; the qualify button is a written word. */
+.gt-rows li { background: transparent; border: 0; border-bottom: 1.2px solid var(--pencil); border-radius: 0; box-shadow: none; }
+.gt-rows li.through { background: var(--highlight); border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; }
+.gt-rows li.cut { border-bottom: 1.6px dashed var(--accent); }
+#group-qualify { background: transparent; border: 0; border-bottom: 1.6px solid var(--ink); border-radius: 0; box-shadow: none; }
+#group-qualify:hover { background: var(--highlight); }
+/* The HUD strip is the paper: its medallions, title and save chip are drawn on it, not laid on it. */
+#journey-dock .tico { background: transparent; box-shadow: none; }
+#journey-dock .journey-step:not(.ready) { background: transparent; box-shadow: none; }
+#topbar .save-chip { background: transparent; border: 0; border-bottom: 1.5px solid var(--pencil); border-radius: 0; box-shadow: none; }
+#topbar .menu-btn { background: transparent; box-shadow: none; }
+#journey-dock .twords { background: transparent; border: 0; box-shadow: none; }
+/* A polaroid on a page is a polaroid, not a scrap: tiles on the Stacks and Groups pages lose their own paper. */
+.stacker .tile:not(.open), .sorter .tile:not(.open), .gsec .tile:not(.open) { background: transparent; border-color: transparent; box-shadow: none; }
+/* The Esc menu is a sheet: its entries are written lines, the one under the pointer gone over with the highlighter. */
+#menu .menu-list a, #menu .menu-list button { background: transparent; border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; }
+#menu .menu-list a:hover, #menu .menu-list button:hover, #menu .menu-list a:focus-visible, #menu .menu-list button:focus-visible { background: var(--highlight); }
+/* ---------- more ink: the stage-clear bonus, the trophy case, dialogs. */
+.stage-done .stage-results { background: transparent; border: 0; box-shadow: none; }
+.stage-done .stage-results > b { background: var(--highlight); border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; padding: 0 8px; }
+.trophy-head { background: transparent; border: 0; border-top: 1.5px solid var(--pencil); border-bottom: 1.5px solid var(--pencil); border-radius: 0; }
+.big-lvl, .lvl-n { color: var(--accent); font-family: var(--display); }
+.trophy-head .bar { background: #0001; } .trophy-head .bar i { background: var(--marker); }
+.trophy-stats > * { background: transparent; border: 0; box-shadow: none; border-bottom: 1.2px solid var(--pencil); border-radius: 0; padding: 0 4px; }
+.trophies .trophy { background: transparent; color: var(--ink); border: 1.4px solid var(--pencil); border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; box-shadow: none; }
+.trophies .trophy:not(.got) { color: var(--muted); border-style: dashed; }
+.trophies .trophy.got { background: var(--highlight); border-color: var(--ink); }
+.trophies .trophy .muted { color: inherit; opacity: .75; }
+/* A dialog is a sheet: its buttons are written words; the one way forward keeps the coral marker. */
+#modal .btn:not(.primary) { background: transparent; border: 0; border-bottom: 1.6px solid var(--ink); border-radius: 0; box-shadow: none; }
+#modal .btn:not(.primary):hover { background: var(--highlight); }
+#modal .btn.primary { border: 0; box-shadow: none; border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; }
+#modal .btn.danger, #modal .btn.ghost[id="s-forget"] { color: var(--accent); }
+#modal code.path, .export-where code.path { font-family: var(--hand); font-size: 17px; color: var(--ink); background: transparent; border: 0; border-bottom: 1.2px dashed var(--pencil); border-radius: 0; padding: 0 2px; }

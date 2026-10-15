@@ -1,3 +1,3 @@
-"""MatchER: find your best dating-profile photos without staring at all of them."""
+"""MatchER: turn a folder of photos into a game. Find the keepers."""
 
 __version__ = "0.1.0"

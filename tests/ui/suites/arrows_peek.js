@@ -34,7 +34,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.waitForTimeout(1200);
   res.placedInAimed = await page.evaluate(async ([p, g]) => { const b = await (await fetch("/api/draw/board?per=400")).json(); const grp = b.groups.find((x) => String(x.id) === g); return !!grp && grp.shots.some((x) => x.rep === p || x.members.includes(p)); }, [photo, aimed]);
   // Find more's pick mode
-  const g = await page.evaluate(async () => (await (await fetch("/api/draw")).json()).groups[0].id);
+  const g = await page.evaluate(async () => (await (await fetch("/api/draw/board?per=4&uper=4")).json()).groups[0].id);
   await page.goto(`${BASE}/#draw?play=${g}`);
   await page.waitForSelector("#dtop, .bulk-card, .deck-note");
   if (await page.$("#dtop")) {

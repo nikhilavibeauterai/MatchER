@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -21,9 +22,9 @@ CREATE TABLE IF NOT EXISTS photos (
     width INTEGER, height INTEGER, fmt TEXT,
     taken TEXT, taken_ts REAL, taken_src TEXT,
     make TEXT, model TEXT,
-    phash TEXT, luma REAL, luma_lo REAL, luma_hi REAL, sharp REAL, chroma REAL,
+    phash TEXT, luma REAL, luma_lo REAL, luma_hi REAL, sharp REAL, chroma REAL, saturation REAL, hue REAL,
     n_faces INTEGER,
-    emb BLOB, crop_emb BLOB, crop_face INTEGER, zs TEXT,
+    emb BLOB, crop_emb BLOB, crop_face INTEGER, zs TEXT, recognized_tags TEXT,
     -- derived by library.refresh()
     me_face INTEGER, me_sim REAL, group_id INTEGER, scene_id INTEGER,
     cut TEXT, flags TEXT, prior REAL,
@@ -84,6 +85,10 @@ CREATE TABLE IF NOT EXISTS photo_tags (photo_id INTEGER NOT NULL, tag TEXT NOT N
     PRIMARY KEY (photo_id, tag));                -- the automatic ones, rewritten by every refresh
 CREATE TABLE IF NOT EXISTS tag_edits (photo_id INTEGER NOT NULL, tag TEXT NOT NULL, val INTEGER NOT NULL,
     PRIMARY KEY (photo_id, tag));                -- yours: 1 adds the tag, 0 takes it away
+CREATE TABLE IF NOT EXISTS tag_aliases (source TEXT PRIMARY KEY, target TEXT);
+CREATE INDEX IF NOT EXISTS photo_tags_tag ON photo_tags(tag, photo_id);
+CREATE INDEX IF NOT EXISTS photos_group ON photos(group_id);
+CREATE INDEX IF NOT EXISTS votes_live ON votes(undone, id);
 """
 
 
@@ -99,15 +104,23 @@ def unblob(b: bytes | None, dtype=np.float16) -> np.ndarray | None:
     return None if b is None else np.frombuffer(b, dtype=dtype).astype(np.float32)
 
 
+class ClosedStoreError(RuntimeError):
+    """A request outlived the save it was reading."""
+
+
 class Store:
     """One SQLite file per library. Thread-safe for the web server's worker threads."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._local = threading.local()
         self.lock = threading.RLock()
         self.refresh_lock = threading.RLock()  # library.refresh() vs. readers of its outputs
+        self._connection = None
+        self._closed = False
+        self.vote_revision = 0
+        self.vote_rewrite = 0
+        self._votes = None
         with self.tx() as c:
             c.executescript(SCHEMA)
             cols = {r[1] for r in c.execute("PRAGMA table_info(votes)")}
@@ -116,12 +129,21 @@ class Store:
             photo_cols = {r[1] for r in c.execute("PRAGMA table_info(photos)")}
             if "subject" not in photo_cols:
                 c.execute("ALTER TABLE photos ADD COLUMN subject TEXT")  # auto-crop box, set by refresh()
+            if "salient" not in photo_cols:
+                c.execute("ALTER TABLE photos ADD COLUMN salient TEXT")  # the salient region's frame (analysis), for photos without a face
             if "stack_key" not in photo_cols:
                 c.execute("ALTER TABLE photos ADD COLUMN stack_key TEXT")  # your merges/splits (Groups page)
             if "category" not in photo_cols:
                 c.execute("ALTER TABLE photos ADD COLUMN category TEXT")  # what it's mostly of (gallery cups)
             if "theme_id" not in photo_cols:
                 c.execute("ALTER TABLE photos ADD COLUMN theme_id INTEGER")  # its group in the Draw
+            if "recognized_tags" not in photo_cols:
+                c.execute("ALTER TABLE photos ADD COLUMN recognized_tags TEXT")  # discoveries shown during analysis
+            if "edits" not in photo_cols:
+                c.execute("ALTER TABLE photos ADD COLUMN edits TEXT")  # your touch-up choices from the Leaderboard (enhance, crop, rotate)
+            for name in ("saturation", "hue"):
+                if name not in photo_cols:
+                    c.execute(f"ALTER TABLE photos ADD COLUMN {name} REAL")  # measured during the existing decode
             theme_cols = {r[1] for r in c.execute("PRAGMA table_info(themes)")}
             if "hint" not in theme_cols:
                 c.execute("ALTER TABLE themes ADD COLUMN hint TEXT")  # what to look for, in your words
@@ -129,15 +151,36 @@ class Store:
                 c.execute("ALTER TABLE themes ADD COLUMN pos REAL")  # where it sits in your order of groups (and its key)
 
     def conn(self) -> sqlite3.Connection:
-        c = getattr(self._local, "c", None)
-        if c is None:
-            c = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
-            c.row_factory = sqlite3.Row
-            c.execute("PRAGMA journal_mode=WAL")
-            c.execute("PRAGMA synchronous=NORMAL")
-            c.execute("PRAGMA foreign_keys=ON")
-            self._local.c = c
-        return c
+        # All access already holds this lock. Sharing its connection keeps short-lived HTTP threads from
+        # leaving descriptors behind, and keeps the Filter preview's change counter valid between requests.
+        with self.lock:
+            if self._closed:
+                raise ClosedStoreError("This save is closed.")
+            if self._connection is None:
+                c = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
+                c.row_factory = sqlite3.Row
+                c.execute("PRAGMA journal_mode=WAL")
+                c.execute("PRAGMA synchronous=NORMAL")
+                c.execute("PRAGMA foreign_keys=ON")
+                c.set_trace_callback(self._trace)
+                self._connection = c
+            return self._connection
+
+    def _trace(self, sql):
+        if re.match(r'\s*(?:INSERT(?: OR \w+)? INTO|UPDATE|DELETE FROM|REPLACE INTO)\s+["`\[]?votes\b', sql, re.I):
+            self.vote_revision += 1
+            if not re.match(r'\s*INSERT\b', sql, re.I):
+                self.vote_rewrite += 1
+            self._votes = None
+
+    def close(self) -> None:
+        """Close the library's connection after its work has stopped, before a save is removed."""
+        with self.lock:
+            self._closed = True
+            self._filter_fit_embeddings = None
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
 
     def tx(self):
         store = self
@@ -145,7 +188,11 @@ class Store:
         class _Tx:
             def __enter__(self):
                 store.lock.acquire()
-                self.c = store.conn()
+                try:
+                    self.c = store.conn()
+                except BaseException:
+                    store.lock.release()
+                    raise
                 return self.c
 
             def __exit__(self, et, ev, tb):
@@ -154,6 +201,10 @@ class Store:
                         self.c.commit()
                     else:
                         self.c.rollback()
+                        # Readers inside the transaction may have cached votes that no longer exist.
+                        store._votes = None
+                        store.vote_revision += 1
+                        store.vote_rewrite += 1
                 finally:
                     store.lock.release()
 
@@ -183,7 +234,11 @@ class Store:
         with self.tx() as c:
             cur = c.execute("INSERT INTO votes(ts, kind, a, b, winner, ms, extra) VALUES(?,?,?,?,?,?,?)",
                             (time.time(), kind, a, b, winner, ms, None if extra is None else json.dumps(extra)))
+            c.execute("DELETE FROM meta WHERE key IN ('group_redo','vote_redo')")
             return cur.lastrowid
 
     def votes(self) -> list[sqlite3.Row]:
-        return self.q("SELECT * FROM votes WHERE undone=0 ORDER BY id")
+        with self.lock:
+            if self._votes is None:
+                self._votes = tuple(self.q("SELECT * FROM votes WHERE undone=0 ORDER BY id"))
+            return self._votes

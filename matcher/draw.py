@@ -7,13 +7,14 @@ import json
 import math
 import re
 import secrets
+import threading
 import time
 from collections import Counter
 
 import numpy as np
 from flask import abort
 
-from . import library, tags, themes
+from . import library, tags, themes, tournament
 from .store import unblob
 
 TWIN_SIM = 0.88     # a candidate this alike (image embeddings) to a member and close in time asks "same moment?",
@@ -40,12 +41,16 @@ class Draw:
         self._stage = None    # (key, stage)
         self.focus = None     # the group the group stage is playing right now
         self._words: dict[str, np.ndarray] = {}  # text → SigLIP text embedding
+        self._tag_cache = None
+        self._tag_lock = threading.Lock()
 
     # ------------------------------------------------------------------ basics
-    def changed(self) -> None:
+    def changed(self, reconcile=True) -> None:
         self.ver += 1
         self._stage = None
         self.s.groups_cache = {}
+        if reconcile:
+            tournament.reconcile(self.s.store)
 
     def pool_mask(self) -> np.ndarray:
         """What the Draw sorts: the shots in the running in this cup (every cup's, in the Grand Cup)."""
@@ -99,11 +104,12 @@ class Draw:
         if self._tm is None or self._tm[0] != key:
             by_photo = {r["id"]: r["theme_id"] for r in s.store.q("SELECT id, theme_id FROM photos WHERE theme_id IS NOT NULL")}
             tm = np.full(len(s.gids), -1, np.int64)
-            for i, gid in enumerate(s.gids):
+            for i, gid in enumerate(s.gids) if by_photo else ():
                 t = by_photo.get(s.reps[i])
                 if t is None:
                     g = s.groups.get(gid)
-                    t = next((by_photo[m] for m in (g["members"] if g else ()) if m in by_photo), None)
+                    if g and len(g["members"]) > 1:
+                        t = next((by_photo[m] for m in g["members"] if m in by_photo), None)
                 if t is not None:
                     tm[i] = t
             self._tm = (key, tm)
@@ -149,26 +155,43 @@ class Draw:
                 f"SELECT id, stack_key, rep_pref FROM photos WHERE id IN ({','.join('?' * len(chunk))})", chunk)]
         return rows
 
-    def remember(self, label: str, rows: list | None = None, **parts) -> None:
+    def remember(self, label: str, rows: list | None = None, *, prune: bool = True, **parts) -> None:
         """One undo step: `rows` (stacking, see snapshot), `themes` ([photo, old theme]), `no` ([theme, photo]
         added), `created` (theme ids to delete), `before` (theme rows to restore), `vote` (a Draw call to take back).
         A group this change left empty goes away, and comes back with the same undo."""
-        gone = self._prune()
+        gone = self._prune() if prune else []
         if gone:
             parts["before"] = list(parts.get("before", [])) + gone
+        if rows:
+            parts["crown_seeds"] = self.s.crown_seeds(rows)
+        if rows or parts.get("themes"):
+            tournament.stamp_legacy(self.s.store, parts.get("themes", ()))
+        brackets = tournament.capture(self.s.store)
+        for toss in parts.get("tosses", [parts["toss"]] if parts.get("toss") else []):
+            vote = self.s.store.one("SELECT extra FROM votes WHERE id=?", (toss["vote"],))
+            if vote:
+                brackets.update(json.loads(vote["extra"] or "{}").get("tournaments", {}))
+        if brackets:
+            parts["tournaments"] = brackets
         hist = self.s.store.get_meta("group_history", []) or []
-        self.s.store.set_meta("group_history", (hist + [{"label": label, "rows": rows or [], **parts}])[-HISTORY:])
+        self.s.store.set_meta("group_redo", None)
+        self.s.store.set_meta("vote_redo", None)
+        boundary = self.s.store.one("SELECT COALESCE(MAX(id),0) AS n FROM votes")["n"]
+        self.s.store.set_meta("group_history", (hist + [{"label": label, "rows": rows or [], **parts, "vote_boundary": boundary, "at": time.time()}])[-HISTORY:])
 
     def _prune(self) -> list[dict]:
         """Delete groups with no shots left; returns their rows (for undo)."""
         rows = [dict(r) for r in self.s.store.q(
             "SELECT * FROM themes WHERE id NOT IN (SELECT DISTINCT theme_id FROM photos WHERE theme_id IS NOT NULL)")]
-        if rows:
-            ids = [r["id"] for r in rows]
-            with self.s.store.tx() as c:
-                c.execute(f"DELETE FROM themes WHERE id IN ({','.join('?' * len(ids))})", ids)
-                c.execute(f"DELETE FROM theme_no WHERE theme_id IN ({','.join('?' * len(ids))})", ids)
-        return rows
+        return [self._delete_theme(row) for row in rows]
+
+    def _delete_theme(self, row: dict) -> dict:
+        """Keep rejected candidates with the deleted group, so undo restores its deal too."""
+        with self.s.store.tx() as c:
+            rejected = [r[0] for r in c.execute("SELECT photo_id FROM theme_no WHERE theme_id=?", (row["id"],))]
+            c.execute("DELETE FROM themes WHERE id=?", (row["id"],))
+            c.execute("DELETE FROM theme_no WHERE theme_id=?", (row["id"],))
+        return {**row, "rejected": rejected}
 
     def last_step(self) -> str | None:
         hist = self.s.store.get_meta("group_history", []) or []
@@ -181,10 +204,18 @@ class Draw:
         if not hist:
             abort(400, "Nothing to undo.")
         last = hist.pop()
+        restorable = tournament.restorable(s.store, last.get("tournaments"))
+        content_brackets = {cup: value for cup, value in last.get("content_brackets", {}).items()
+                            if not any(s.store.get_meta(f"{kind}:{cup}") for kind in ("knockouts", "finals"))}
         with s.store.tx() as c:
+            if last.get("qualification"):
+                q = last["qualification"]
+                c.execute("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                          (f"group_qualification:{q['cup']}", json.dumps(q.get("before"))))
             c.executemany("UPDATE photos SET stack_key=?, rep_pref=? WHERE id=?",
                           [(key, pref, pid) for pid, key, pref in last.get("rows", [])])
             c.executemany("UPDATE photos SET theme_id=? WHERE id=?", [(t, pid) for pid, t in last.get("themes", [])])
+            c.executemany("UPDATE photos SET edits=? WHERE id=?", [(old, pid) for pid, old in last.get("edits", [])])  # the Leaderboard's touch-up choices
             c.executemany("DELETE FROM theme_no WHERE theme_id=? AND photo_id=?", last.get("no", []))
             for tid in last.get("created", []):
                 c.execute("DELETE FROM themes WHERE id=?", (tid,))
@@ -193,28 +224,65 @@ class Draw:
                 c.execute("INSERT OR REPLACE INTO themes(id, name, emoji, concept, seed, created, sealed, hint, pos) "
                           "VALUES(?,?,?,?,?,?,?,?,?)", (row["id"], row["name"], row["emoji"], row["concept"], row["seed"],
                                                         row["created"], row["sealed"], row.get("hint"), row.get("pos")))
+                c.executemany("INSERT OR IGNORE INTO theme_no(theme_id, photo_id) VALUES(?,?)",
+                              [(row["id"], pid) for pid in row.get("rejected", [])])
             if last.get("dismissed"):
                 seen = s.store.get_meta("stack_dismissed", []) or []
                 c.execute("UPDATE meta SET value=? WHERE key='stack_dismissed'",
                           (json.dumps([p for p in seen if p not in last["dismissed"]]),))
             if last.get("vote"):
                 c.execute("UPDATE votes SET undone=1 WHERE id=?", (last["vote"],))
+            expected = dict(last.get("filter_overrides", []))
+            later_decisions = set()
+            if expected:
+                for v in c.execute("SELECT kind,a,extra FROM votes WHERE id>? AND undone=0 AND kind IN ('toss','sweep')",
+                                   (last.get("filter_vote_after", 0),)):
+                    extra = json.loads(v["extra"] or "{}")
+                    later_decisions.update(extra.get("members") or list(map(int, (extra.get("prev") or {}).keys())) or [v["a"]])
+                    later_decisions.add(v["a"])
+            restore_votes = True
+            for pid, ov in last.get("overrides", []):
+                if pid in expected:
+                    current = c.execute("SELECT override FROM photos WHERE id=?", (pid,)).fetchone()
+                    if pid in later_decisions or current is None or current["override"] != expected[pid]:
+                        restore_votes = False
+                    else:
+                        c.execute("UPDATE photos SET override=? WHERE id=?", (ov, pid))
+                else:
+                    c.execute("UPDATE photos SET override=? WHERE id=?", (ov, pid))
+            if restore_votes:
+                c.executemany("UPDATE votes SET undone=? WHERE id=?", [(old,vid) for vid,old in last.get("vote_states", [])])
+            c.executemany("UPDATE votes SET undone=1 WHERE id=?", [(vid,) for vid in last.get("inserted_votes", [])])
+            if last.get("filter_before"):
+                from . import filtering
+                filtering.undo(s, last, c)
             if last.get("tags"):  # your tag edits, as they were
                 tags.unedit(c, last["tags"])
-            if last.get("toss"):  # a toss from Quick sort: back in the running
-                t = last["toss"]
+            for key, row in last.get("tag_rows", []):
+                c.execute("DELETE FROM tags WHERE key=?", (key,))
+                if row is not None:
+                    c.execute("INSERT INTO tags(key, label, emoji, family, user, named, hidden, pinned) VALUES(?,?,?,?,?,?,?,?)",
+                              tuple(row[k] for k in ("key", "label", "emoji", "family", "user", "named", "hidden", "pinned")))
+            for key, existed, target in last.get("tag_aliases", []):
+                c.execute("DELETE FROM tag_aliases WHERE source=?", (key,))
+                if existed:
+                    c.execute("INSERT INTO tag_aliases(source, target) VALUES(?,?)", (key, target))
+            for t in last.get("tosses", [last["toss"]] if last.get("toss") else []):
                 c.execute("UPDATE votes SET undone=1 WHERE id=?", (t["vote"],))
-                c.execute(f"UPDATE photos SET override=NULL WHERE override='toss' AND id IN ({','.join('?' * len(t['members']))})",
-                          t["members"])
+                if not last.get("overrides"):
+                    c.execute(f"UPDATE photos SET override=NULL WHERE override='toss' AND id IN ({','.join('?' * len(t['members']))})",
+                              t["members"])
         s.store.set_meta("group_history", hist)
-        if last.get("toss"):
-            library.refresh(s.store)
-            s.version = None
-            s.ensure_ranker()
-            s._fit()
-        self.changed()
+        self.changed(reconcile=False)
+        if any(k in last for k in ("tags", "tag_rows", "tag_aliases")):
+            self.tags_changed(record=False)
+        policy = s.store.get_meta("filter_policy") or {}
+        content_refresh = any(k in last for k in ("tags", "tag_rows", "tag_aliases")) and (policy.get("require_tags") or policy.get("exclude_tags") or policy.get("fit_examples"))
         return {"undone": last["label"], "next": hist[-1]["label"] if hist else None, "stacks": bool(last.get("rows")),
-                "created": last.get("created", [])}
+                "crown_seeds": last.get("crown_seeds", []), "crown_members": [r[0] for r in last.get("rows", [])],
+                "content_brackets": content_brackets,
+                "tournaments": restorable,
+                "created": last.get("created", []), "refresh": bool(last.get("toss") or last.get("tosses") or last.get("overrides") or last.get("filter_before") or content_refresh)}
 
     def _xp(self, call: str, photo: int | None = None, theme: int | None = None, n: int = 1, ms: int | None = None) -> int:
         return self.s.store.add_vote("draw", photo, None, None, ms, extra={"call": call, "theme": theme, "n": n})
@@ -282,26 +350,6 @@ class Draw:
                             (nm["name"], nm["emoji"], nm["concept"], s.reps[items[0]], time.time())).lastrowid
         old = self._assign(items, tid)
         vote = self._xp("start", s.reps[items[0]], tid, n=len(items))
-        self.remember("new group", themes=old, created=[tid], vote=vote)
-        self.changed()
-        return self.summary(self.theme(tid))
-
-    def start(self, photo, name: str | None = None, emoji: str | None = None, concept: str | None = None) -> dict:
-        s = self.s
-        i = self.item(photo)
-        if self.theme_of()[i] >= 0:
-            abort(400, "That shot is already in a group.")
-        _, F, namer, has, _, _ = self.space()
-        if not name:
-            pool = self.unsorted()
-            near, _ = themes.rank(F, [i], [], pool[pool != i]) if has[i] else (np.zeros(0, int), None)
-            nm = namer.name([i, *near[:5]], self.taken())
-            name, emoji, concept = nm["name"], nm["emoji"], nm["concept"]
-        with s.store.tx() as c:
-            tid = c.execute("INSERT INTO themes(name, emoji, concept, seed, created, pos) VALUES(?,?,?,?,?,(SELECT COALESCE(MAX(COALESCE(pos, id)), 0) + 1 FROM themes))",
-                            (str(name)[:60], (emoji or "🗂️")[:8], concept, s.reps[i], time.time())).lastrowid
-        old = self._assign([i], tid)
-        vote = self._xp("start", s.reps[i], tid)
         self.remember("new group", themes=old, created=[tid], vote=vote)
         self.changed()
         return self.summary(self.theme(tid))
@@ -396,7 +444,8 @@ class Draw:
             t = int(tm[i])
             size[t] += 1
             cover.setdefault(t, s.reps[int(i)])
-        return [{"id": t, "name": rows[t]["name"], "emoji": rows[t]["emoji"], "size": size[t],
+        adv = themes.advancers(dict(size), s.ranker.k if s.ranker is not None else 8)
+        return [{"id": t, "name": rows[t]["name"], "emoji": rows[t]["emoji"], "size": size[t], "adv": adv.get(t, 0),
                  "cover": cover.get(t, rows[t]["seed"]), "hint": rows[t].get("hint")} for t in self.visible(rows)]
 
     def _fits(self, items: list[int], skip: int) -> dict[int, list[int]]:
@@ -510,17 +559,6 @@ class Draw:
         self.changed()
         return {"added": len(items)}
 
-    def seal(self, tid, sealed: bool = True) -> dict:
-        row = self.theme(tid)
-        if bool(row["sealed"]) == sealed:
-            return self.summary(row)
-        with self.s.store.tx() as c:
-            c.execute("UPDATE themes SET sealed=? WHERE id=?", (int(sealed), row["id"]))
-        vote = self._xp("seal", None, row["id"]) if sealed else None
-        self.remember("seal" if sealed else "reopen", before=[row], vote=vote)
-        self.changed()
-        return self.summary(self.theme(tid))
-
     def auto(self) -> dict:
         """Draw every unsorted shot for you: new groups for the families among them, the rest into the group they fit
         best (or the wildcards), and every group sealed."""
@@ -620,48 +658,83 @@ class Draw:
     def tag_sets(self) -> dict[int, set[str]]:
         """Each shot in this cup (by the photo it shows) with its tags as they stand."""
         s = self.s
-        reps = [s.reps[int(i)] for i in np.flatnonzero(self.pool_mask())]
-        eff = tags.effective(s.store, reps)
-        return {r: eff.get(r, set()) for r in reps}
+        shots = {s.reps[int(i)]: s.groups.get(s.gids[int(i)], {}).get("members", [s.reps[int(i)]])
+                 for i in np.flatnonzero(self.pool_mask())}
+        eff = tags.effective(s.store, [p for members in shots.values() for p in members])
+        return {rep: set().union(*(eff.get(p, set()) for p in members)) for rep, members in shots.items()}
 
-    def tagging(self) -> dict:
+    def tags_changed(self, record=True):
+        self.s.store.set_meta("tag_version", (self.s.store.get_meta("tag_version", 0) or 0) + 1)
+        self._tag_cache = None
+        policy = self.s.store.get_meta("filter_policy") or {}
+        if policy.get("require_tags") or policy.get("exclude_tags") or policy.get("fit_examples"):
+            from . import filtering
+            filtering.content_changed(self.s, record)
+            self.s.refresh_async()
+
+    def _tag_snapshot(self, keys):
+        rows, aliases = [], []
+        for key in keys:
+            r = self.s.store.one("SELECT * FROM tags WHERE key=?", (key,))
+            a = self.s.store.one("SELECT target FROM tag_aliases WHERE source=?", (key,))
+            rows.append([key, dict(r) if r else None])
+            aliases.append([key, a is not None, a["target"] if a else None])
+        return {"tag_rows": rows, "tag_aliases": aliases}
+
+    def tagging(self, circles: int = tags.VISIBLE_MAX) -> dict:
         """What the tag sea needs: every tag here and how many shots carry it, the ones drawn as circles and the
         Venn diagrams they fall into, each shot's tags, and the groups their intersections suggest."""
         s = self.s
-        sets = self.tag_sets()
-        meta = tags.rows(s.store)
-        count = Counter(t for v in sets.values() for t in v)
-        visible = tags.choose_visible(sets, meta)
-        open_reps = {s.reps[int(i)] for i in self.unsorted()}
-        order = {f: k for k, f in enumerate(tags.FAMILIES)}
-        listed = sorted(({**meta[k], "count": n} for k, n in count.items() if k in meta),
-                        key=lambda r: (order.get(r["family"], 9), -r["count"], r["label"]))
-        return {"tags": listed, "visible": visible, "diagrams": tags.diagrams(visible, sets),
-                "shot_tags": {r: sorted(v) for r, v in sets.items()},
-                "suggestions": self._suggestions(sets, open_reps, visible, meta)}
-
-    def _suggestions(self, sets, open_reps, visible, meta) -> list[dict]:
-        """The groups the tags suggest: every shot here is clustered (so making one group leaves the other suggestions
-        where they were), and each suggestion offers the shots of its cluster that aren't in a group yet."""
-        out = []
-        for sg in tags.cluster(sets, set(sets), visible, meta, self.taken()):
-            shots = [r for r in sg["shots"] if r in open_reps]
-            if shots:
-                out.append({**sg, "shots": shots})
-        return out
+        # Snapshot under the session lock, then train outside it. Concurrent sea requests share one result.
+        with self._tag_lock:
+            with s.lock:
+                key = (s.version, s.store.get_meta("tag_version", 0), s.cup, circles)
+                cached = self._tag_cache
+                if cached is None or cached[0] != key:
+                    sets, meta, taken = self.tag_sets(), tags.rows(s.store), self.taken()
+                open_reps = {s.reps[int(i)] for i in self.unsorted()}
+            if cached is None or cached[0] != key:
+                count = Counter(t for v in sets.values() for t in v)
+                visible = tags.choose_visible(sets, meta, limit=circles)
+                order = {f: k for k, f in enumerate(tags.FAMILIES)}
+                listed = sorted(({**meta[k], "count": n} for k, n in count.items() if k in meta),
+                                key=lambda r: (order.get(r["family"], 9), -r["count"], r["label"]))
+                value = {"tags": listed, "visible": visible, "diagrams": tags.diagrams(visible, sets),
+                         "shot_tags": {r: sorted(v) for r, v in sets.items()},
+                         "suggestions": tags.cluster(sets, set(sets), visible, meta, taken)}
+                with s.lock:
+                    if key == (s.version, s.store.get_meta("tag_version", 0), s.cup, circles):
+                        self._tag_cache = (key, value)
+            else:
+                value = cached[1]
+        return {**value, "suggestions": [{**sg, "shots": [r for r in sg["shots"] if r in open_reps]}
+                                         for sg in value["suggestions"] if any(r in open_reps for r in sg["shots"])]}
 
     def set_tags(self, photos, on, off) -> dict:
         """Add and take away tags on these shots (every take of each). One undo step."""
-        items = list(dict.fromkeys(self.item(p) for p in photos))
+        pids = self._tag_photos(photos)
         meta = tags.rows(self.s.store)
         on = [t for t in dict.fromkeys(on) if t in meta]
         off = [t for t in dict.fromkeys(off) if t in meta and t not in on]
-        if not items or not (on or off):
+        if not pids or not (on or off):
             abort(400, "Nothing to change.")
-        undo = tags.edit(self.s.store, self._photos_of(items), on, off)
+        undo = tags.edit(self.s.store, pids, on, off)
         self.remember("tags", tags=undo)
+        self.tags_changed()
         self.changed()
-        return {"on": on, "off": off, "shots": len(items)}
+        return {"on": on, "off": off, "shots": len(set(photos))}
+
+    def _tag_photos(self, photos) -> list[int]:
+        out, ids = set(), list(set(map(int, photos)))
+        for k in range(0,len(ids),500):
+            chunk=ids[k:k+500]
+            found={r["id"] for r in self.s.store.q(f"SELECT id FROM photos WHERE status='analyzed' AND id IN ({','.join('?' * len(chunk))})",chunk)}
+            if found != set(chunk):
+                abort(404, "Unknown photo.")
+        for pid in ids:
+            g = self.s.groups.get(self.s.photo_group.get(pid))
+            out.update(g["members"] if g else [pid])
+        return sorted(out)
 
     def tag_meta(self, key: str, label: str | None = None, emoji: str | None = None, hidden=None, pinned=None) -> dict:
         """Rename a tag (a person's tag gets their name), change its emoji, or say whether it's a circle on the sea."""
@@ -687,8 +760,11 @@ class Draw:
             if pinned:
                 sets.append("hidden=0")
         if sets:
+            before = self._tag_snapshot([key])
             with s.store.tx() as c:
                 c.execute(f"UPDATE tags SET {', '.join(sets)} WHERE key=?", (*args, key))
+            self.remember("edit tag", **before)
+            self.tags_changed()
         self.changed()
         return dict(s.store.one("SELECT * FROM tags WHERE key=?", (key,)))
 
@@ -696,9 +772,31 @@ class Draw:
         """A tag of your own, on these shots."""
         if not label or not label.strip():
             abort(400, "Give the tag a name.")
+        pids = self._tag_photos(photos)
+        before = tags.rows(self.s.store)
         key = tags.new_tag(self.s.store, label, emoji)
-        out = self.set_tags(photos, [key], []) if photos else {}
-        return {"key": key, **out}
+        undo = tags.edit(self.s.store, pids, [key], [])
+        self.remember("new tag", tags=undo, tag_rows=[[key, before.get(key)]])
+        self.tags_changed()
+        self.changed()
+        return {"key": key, "shots": len(set(photos))}
+
+    def tag_merge(self, source: str, target: str | None = None) -> dict:
+        """Merge into another tag, or delete it, including future automatic recognitions. Z restores it."""
+        meta = tags.rows(self.s.store)
+        if source not in meta or (target is not None and target not in meta):
+            abort(404, "No such tag.")
+        if source == target:
+            abort(400, "Pick two different tags.")
+        before = self._tag_snapshot([source])
+        with self.s.store.tx() as c:
+            c.execute("INSERT INTO tag_aliases(source, target) VALUES(?,?) ON CONFLICT(source) DO UPDATE SET target=excluded.target",
+                      (source, target))
+            c.execute("DELETE FROM tags WHERE key=?", (source,))
+        self.remember("merge tags" if target else "delete tag", **before)
+        self.tags_changed()
+        self.changed()
+        return {"source": source, "target": target}
 
     def tag_group(self, photos, name: str | None, emoji: str | None) -> dict:
         """A group from a tag suggestion: the shots of that intersection that aren't in a group yet."""
@@ -717,6 +815,26 @@ class Draw:
         self.changed()
         return {"tossed": pid}
 
+    def toss_many(self, photos) -> dict:
+        """Set aside a selection with one undo step, including the original rescue overrides."""
+        s = self.s
+        reps = [s.reps[i] for i in sorted({self.item(p) for p in photos})]
+        if not reps:
+            abort(400, "Pick some shots first.")
+        pids = self._tag_photos(reps)
+        overrides = []
+        for start in range(0, len(pids), 500):
+            chunk = pids[start:start+500]
+            overrides += [[r["id"],r["override"]] for r in s.store.q(
+                f"SELECT id, override FROM photos WHERE id IN ({','.join('?' * len(chunk))})",chunk)]
+        tosses = []
+        for pid in reps:
+            vote, members = s._toss(pid, None, None)
+            tosses.append({"vote":vote,"members":members})
+        self.remember("toss", tosses=tosses, overrides=overrides)
+        self.changed()
+        return {"tossed": reps[0] if len(reps) == 1 else reps}
+
     def move(self, photos, tid=None) -> dict:
         """Move shots to another group (or back to the unsorted pile, tid None)."""
         items = sorted({self.item(p) for p in photos})
@@ -732,23 +850,51 @@ class Draw:
         a, b = self.theme(src), self.theme(dst)
         if a["id"] == b["id"]:
             abort(400, "Pick two different groups.")
-        old = self._assign(self.members(a["id"]), b["id"])
-        with self.s.store.tx() as c:
-            c.execute("DELETE FROM themes WHERE id=?", (a["id"],))
-        self.remember("merge groups", themes=old, before=[a])
+        old = self._reassign_group(a["id"], b["id"])
+        self.remember("merge groups", themes=old, before=[self._delete_theme(a)])
         self.changed()
         return self.summary(self.theme(b["id"]))
 
     def dissolve(self, tid) -> dict:
         row = self.theme(tid)
-        old = self._assign(self.members(row["id"]), None)
-        with self.s.store.tx() as c:
-            c.execute("DELETE FROM themes WHERE id=?", (row["id"],))
-        self.remember("dissolve", themes=old, before=[row])
+        old = self._reassign_group(row["id"], None)
+        self.remember("dissolve", themes=old, before=[self._delete_theme(row)])
         self.changed()
         return {"ok": True}
 
+    def _reassign_group(self, source: int, target: int | None) -> list:
+        """Deleting a group affects all its photos, including other cups and set-aside takes."""
+        with self.s.store.tx() as c:
+            old = [[r["id"], source] for r in c.execute("SELECT id FROM photos WHERE theme_id=?", (source,))]
+            c.execute("UPDATE photos SET theme_id=? WHERE theme_id=?", (target, source))
+        return old
+
     # ------------------------------------------------------------------ the group stage
+    def qualification(self) -> dict:
+        st = self.stage()
+        groups = [{"id": g["id"], "name": g["name"], "emoji": g["emoji"], "n": g["n"], "adv": g["adv"],
+                   "photos": [self.s.reps[int(i)] for i in g["order"][:g["adv"]]]} for g in st["groups"].values()]
+        return {"basis": tournament.signature([tournament.basis(self.s.store, self.s.cup), groups]),
+                "groups": groups, "total": sum(g["adv"] for g in groups),
+                "remaining": sum(not g["settled"] for g in st["groups"].values())}
+
+    def qualify(self, basis) -> dict:
+        s = self.s
+        preview = self.qualification()
+        if basis != preview["basis"]:
+            abort(409, "Your contenders or current leaders changed. Review the qualifiers again.")
+        if not preview["remaining"]:
+            return {**preview, "qualified": True}
+        key = f"group_qualification:{s.cup}"
+        self.remember("qualify leaders", qualification={"cup": s.cup, "before": s.store.get_meta(key),
+                      "vote_after": s.store.one("SELECT COALESCE(MAX(id),0) AS n FROM votes")["n"]})
+        s.store.set_meta(key, {"basis": tournament.basis(s.store, s.cup),
+                              "leaders": {str(g["id"]): g["photos"] for g in preview["groups"]}, "at": time.time()})
+        tournament.retire(s.store, {s.cup})
+        s.cards.clear()
+        self.changed()
+        return {**preview, "qualified": True}
+
     def stage(self) -> dict:
         """This cup's groups (lettered in the order they were made): members in standings order,
         places going through, matches played, and whether each is settled."""
@@ -787,6 +933,8 @@ class Draw:
                 d[a] += 1
                 d[b] += 1
         rng = np.random.default_rng(7)
+        qualification = s.store.get_meta(f"group_qualification:{s.cup}") or {}
+        leaders = qualification.get("leaders", {}) if qualification and qualification.get("basis") == tournament.basis(s.store, s.cup) else {}
         groups = {}
         for k, (t, m) in enumerate(sets):
             a, n = adv[t], len(m)
@@ -795,9 +943,17 @@ class Draw:
             budget = 0 if n <= a else min(math.ceil(GROUP_BUDGET * n), n * (n - 1) // 2)
             settled = n <= a or (played[m].min() >= 1 and (unsure < SETTLED or max(count[t], matches[t]) >= budget))
             order = m[np.argsort(-mu[m], kind="stable")]
+            chosen = leaders.get(str(t))
+            if chosen and len(chosen) == a:
+                first = [s._item(p) for p in chosen]
+                if len(set(first)) == a and set(first) <= set(m):
+                    order = np.array(first + [int(i) for i in order if i not in first], dtype=np.int64)
+                    settled = True
+                else:
+                    chosen = None
             groups[t] = {"id": t, "letter": themes.letter(k), "name": rows[t]["name"], "emoji": rows[t]["emoji"],
                          "n": n, "adv": a, "played": max(count[t], matches[t]), "budget": budget, "settled": bool(settled),
-                         "order": order, "odds": {int(i): float(o) for i, o in zip(m, odds)}}
+                         "order": order, "chosen": bool(chosen), "odds": {int(i): float(o) for i, o in zip(m, odds)}}
         st = {"groups": groups, "order": [t for t, _ in sets], "played": played, "w": w, "l": l, "d": d}
         self._stage = (key, st)
         return st
@@ -810,7 +966,7 @@ class Draw:
             return None
         s = self.s
         return {"id": tid, "letter": g["letter"], "name": g["name"], "emoji": g["emoji"], "adv": g["adv"],
-                "played": g["played"], "budget": g["budget"], "settled": g["settled"],
+                "played": g["played"], "budget": g["budget"], "settled": g["settled"], "chosen": g["chosen"],
                 "rows": [{"photo": s.reps[int(i)], "w": st["w"][int(i)], "l": st["l"][int(i)], "d": st["d"][int(i)],
                           "through": k < g["adv"], "odds": round(g["odds"][int(i)], 2)}
                          for k, i in enumerate(g["order"])]}
@@ -820,8 +976,9 @@ class Draw:
         i = self.s._item(int(pid))
         if i is None:
             return None
-        g = self.stage()["groups"].get(int(self.theme_of()[i]))
-        return {"letter": g["letter"], "emoji": g["emoji"], "name": g["name"]} if g else None
+        theme = int(self.theme_of()[i])
+        g = self.stage()["groups"].get(theme)
+        return {"id": theme, "letter": g["letter"], "emoji": g["emoji"], "name": g["name"]} if g else None
 
     def tables(self) -> list[dict]:
         """Every group's standings, A first: the group stage's roster."""
@@ -918,5 +1075,7 @@ class Draw:
         return {"draw": {"total": total, "drawn": total - left, "groups": len(st["groups"]), "open": 0,
                          "done": left == 0 and total > 0},
                 "groups": {"groups": len(st["groups"]), "settled": settled, "done": bool(st["groups"]) and settled == len(st["groups"]),
+                           "chosen": any(g["chosen"] for g in G), "selected": sum(g["chosen"] for g in G),
+                           "played": sum(g["played"] for g in G),
                            "now": {"letter": focus["letter"], "name": focus["name"], "emoji": focus["emoji"]} if focus else None,
                            "through": sum(g["adv"] for g in G)}}

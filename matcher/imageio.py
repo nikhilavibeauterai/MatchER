@@ -11,6 +11,8 @@ from pathlib import Path
 
 from PIL import Image, ImageCms, ImageOps
 
+from .config import RAW_EXTS
+
 try:
     import pillow_heif
 
@@ -119,6 +121,8 @@ def _to_srgb(im: Image.Image, icc: bytes | None) -> Image.Image:
 
 def decode(src: str | Path | bytes, max_edge: int | None = None, name: str = "") -> Decoded:
     """Open a photo upright and in sRGB. With max_edge, JPEGs are decoded at reduced scale (fast)."""
+    if Path(name or (str(src) if not isinstance(src, bytes) else "")).suffix.lower() in RAW_EXTS:
+        return _decode_raw(src, max_edge, name or str(src))
     if isinstance(src, bytes):
         src = io.BytesIO(src)
     with Image.open(src) as opened:
@@ -143,6 +147,36 @@ def decode(src: str | Path | bytes, max_edge: int | None = None, name: str = "")
         im.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS, reducing_gap=3.0)
     im.info.clear()
     return Decoded(im, full[0], full[1], fmt, taken, taken_src, make, model)
+
+
+def _decode_raw(src: str | Path | bytes, max_edge: int | None, name: str) -> Decoded:
+    """A camera raw file through LibRaw: the camera's white balance and orientation, 8-bit sRGB; at half size when a
+    small preview is all that is wanted (four times faster). Its date and camera come from the file's EXIF through
+    exifread, since Pillow cannot open these."""
+    import exifread
+    import rawpy
+    taken, taken_src, make, model = None, "", "", ""
+    try:
+        with (io.BytesIO(src) if isinstance(src, bytes) else open(src, "rb")) as f:
+            tags = exifread.process_file(f, details=False)
+        stamp = str(tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime") or "")
+        if stamp:
+            taken, taken_src = datetime.strptime(stamp[:19], "%Y:%m:%d %H:%M:%S"), "exif"
+        make, model = str(tags.get("Image Make") or "").strip(), str(tags.get("Image Model") or "").strip()
+    except Exception:  # a raw file with odd metadata is still a picture
+        pass
+    if taken is None and name:
+        taken = taken_from_name(Path(name).name)
+        taken_src = "filename" if taken else ""
+    with rawpy.imread(io.BytesIO(src) if isinstance(src, bytes) else str(src)) as raw:
+        half = bool(max_edge) and max(raw.sizes.width, raw.sizes.height) >= 2 * max_edge
+        rgb = raw.postprocess(use_camera_wb=True, half_size=half, output_bps=8)
+    im = Image.fromarray(rgb, "RGB")
+    scale = 2 if half else 1
+    full = (im.width * scale, im.height * scale)
+    if max_edge and max(im.size) > max_edge:
+        im.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS, reducing_gap=3.0)
+    return Decoded(im, full[0], full[1], "RAW", taken, taken_src, make, model)
 
 
 def save_jpeg(im: Image.Image, path: str | Path, quality: int, max_edge: int | None = None) -> None:

@@ -27,7 +27,10 @@ def client(tmp_path, fake_prompts):
     c = app.test_client()
     c.matcher = app.config["MATCHER"]
     c.src = src
-    return c
+    yield c
+    c.matcher.close()
+    for session in c.matcher._sessions.values():
+        session.shutdown()
 
 
 def post(c, path, body=None, **kw):
@@ -36,7 +39,7 @@ def post(c, path, body=None, **kw):
 
 def crown_stacks(c):
     """Play every stack's mini-tournament first, so the cards that follow are plain duels."""
-    cards = c.get("/api/next?n=1&stage=stacks").get_json()["cards"]
+    cards = post(c, "/api/deal?n=1&stage=stacks").get_json()["cards"]
     while cards:
         cards = post(c, "/api/vote", {"card": cards[0]["id"], "outcome": "a", "stage": "stacks"}).get_json()["cards"]
 
@@ -60,7 +63,7 @@ def test_guards(client):
 def test_state_and_first_cards(client):
     st = client.get("/api/state").get_json()
     assert st["library"]["analyzed"] and st["library"]["votes"] == 0
-    r = client.get("/api/next?n=2").get_json()
+    r = post(client, "/api/deal?n=2").get_json()
     assert len(r["cards"]) == 2 and all(c["type"] == "duel" for c in r["cards"])
     a = r["cards"][0]
     assert a["a"] != a["b"]
@@ -69,7 +72,7 @@ def test_state_and_first_cards(client):
 
 def test_duel_flow_with_undo(client):
     crown_stacks(client)
-    cards = client.get("/api/next?n=2").get_json()["cards"]
+    cards = post(client, "/api/deal?n=2").get_json()["cards"]
     first = cards[0]
     r = post(client, "/api/vote", {"card": first["id"], "outcome": "a", "ms": 900, "pending": [cards[1]["id"]]}).get_json()
     assert r["progress"]["votes"] == 1 and len(r["cards"]) == 1
@@ -84,7 +87,7 @@ def test_duel_flow_with_undo(client):
 
 
 def test_toss_takes_effect_and_undo_restores(client):
-    card = client.get("/api/next?n=1").get_json()["cards"][0]
+    card = post(client, "/api/deal?n=1").get_json()["cards"][0]
     tossed = card["b"]
     r = post(client, "/api/vote", {"card": card["id"], "outcome": "toss_b", "ms": 500}).get_json()
     for c in r["cards"]:
@@ -110,7 +113,7 @@ def test_frame_card_sets_the_representative(client):
 
 def test_shortlist_pick_and_export(client):
     for _ in range(12):
-        card = client.get("/api/next?n=1").get_json()["cards"][0]
+        card = post(client, "/api/deal?n=1").get_json()["cards"][0]
         post(client, "/api/vote", {"card": card["id"], "outcome": "a", "ms": 600})
     sl = client.get("/api/shortlist").get_json()
     k = client.matcher.session.settings["finalists"]
@@ -153,7 +156,9 @@ def test_browse_and_open_library_validation(client, tmp_path):
     assert post(client, "/api/library", {"path": str(tmp_path / "nope")}).status_code == 400
     empty = tmp_path / "empty"
     empty.mkdir()
-    assert post(client, "/api/library", {"path": str(empty)}).status_code == 400
+    assert post(client, "/api/library", {"path": str(empty)}).status_code == 200
+    client.matcher.session.analyzer.thread.join(timeout=5)
+    assert "No photos" in client.get("/api/state").get_json()["library"]["progress"]["error"]
 
 
 def test_the_secret_link_is_the_only_way_in(tmp_path, fake_prompts):
@@ -167,7 +172,7 @@ def test_the_secret_link_is_the_only_way_in(tmp_path, fake_prompts):
     cookie = r.headers.get("Set-Cookie", "")
     assert "mk=sekrit" in cookie and "HttpOnly" in cookie and "SameSite=Strict" in cookie
     assert c.get("/api/state").status_code == 200                                 # cookie now set
-    assert c.post("/api/library/close", data="x", headers={"Content-Type": "text/plain"}).status_code == 403  # header still needed
+    assert c.post("/api/cup", data="x", headers={"Content-Type": "text/plain"}).status_code == 403  # header still needed
     assert c.get("/api/state", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
     h = c.get("/api/state").headers
     assert "frame-ancestors 'none'" in h["Content-Security-Policy"] and h["Cross-Origin-Resource-Policy"] == "same-origin"
@@ -191,7 +196,7 @@ def test_undoing_a_burst_toss_restores_every_frame(client):
 
 def test_taste_summary(client):
     for _ in range(6):
-        card = client.get("/api/next?n=1").get_json()["cards"][0]
+        card = post(client, "/api/deal?n=1").get_json()["cards"][0]
         post(client, "/api/vote", {"card": card["id"], "outcome": "a"})
     taste = client.get("/api/shortlist").get_json()["taste"]
     assert taste and {"feature", "effect", "prior"} <= set(taste[0])
@@ -241,7 +246,7 @@ def test_bring_back_all_then_set_all_aside(client):
 
 
 def test_tossed_photos_can_come_back_and_go_again(client):
-    card = client.get("/api/next?n=1").get_json()["cards"][0]
+    card = post(client, "/api/deal?n=1").get_json()["cards"][0]
     post(client, "/api/vote", {"card": card["id"], "outcome": "toss_a"})
     s = client.matcher.session
     pid = card["a"]
@@ -251,7 +256,7 @@ def test_tossed_photos_can_come_back_and_go_again(client):
     active_tosses = "SELECT COUNT(*) AS n FROM votes WHERE kind='toss' AND undone=0"
     assert s.store.one(active_tosses)["n"] == 1
     post(client, "/api/rescue", {"ids": tossed, "on": True, "reason": "tossed"})
-    assert s.store.one("SELECT override FROM photos WHERE id=?", (pid,))["override"] is None
+    assert s.store.one("SELECT override FROM photos WHERE id=?", (pid,))["override"] == "keep"
     assert s.store.one(active_tosses)["n"] == 0                       # the model forgets the toss
     assert wait_refresh(client, lambda s: s.store.one("SELECT cut FROM photos WHERE id=?", (pid,))["cut"] is None)
     post(client, "/api/rescue", {"ids": [pid], "on": False, "reason": "tossed"})
@@ -327,7 +332,7 @@ def test_crown_now_from_the_groups_page(client):
     s = client.matcher.session
     s.ensure_ranker()
     gid, g, stack, other = _stack_and_single(s)
-    cards = client.get(f"/api/next?n=2&stack={g['members'][2]}").get_json()["cards"]
+    cards = post(client, f"/api/deal?n=2&stack={g['members'][2]}").get_json()["cards"]
     assert cards[0]["type"] == "mini" and set(cards[0]["frames"]) <= set(g["members"])
 
 
@@ -344,10 +349,10 @@ def test_drag_a_frame_onto_another_shot(client):
 
 
 def test_game_progress(client):
-    p = client.get("/api/next?n=1").get_json()["progress"]["game"]
+    p = post(client, "/api/deal?n=1").get_json()["progress"]["game"]
     assert p["xp"] == 0 and p["level"] == 1 and p["level_name"] == "Swipe Rookie" and p["unlocked"] == []
     for _ in range(3):
-        card = client.get("/api/next?n=1").get_json()["cards"][0]
+        card = post(client, "/api/deal?n=1").get_json()["cards"][0]
         if card["type"] == "duel":
             p = post(client, "/api/vote", {"card": card["id"], "outcome": "a", "ms": 1200}).get_json()["progress"]["game"]
     assert p["xp"] >= 15 and p["streak"] >= 1 and "first" in p["unlocked"]
@@ -369,7 +374,7 @@ def test_identical_copies_never_ask(client):
 
 
 def test_cards_carry_crop_info(client):
-    card = client.get("/api/next?n=1").get_json()["cards"][0]
+    card = post(client, "/api/deal?n=1").get_json()["cards"][0]
     info = card["photos"][str(card["a"])]
     assert len(info["dims"]) == 2 and info["frames"] >= 1
     x, y, w, h = info["box"]
@@ -399,7 +404,7 @@ def test_undo_chain_walks_back_in_order(client):
     n0 = _vote_count(s)
     shown = []
     for outcome in ("a", "great", "b"):
-        card = client.get("/api/next?n=1").get_json()["cards"][0]
+        card = post(client, "/api/deal?n=1").get_json()["cards"][0]
         assert card["type"] == "duel"
         shown.append((card["a"], card["b"]))
         post(client, "/api/vote", {"card": card["id"], "outcome": outcome})
@@ -414,7 +419,7 @@ def test_undo_chain_walks_back_in_order(client):
 
 def test_undo_toss_brings_the_pair_back(client):
     s = client.matcher.session
-    card = client.get("/api/next?n=1").get_json()["cards"][0]
+    card = post(client, "/api/deal?n=1").get_json()["cards"][0]
     post(client, "/api/vote", {"card": card["id"], "outcome": "toss_b"})
     u = post(client, "/api/undo").get_json()
     assert u["undone"] == "toss"
@@ -431,6 +436,23 @@ def test_groups_views(client):
     assert len(every["shots"]) == every["counts"]["shots"]
     ts = [x["ts"] for x in every["shots"] if x["ts"] is not None]
     assert ts == sorted(ts)                                                 # by date: in the order they were taken
+
+
+def test_stacks_can_be_ordered_by_look(client):
+    """The Stacks page defaults to look order, so similar stacks sit together in a dashed family box."""
+    s = client.matcher.session
+    s.ensure_ranker()
+    reps = [g["rep"] for g in s.groups.values() if len(g["members"]) > 1]
+    assert len(reps) >= 2
+    emb = s.store.one("SELECT emb FROM photos WHERE id=?", (reps[0],))["emb"]
+    with s.store.tx() as c:
+        c.execute("UPDATE photos SET emb=? WHERE id=?", (emb, reps[1]))
+    look = client.get("/api/groups?view=stacks&order=look").get_json()["shots"]
+    by_date = client.get("/api/groups?view=stacks&order=time").get_json()["shots"]
+    assert sorted(x["rep"] for x in look) == sorted(x["rep"] for x in by_date)
+    assert all("family" in x for x in look)
+    assert not any("family" in x for x in by_date)
+    assert look[0]["family"] == look[1]["family"]
 
 
 def test_merge_split_reset_round_trip(client):

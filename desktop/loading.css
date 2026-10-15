@@ -1,0 +1,9 @@
+html { color-scheme: dark; background: #18142a; color: #fff9ed; font-family: system-ui, sans-serif; }
+body { min-height: 95vh; margin: 0; display: grid; place-items: center; background: radial-gradient(ellipse at 20% 20%, #a9367960, transparent 55%), radial-gradient(ellipse at 85% 80%, #415ff760, transparent 55%); }
+main { text-align: center; }
+h1 { font-size: 44px; letter-spacing: -.04em; margin: 16px 0 0; }
+p { font-size: 22px; margin: 4px 0 48px; color: #ffce9f; }
+.pulse { color: #eee6f8; animation: breathe 2s ease-in-out infinite alternate; }
+small { display: block; margin-top: 48px; opacity: .6; }
+@keyframes breathe { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }

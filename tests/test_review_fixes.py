@@ -33,11 +33,14 @@ def client(tmp_path, fake_prompts):
     app.config["MATCHER"].open(src, start=False)
     c = app.test_client()
     c.matcher, c.src, c.data = app.config["MATCHER"], src, data
-    return c
+    yield c
+    c.matcher.close()
+    for session in c.matcher._sessions.values():
+        session.shutdown()
 
 
 def duels(c, n, outcome="a"):
-    cards = c.get("/api/next?n=1").get_json()["cards"]
+    cards = post(c, "/api/deal?n=1").get_json()["cards"]
     for _ in range(n):
         card = cards[0]
         r = post(c, "/api/vote", {"card": card["id"], "outcome": outcome if card["type"] == "duel" else "a", "ms": 900}).get_json()
@@ -91,7 +94,7 @@ def test_sweep_tosses_and_mini_tournament_calls_teach_the_model(client):
     s = client.matcher.session
     kept = next(c for c in client.get("/api/sweep").get_json()["cards"] if c["kind"] == "kept")
     post(client, "/api/sweep", {"photo": kept["photo"], "keep": False})
-    cards = client.get("/api/next?n=1&stage=stacks").get_json()["cards"]
+    cards = post(client, "/api/deal?n=1&stage=stacks").get_json()["cards"]
     while cards:
         cards = post(client, "/api/vote", {"card": cards[0]["id"], "outcome": "a", "stage": "stacks"}).get_json()["cards"]
     obs, _, _ = s._observations()
@@ -126,7 +129,7 @@ def test_a_vote_never_waits_behind_a_background_refresh(client):
     threading.Thread(target=hold, daemon=True).start()
     held.wait(2)
     t0 = time.time()
-    r = client.get("/api/next?n=1")
+    r = post(client, "/api/deal?n=1")
     release.set()
     assert r.status_code == 200 and time.time() - t0 < 1.0
 
@@ -268,9 +271,9 @@ def test_group_edits_undo_in_one_step(client):
     assert client.get("/api/groups?view=all").get_json()["undo"] == "merge"
     burst = next(g for g in s.groups.values() if len(g["members"]) == 5)
     post(client, "/api/groups/unstack", {"photo": burst["rep"]})
-    assert post(client, "/api/groups/undo").get_json()["undone"] == "unstack"
-    r = post(client, "/api/groups/undo").get_json()
+    assert post(client, "/api/draw/undo").get_json()["undone"] == "unstack"
+    r = post(client, "/api/draw/undo").get_json()
     assert r["undone"] == "merge" and r["next"] is None
     after = {r["id"]: (r["group_id"], r["stack_key"]) for r in s.store.q("SELECT id, group_id, stack_key FROM photos")}
     assert after == before
-    assert post(client, "/api/groups/undo").status_code == 400
+    assert post(client, "/api/draw/undo").status_code == 400

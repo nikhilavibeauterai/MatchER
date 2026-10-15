@@ -1,5 +1,6 @@
 // The analysis (photos bubbling to their kinds, Looking closer, the tags step) and the tag sea on the Groups page.
 const { chromium } = require("playwright-core");
+const assert = require("node:assert/strict");
 const { BASE, LINK, LIB, OUT } = process.env;
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -20,7 +21,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
       const b = document.querySelector("#an-body");
       if (!b) return null;
       const items = [...document.querySelectorAll("#an-sea .ps-item")];
-      return { scene: b.dataset.scene, items: items.length, closer: !!document.querySelector(".an-seen"), seen: document.querySelectorAll(".an-seen-row").length,
+      return { scene: b.dataset.scene, items: items.length, closer: b.dataset.scene === "details" && !!document.querySelector(".an-grab-findings"), seen: document.querySelectorAll(".an-grab-findings .tag-chip").length,
         cloud: document.querySelectorAll(".an-tagcloud .tag-chip").length, go: !!document.querySelector("#an-go") };
     }).catch(() => null);
     if (!st) break;
@@ -65,7 +66,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   Object.assign(res, { before });
   const cs = before.circles.filter((c) => c.n);
   res.overlaps = cs.some((a, i) => cs.some((b, j) => j > i && Math.hypot(a.cx - b.cx, a.cy - b.cy) < a.r + b.r));
-  // drag a photo into the middle of a tag it doesn't have (an empty spot near its photos' centre)
+  // A physical release near a different flock must leave the photo's tags and groups alone.
   const target = await page.evaluate((circles) => {
     for (const c of circles.filter((c) => c.n >= 2)) {
       for (const el of document.querySelectorAll(".ps-item")) {
@@ -82,6 +83,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   }, before.circles);
   res.dragTarget = target && target.label;
   if (target) {
+    const title=await page.$eval(`.ps-item[data-id="${target.id}"]`,e=>e.title),postCount=posts.length;
     await page.mouse.move(...target.from);
     await page.mouse.down();
     for (let k = 1; k <= 14; k++) await page.mouse.move(target.from[0] + ((target.to[0] - target.from[0]) * k) / 14, target.from[1] + ((target.to[1] - target.from[1]) * k) / 14);
@@ -90,7 +92,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
     await page.mouse.up();
     await page.waitForTimeout(1800);
     res.afterTitle = await page.$eval(`.ps-item[data-id="${target.id}"]`, (e) => e.title).catch(() => null);
-    res.tagged = !!res.afterTitle && res.afterTitle.includes(target.label);
+    assert.equal(res.afterTitle,title);assert.deepEqual(posts.slice(postCount),[]);res.physicalRelease=true;
   }
   // make the first suggested group
   if ((await info()).sugg.length) {

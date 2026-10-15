@@ -1,0 +1,156 @@
+/* The world supplies the backdrop; only the controls need their own glass. */
+body:not(.no-bar) { --journey-height:0px; --hud-height:108px; grid-template-rows:var(--hud-height) minmax(0,1fr); }
+body:not(.no-bar) #world { top:0; bottom:0; }
+body:not(.no-bar) #topbar { position:fixed; inset:0 0 auto; }
+body:not(.no-bar) #main { grid-row:2; }
+body:not(.no-bar) #main :is(.screen-head h1:not(:has(button,input)),.help-btn) { display:none; }
+body:not(.no-bar) #main .screen-head:has(>h1):not(:has(.stat-chip,.btn,.seg,form,input,a)) { display:none; }
+body:not(.no-bar) .filter-stage { grid-template-rows:0 minmax(0,1fr) auto; }
+body:not(.no-bar) .filter-stage > .screen-head { display:none; }
+body:not(.no-bar) :is(.screen-bar,.controls) { padding-right:64px; }
+body.help-off kbd,body.help-off #main :is(.selection-help,[data-help-hint]),body.help-off #game-help-hint { display:none; }
+body.sea-on .screen.map.journey { display:block; padding:0; background:none; }
+.screen.map.journey :is(.map-body,.map-sea) { height:100%; pointer-events:none; }
+#world.home-world .vn-tag { display:none; }
+#game-help { position:fixed; z-index:25; right:max(12px,env(safe-area-inset-right,0px)); bottom:max(12px,env(safe-area-inset-bottom,0px)); width:44px; height:44px; border:1px solid #ffffff30; border-radius:50%; color:#e5e8e9; background:#10182099; font-weight:800; font-size:20px; }
+#game-help[aria-pressed=true] { border-color:#ffe09999; color:#ffe099; }
+#game-help:focus-visible { outline:2px solid #ffe099; outline-offset:3px; }
+/* The hint has a reserved slot under the stage title: it never shares the bottom edge with controls or tags. */
+#game-help-hint { position:fixed; z-index:12; top:84px; left:50%; transform:translateX(-50%); width:max-content; max-width:min(680px,calc(100vw - 540px)); padding:3px 10px; border-radius:10px; color:#e0e6e8; background:#10182088; font-size:12px; line-height:1.35; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }
+#game-help-hint:empty { display:none; }
+.trophy-stats { flex-wrap:wrap; }
+#topbar {
+  gap:8px; padding:0 max(12px,env(safe-area-inset-right,0px)) 0 max(12px,env(safe-area-inset-left,0px));
+  background:transparent; border:0; backdrop-filter:none; box-shadow:none; pointer-events:none;
+}
+#topbar > * { pointer-events:auto; }
+#topbar .brand,#topbar .hud-btn { display:none; }
+#topbar .save-chip {
+  position:fixed; top:8px; right:max(12px,env(safe-area-inset-right,0px));
+  flex:0 1 240px; min-width:0; max-width:240px; min-height:40px; padding:5px 12px 5px 5px; gap:8px;
+  background:#11151ca6; border-color:#ffffff20; box-shadow:0 3px 12px #0003; backdrop-filter:blur(10px);
+}
+#topbar .chip-text { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 10px; flex:1; min-width:0; }
+#topbar .chip-name { display:block; font-size:12px; align-self:center; }
+#topbar .chip-lvl { font-size:10px; align-self:center; }
+#topbar .chip-title { display:none; }
+#topbar .save-chip .xpbar { grid-column:1/-1; margin:0; height:2px; }
+#topbar .menu-btn {
+  position:fixed; top:6px; left:max(8px,env(safe-area-inset-left,0px));
+  flex:none; margin-left:auto; width:44px; height:44px; padding:10px; border:1px solid #ffffff20;
+  border-radius:50%; color:var(--text); background:#11151ca6; backdrop-filter:blur(10px); box-shadow:0 3px 12px #0003;
+}
+#menu { margin:56px auto auto 12px; }
+#topbar .reward-note { position:fixed; top:9px; right:264px; flex:0 1 auto; min-width:44px; max-width:min(360px,45vw); box-shadow:0 3px 12px #0003; }
+#topbar :is(.save-chip,.menu-btn):hover { border-color:#ffd86b80; }
+#topbar :is(.save-chip,.menu-btn):focus-visible { outline:2px solid #ffd86b; outline-offset:2px; }
+
+#journey-dock {
+  position:fixed; z-index:11; top:6px; left:50%; width:min(520px,calc(100vw - 520px)); height:auto; transform:translateX(-50%);
+  padding:0; background:transparent; border:0; backdrop-filter:none; box-shadow:none; pointer-events:none;
+}
+#journey-dock .track { display:grid; grid-template-columns:44px minmax(0,1fr) 44px; grid-template-rows:44px 28px; gap:3px 6px; width:100%; max-width:none; height:auto; }
+#journey-dock .track-stages { grid-column:2; grid-row:1; height:44px; grid-template-columns:repeat(10,minmax(0,1fr)); gap:3px; }
+#journey-title { grid-column:1/-1; grid-row:2; margin:0; padding:3px 10px; justify-self:center; align-self:center; width:max-content; max-width:100%; border-radius:12px; background:#10182077; background-clip:padding-box; color:var(--text); -webkit-text-fill-color:var(--text); text-align:center; font-size:17px; line-height:1.2; font-weight:700; text-shadow:0 1px 2px #000,0 0 8px #000; pointer-events:none; }
+#journey-dock .journey-step { display:grid; place-items:center; width:44px; height:44px; align-self:center; color:#f3efdf; font-size:32px; text-decoration:none; line-height:1; border-radius:50%; pointer-events:auto; }
+#journey-dock .journey-step.empty { visibility:hidden; pointer-events:none; }
+/* The same slot, ready: the coral way forward grows out of the arrow's place and names where you land. */
+#journey-dock .journey-step.ready { width:max-content; max-width:min(360px,calc(100vw - 96px)); justify-self:start; padding:0 16px 0 15px; border-radius:22px;
+  font-size:15px; font-weight:700; line-height:1.2; white-space:nowrap; color:#1a0d0b; border:1px solid #ffbaa170;
+  background:linear-gradient(135deg,#ff7a5c,#ff5b6e); box-shadow:0 3px 0 #8c34294d, 0 6px 18px rgba(255,91,110,.3); }
+#journey-dock .journey-step.ready:hover { background:linear-gradient(135deg,#ff8a6c,#ff6b7c); }
+#journey-dock .journey-step.ready .journey-go { overflow:hidden; text-overflow:ellipsis; }
+#journey-dock .journey-step[aria-disabled=true] { opacity:.3; cursor:default; }
+#journey-prev { grid-column:1; grid-row:1; }#journey-next { grid-column:3; grid-row:1; }
+#journey-dock .tnode { height:44px; min-height:44px; padding:0; gap:0; border:0; border-radius:50%; background:transparent; color:var(--text); pointer-events:auto; }
+#journey-dock .tico { width:34px; height:34px; font-size:19px; border:1px solid #ffffff24; border-radius:50%; background:#11151c88; box-shadow:0 3px 12px #0002; }
+#journey-dock .tnode.here .tico { border-color:#ffd86b; background:#322c1d99; box-shadow:0 0 15px #ffd86b24; }
+#journey-dock .tnode:hover .tico { border-color:#ffffff80; }
+#journey-dock :is(.tnode,.journey-step):focus-visible { outline:2px solid #ffd86b; outline-offset:1px; }
+#journey-dock .twords { position:absolute; top:calc(100% + 4px); left:50%; width:max-content; max-width:140px; height:auto; transform:translateX(-50%); padding:4px 8px; border:1px solid #ffffff20; border-radius:9px; background:#11151caa; clip-path:none; overflow:visible; pointer-events:none; visibility:hidden; opacity:0; transition:opacity .12s ease; }
+#journey-dock .tnode:is(:hover,:focus-visible) .twords { visibility:visible; opacity:1; }
+#journey-dock .tnode.here .twords { visibility:hidden; }
+#journey-dock .track-stages > li:first-child .twords { left:0; transform:none; }
+#journey-dock .track-stages > li:last-child .twords { left:auto; right:0; transform:none; }
+#journey-dock .tlabel { font-size:12px; }
+
+/* Keep editor panels intact. These rows only arrange the controls around them. */
+body.sea-on .screen:not(.filter-stage):not(.saves):not(.onboard) > :is(.screen-head,.screen-bar),
+body.sea-on :is(.duel-head,.controls) { background:transparent; box-shadow:none; }
+body.sea-on .screen:not(.filter-stage) :is(.screen-head,.screen-bar) .btn.ghost,
+body.sea-on .screen:not(.filter-stage) .screen-head .help-btn,
+body.sea-on .controls .btn.ghost { background:#11151ca6; border-color:#ffffff24; box-shadow:0 3px 12px #0003; }
+body.sea-on :is(.screen-head,.screen-bar,.duel-head) { text-shadow:0 1px 5px #0009; }
+body.sea-on [data-open-water] { pointer-events:none; }
+body.sea-on [data-open-water] :is([data-solid],button,a,input,select) { pointer-events:auto; }
+/* The sea can pass beneath editors without stealing clicks from their photos. */
+body.sea-on #main :is(#sections,.stacker .screen-body,.tags-page .screen-body) { position:relative; z-index:5; }
+
+/* Crown shares the HUD with Filter; the roster is a small token, not another screen-wide header. */
+body[data-world="focus"] #view-duel.crown-play { padding:4px clamp(16px,5vw,100px) 12px; gap:8px; }
+#view-duel.crown-play > .duel-head, #view-duel.crown-play:not(:has(.arena.finished)) > #finish-bar { display:none; }
+/* Crown's clear card keeps the shared way forward (the play controls stayed in the HUD and Esc). */
+#view-duel.crown-play:has(.arena.finished) > #finish-bar { display:grid; position:relative; z-index:5; flex:none; margin:0; padding:0; background:none; border:0; box-shadow:none; }
+#view-duel.crown-play .mini-stage { gap:6px; }
+#view-duel.crown-play .mini-bar { position:relative; z-index:5; align-self:center; flex:none; width:max-content; max-width:min(460px,100%); min-height:44px; margin:0; padding:5px 12px; gap:10px; flex-wrap:nowrap; border:1px solid #ffffff20; border-radius:24px; background:#10182099; box-shadow:0 3px 12px #0003; }
+#view-duel.crown-play .mini-round { font-size:12px; font-variant-numeric:tabular-nums; }
+#view-duel.crown-play .mini-strip { flex:none; min-width:0; gap:4px; overflow:hidden; align-items:center; }
+#view-duel.crown-play .mf { width:26px; height:34px; border-radius:5px; }
+#view-duel.crown-play .mf i { font-size:11px; }
+#view-duel.crown-play .mini-more { font-size:11px; color:var(--muted); }
+#view-duel.crown-play .mini-stage > .arena { padding:0; gap:clamp(12px,2vw,32px); }
+#view-duel.crown-play .side { background:transparent; }
+#view-duel.crown-play .side:not(.won):not(.lost) { border-color:transparent; box-shadow:none; }
+#view-duel.crown-play .side::after { display:none; }
+#view-duel.crown-play .role { left:50%; transform:translateX(-50%); bottom:8px; padding:4px 8px; white-space:nowrap; background:#101820bb; }
+body.sea-on #view-duel.crown-play #controls { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:48px; align-self:center; flex:none; width:min(350px,100%); min-height:48px; margin:0; padding:0; gap:5px; background:none; border:0; box-shadow:none; }
+#view-duel.crown-play #controls :is(.bar-mid,.dpad) { display:contents; }
+#view-duel.crown-play #controls :is(.tools,.dpad > :not([data-o=skip])) { display:none; }
+#view-duel.crown-play #controls .bar-left { grid-area:1 / 1; }
+#view-duel.crown-play #controls [data-o=skip] { grid-area:1 / 2; }
+#view-duel.crown-play #controls .bar-right { grid-area:1 / 3; }
+#view-duel.crown-play #controls :is(.bar-left,.bar-right) { display:flex; min-width:0; width:auto; justify-self:stretch; }
+body.sea-on #view-duel.crown-play #controls .btn { flex:1; width:100%; min-width:44px; min-height:48px; padding:6px; font-size:13px; border:1px solid #ffffff24; border-radius:12px; background:#101820bb; }
+body.sea-on #view-duel.crown-play #controls [data-o=a] { border-radius:24px 8px 8px 24px; }
+body.sea-on #view-duel.crown-play #controls [data-o=b] { border-radius:8px 24px 24px 8px; }
+
+/* Mid-width desktops: a narrower save chip and a smaller pill keep the way forward and the save apart. */
+@media(max-width:1367px) {
+  #topbar .save-chip { flex-basis:160px; max-width:160px; }
+  #topbar .reward-note { right:184px; }
+  #journey-dock .journey-step.ready { font-size:14px; padding:0 13px 0 12px; max-width:min(260px,calc(50vw - 420px)); }
+}
+/* Narrower still, the ready arrow fills coral and keeps its glyph; its words stay in the title attribute. */
+@media(max-width:1189px) {
+  #journey-dock .journey-step.ready { width:44px; max-width:44px; padding:0; justify-self:center; border-radius:50%; font-size:32px; color:#1a0d0b; }
+  #journey-dock .journey-step.ready .journey-go { display:none; }
+  #journey-dock .journey-step.ready::after { content:'›'; }
+}
+@media(max-width:1040px) {
+  body:not(.no-bar) { --hud-height:132px; }
+  #game-help-hint { display:none; }
+  #topbar { padding-right:8px; padding-left:8px; gap:6px; }
+  #topbar .save-chip { flex-basis:210px; max-width:calc(100vw - 68px); }
+  #topbar .chip-text { column-gap:7px; }
+  #journey-dock { top:52px; width:min(480px,calc(100vw - 16px)); }
+}
+@media(max-width:560px) {
+  body:not(.no-bar) { --hud-height:148px; }
+  #topbar .reward-note { top:10px; right:230px; max-width:calc(100vw - 292px); }
+  #journey-dock .track { grid-template-rows:44px 44px; gap:0 4px; }
+  #journey-dock .track-stages { grid-column:1/-1; grid-row:1; gap:2px; }
+  #journey-dock .journey-step { height:44px; font-size:27px; }
+  /* Beside the title there is no room for words: the ready arrow fills coral and keeps its glyph. */
+  #journey-dock .journey-step.ready { width:44px; max-width:44px; padding:0; justify-self:center; border-radius:50%; font-size:27px; color:#1a0d0b; }
+  #journey-dock .journey-step.ready .journey-go { display:none; }
+  #journey-dock .journey-step.ready::after { content:'›'; }
+  #journey-prev { grid-column:1; grid-row:2; }#journey-next { grid-column:3; grid-row:2; }
+  #journey-title { grid-column:2; grid-row:2; font-size:16px; }
+  #game-help-hint { max-width:180px; font-size:10px; }
+  body[data-world="focus"] #view-duel.crown-play { padding:4px 12px 64px; gap:4px; }
+  #view-duel.crown-play .mini-stage > .arena { gap:6px; }
+  #view-duel.crown-play .mini-bar { min-height:36px; padding:3px 9px; }
+  #view-duel.crown-play .mf { width:22px; height:28px; }
+}
+@media(max-width:360px) { #journey-dock .tico { width:32px; height:32px; font-size:18px; } }
+@media(prefers-reduced-motion:reduce) { #journey-dock .twords { transition:none; } }

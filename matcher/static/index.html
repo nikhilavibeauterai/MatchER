@@ -7,23 +7,43 @@
 <title>MatchER</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='6' width='12' height='20' rx='3' fill='%23ff6b5b'/%3E%3Crect x='17' y='6' width='12' height='20' rx='3' fill='%23f6efe6'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/game-flow.css">
+<link rel="stylesheet" href="/static/filter-stage.css">
+<link rel="stylesheet" href="/static/experience.css">
+<link rel="stylesheet" href="/static/game-hud.css">
+<link rel="stylesheet" href="/static/history-hud.css">
+<link rel="stylesheet" href="/static/dev-panel.css">
+<link rel="stylesheet" href="/static/paper.css">
 </head>
-<body>
+<body class="no-bar">
 <header id="topbar" hidden>
   <a class="brand" href="#home" title="The map"><span class="mark" aria-hidden="true"><i></i><i></i></span><span class="brand-word">MatchER</span></a>
   <a class="save-chip" id="save-chip" href="#saves" hidden></a>
-  <nav class="track" id="track" aria-label="Your journey"></nav>
+  <button id="hud-reward" class="reward-note" hidden aria-live="polite"></button>
   <a class="hud-btn" href="#tournament" title="The tournament board: groups, the race for the finals, the bracket" aria-label="Tournament board">🏟️</a>
-  <button id="open-menu" class="icon menu-btn" title="Menu" aria-label="Menu" aria-haspopup="dialog">
+  <button id="open-menu" class="icon menu-btn" title="Menu (Esc)" aria-label="Menu" aria-haspopup="dialog">
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
   </button>
 </header>
 <div id="world" aria-hidden="true"></div>
 <main id="main"></main>
+<div id="journey-dock" hidden>
+  <nav class="track" id="track" aria-label="Your journey"></nav>
+</div>
+<span id="game-help-hint" role="note" hidden></span>
+<button id="game-help" class="icon" aria-label="Helpful overlays on" aria-pressed="true" aria-describedby="game-help-hint" hidden>?</button>
 <div id="toast" role="status" aria-live="polite"></div>
 <dialog id="settings"></dialog>
 <dialog id="modal"></dialog>
 <dialog id="menu" aria-label="Menu"></dialog>
+<script src="/static/sea-tuning.js"></script>
+<script src="/static/sea-gl.js"></script>
+<script src="/static/photo-sea.js"></script>
+<script src="/static/filter-stage.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/toolbelt.js"></script>
+<script src="/static/history-hud.js"></script>
+<script src="/static/dev-panel.js"></script>
+<script src="/static/cards.js"></script>
 </body>
 </html>

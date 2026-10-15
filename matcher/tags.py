@@ -16,9 +16,10 @@ import numpy as np
 from . import themes
 
 FAMILIES = ("what", "people", "look", "when")
-Z_TAG = 2.0          # a concept tags a photo this many standard deviations above the library's usual
-CONCEPTS_PER_PHOTO = 3
+RECOGNITION_VERSION = 1
 VISIBLE_MAX = 6      # circles on the sea at once (more is a tangle); the rest wait in the tag tray
+CLUSTER_SAMPLE = 512
+CLUSTER_VOCAB = 256  # use the sparse path above this; every tag still contributes
 DAY_MIN = 6          # a day with this many photos (or 3% of them) is an outing worth a tag
 
 # a kind leading a suggested group gets one of these names
@@ -33,7 +34,8 @@ ALIAS = {"sunglasses": "sunglasses", "mirror": "mirror_selfie", "car_selfie": "c
          "smile": "smiling", "bw": "bw", "text": "text", "dogs": "dogs", "night_out": "night_out"}
 # (key) -> (emoji, label, family) for tags that don't come straight from a concept
 FIXED = {
-    "me": ("🙂", "You", "people"), "group_shot": ("👯", "Group shot", "people"), "smiling": ("😄", "Smiling", "people"),
+    "me": ("🙂", "You", "people"), "faces": ("🙂", "Faces", "people"),
+    "group_shot": ("👯", "Group shot", "people"), "smiling": ("😄", "Smiling", "people"),
     "bw": ("🎞️", "Black & white", "look"), "dark": ("🌑", "Dark", "look"), "blurry": ("🌫️", "Blurry", "look"),
     "eyes_closed": ("😑", "Eyes closed", "look"), "sunglasses": ("😎", "Sunglasses", "look"),
     "mirror_selfie": ("🪞", "Mirror selfie", "look"), "filter": ("✨", "Face filter", "look"),
@@ -42,13 +44,27 @@ FIXED = {
     "bed": ("🛏️", "Bed & bathroom", "what"), "dogs": ("🐶", "Dogs", "what"), "text": ("📝", "Text", "what"),
     "night": ("🌙", "Night", "when"),
 }
+# Fixed tags lead groups too; these keep them in the concepts' playful voice rather than "The Faces bunch".
+FIXED_NAMES = {
+    "me": ["Me, Myself & I", "Main Character"], "faces": ["Face Value", "Familiar Faces"],
+    "group_shot": ["Squad Goals", "The Whole Crew"], "smiling": ["Grin Squad", "All Smiles"],
+    "bw": ["Monochrome Mood", "Shades of Grey"], "dark": ["After Dark", "Low Light Club"], "blurry": ["Soft Focus", "Motion Blur"],
+    "eyes_closed": ["Blink Brigade", "Caught Napping"], "sunglasses": ["Shades On", "Cool Customers"],
+    "mirror_selfie": ["Mirror Mirror", "Reflections"], "filter": ["Filter Fun", "Face Paint"],
+    "smoking": ["Smoke Break", "Up in Smoke"], "stunning": ["Showstoppers", "Pure Gold"],
+    "outdoors": ["Great Outdoors", "Fresh Air Club"], "night_out": ["Night Owls", "After Hours"], "car_selfie": ["Road Trip", "Backseat Drivers"],
+    "bed": ["Lazy Days", "Duvet Day"], "dogs": ["Paw Pals", "Good Dogs"], "text": ["Fine Print", "Words & Pictures"],
+    "night": ["Night Owls", "Moonlighting"],
+}
 PEOPLE_CONCEPTS = {"friends", "family", "selfie", "portrait", "formal", "serious", "party"}
 LOOK_CONCEPTS = {"style", "hat", "glasses", "macro"}
 # measured attribute (library.ATTRS) -> (tag, threshold)
 ATTR_TAGS = {"sunglasses": ("sunglasses", 0.65), "mirror_selfie": ("mirror_selfie", 0.7), "filter": ("filter", 0.8),
              "smoking": ("smoking", 0.75), "blurry": ("blurry", 0.7), "outdoors": ("outdoors", 0.7),
              "nightlife": ("night_out", 0.75), "car": ("car_selfie", 0.7), "bathroom_bed": ("bed", 0.75),
-             "dog": ("dogs", 0.75), "document": ("text", 0.5), "group": ("group_shot", 0.75)}
+             "dog": ("dogs", 0.75), "document": ("text", 0.5), "group": ("group_shot", 0.75),
+             "aesthetic": ("stunning", 0.9)}
+_ATTR_CACHE = (None, None, None)
 
 
 def _pretty(key: str) -> str:
@@ -68,15 +84,68 @@ def concept_meta() -> dict[str, tuple[str, str, str]]:
 
 # ----------------------------------------------------------------------------- recognizing
 
-def auto_tags(lib, ident: dict, zs: dict, cats: list, flags: list, keep: np.ndarray, mode: str):
+def discovery(raw) -> tuple[dict, bool]:
+    found = json.loads(raw or "{}")
+    if not isinstance(found, dict):
+        return {}, False
+    versioned = isinstance(found.get("tags"), dict)
+    return (found["tags"] if versioned else found), versioned and found.get("version") == RECOGNITION_VERSION
+
+
+def discovery_json(found: dict) -> str:
+    return json.dumps({"version": RECOGNITION_VERSION, "tags": found})
+
+
+def recognize(full: np.ndarray, crop: np.ndarray | None = None) -> list[dict[str, float]]:
+    """The same evidence gate for live discoveries and saved automatic tags, independent of other photos."""
+    from . import library
+    from .models import SIGLIP_LOGIT_SCALE
+    global _ATTR_CACHE
+    if not len(full):
+        return []
+    full = full / np.maximum(np.linalg.norm(full, axis=1, keepdims=True), 1e-9)
+    if crop is not None:
+        crop = crop / np.maximum(np.linalg.norm(crop, axis=1, keepdims=True), 1e-9)
+    C = themes.concept_scores(full)
+    accepted = themes.evidence_mask(C)
+    keys = [ALIAS.get(k, k) for k, _, _, _ in themes.CONCEPTS]
+    per = [{keys[j]: float(C[i, j]) for j in np.flatnonzero(accepted[i])} for i in range(len(full))]
+    if _ATTR_CACHE[0] is not library._prompt_embeddings:
+        prompts = sorted({p for name in ATTR_TAGS for p in library.ATTRS[name][1] + library.ATTRS[name][2]})
+        _ATTR_CACHE = (library._prompt_embeddings, library._prompt_embeddings(prompts), {p: i for i, p in enumerate(prompts)})
+    P, col = _ATTR_CACHE[1:]
+    full_scores, crop_scores = full @ P.T, crop @ P.T if crop is not None else None
+    for name, (tag, threshold) in ATTR_TAGS.items():
+        src, pos, neg = library.ATTRS[name]
+        scores = full_scores if src == "full" else crop_scores
+        if scores is None:
+            continue
+        positive, negative = scores[:, [col[p] for p in pos]], scores[:, [col[p] for p in neg]]
+        peak = positive.max(1)
+        # Equal prior mass per side: adding paraphrases must not manufacture confidence.
+        logits = SIGLIP_LOGIT_SCALE * np.hstack([positive, negative])
+        prob = np.exp(logits - logits.max(1, keepdims=True))
+        yes, no = prob[:, :len(pos)].mean(1), prob[:, len(pos):].mean(1)
+        probability = yes / (yes + no)
+        gate = (themes.evidence_mask(peak[:, None], C)[:, 0] & (peak >= .065) & (probability >= max(.85, threshold))
+                & (peak >= negative.max(1) + .015))
+        for i in np.flatnonzero(gate):
+            # A narrow binary comparison cannot bypass contradictory subject evidence.
+            if tag in keys and tag not in per[i]:
+                continue
+            per[i][tag] = max(per[i].get(tag, 0.0), float(probability[i]))
+    return per
+
+
+def auto_tags(lib, ident: dict, zs: dict, cats: list, flags: list, keep: np.ndarray, mode: str, recognized=None):
     """Every photo's automatic tags. Returns (meta: key -> (emoji, label, family), per photo: [(key, score)])."""
     n = len(lib.photos)
-    per: list[dict[str, float]] = [dict() for _ in range(n)]
+    per: list[dict[str, float]] = recognize(lib.emb, lib.crop) if recognized is None else [dict(row) for row in recognized]
     meta: dict[str, tuple[str, str, str]] = dict(FIXED)
     meta["me"] = ("🙂", "You", "people") if mode != "gallery" else ("⭐", "Main character", "people")
     if not n:
         return meta, []
-    # what's in it: its kind, and the concepts it stands out for in this library
+    # Confirmed kinds and concepts, never a quota from this library's score distribution.
     for i, c in enumerate(cats):
         if c:
             per[i][f"kind:{c}"] = 1.0
@@ -84,30 +153,15 @@ def auto_tags(lib, ident: dict, zs: dict, cats: list, flags: list, keep: np.ndar
         meta[f"kind:{c}"] = (emoji, label, "what")
     cmeta = concept_meta()
     meta.update(cmeta)
-    E = lib.emb / np.maximum(np.linalg.norm(lib.emb, axis=1, keepdims=True), 1e-9)
-    ok = lib.has_emb
-    if ok.any():
-        C = themes.concept_scores(E)
-        ref = C[ok & keep] if (ok & keep).sum() >= 8 else C[ok]
-        Z = (C - ref.mean(0)) / np.maximum(ref.std(0), 1e-6)
-        keys = [ALIAS.get(k, k) for k, _, _, _ in themes.CONCEPTS]
-        for i in np.flatnonzero(ok):
-            top = np.argsort(-Z[i])[:CONCEPTS_PER_PHOTO]
-            for j in top:
-                if Z[i, j] >= Z_TAG:
-                    per[i][keys[j]] = max(per[i].get(keys[j], 0.0), float(Z[i, j]))
-    # measured attributes
-    for attr, (tag, t) in ATTR_TAGS.items():
-        v = zs.get(attr)
-        if v is None:
+    # Current discoveries share this gate. Old unversioned claims must earn their tags again.
+    for i, p in enumerate(lib.photos):
+        found, current = discovery(p.get("recognized_tags"))
+        if not current:
             continue
-        for i in np.flatnonzero(np.nan_to_num(v, nan=0.0) >= t):
-            per[i][tag] = max(per[i].get(tag, 0.0), float(v[i]))
-    a = zs.get("aesthetic")
-    if a is not None and ok.sum() >= 10:
-        cut = max(0.6, float(np.nanpercentile(np.where(ok, a, np.nan), 90)))
-        for i in np.flatnonzero(np.nan_to_num(a, nan=0.0) >= cut):
-            per[i]["stunning"] = float(a[i])
+        for key, score in found.items():
+            key = ALIAS.get(key, key)
+            if key in meta:
+                per[i][key] = float(score)
     # who's in it
     keys_of = ident.get("keys") or []
     people = {p["key"]: p for p in ident.get("people", [])}
@@ -127,17 +181,21 @@ def auto_tags(lib, ident: dict, zs: dict, cats: list, flags: list, keep: np.ndar
         if me_face.get(pid) is not None:
             per[i]["me"] = 1.0
         fs = [lib.faces[j] for j in faces_of.get(pid, [])]
+        if fs or (p.get("n_faces") or 0):
+            per[i]["faces"] = 1.0
         if (p.get("n_faces") or 0) >= 3:
             per[i]["group_shot"] = 1.0
         mine = [f for f in fs if f["id"] == me_face.get(pid)] if mode != "gallery" else fs
         smiles = [f.get("smile") or 0.0 for f in mine if f.get("smile") is not None]
         if smiles and max(smiles) > 0.5:
             per[i]["smiling"] = float(max(smiles))
+        if any(min(f.get("blink_l") or 0, f.get("blink_r") or 0) >= 0.55 for f in fs):
+            per[i]["eyes_closed"] = 1.0
         # how it looks
         fl = flags[i] if i < len(flags) else []
         if "eyes_closed" in fl:
             per[i]["eyes_closed"] = 1.0
-        if "blurry" in fl:
+        if "blurry" in fl and (p.get("sharp") is not None and p["sharp"] < 25):
             per[i]["blurry"] = 1.0
         if p.get("chroma") is not None and p["chroma"] < 3.5:
             per[i]["bw"] = 1.0
@@ -176,10 +234,20 @@ def write_auto(store, lib, meta: dict, per: list) -> dict:
     analysis screen: how many tags, and the biggest ones."""
     rows = [(p["id"], k, float(v)) for p, tags in zip(lib.photos, per) for k, v in tags]
     counts = Counter(k for _, k, _ in rows)
+    aliases = {r["source"] for r in store.q("SELECT source FROM tag_aliases")}
     with store.tx() as c:
         c.execute("DELETE FROM photo_tags")
         c.executemany("INSERT INTO photo_tags(photo_id, tag, score) VALUES(?,?,?)", rows)
+        for photo, accepted in zip(lib.photos, per):
+            raw = photo.get("recognized_tags")
+            found, current = discovery(raw)
+            if raw is not None and not current:
+                valid = dict(accepted)
+                kept = {ALIAS.get(k, k): float(v) for k, v in found.items() if ALIAS.get(k, k) in valid}
+                c.execute("UPDATE photos SET recognized_tags=? WHERE id=?", (discovery_json(kept), photo["id"]))
         for key in counts:
+            if key in aliases:
+                continue
             emoji, label, fam = meta.get(key, ("🏷️", key, "what"))
             c.execute("INSERT INTO tags(key, label, emoji, family) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET "
                       "label=CASE WHEN named THEN label ELSE excluded.label END, "
@@ -198,11 +266,32 @@ def rows(store) -> dict[str, dict]:
 def effective(store, pids=None) -> dict[int, set[str]]:
     """Each photo's tags as they stand: the automatic ones, plus yours, minus the ones you took away."""
     out: dict[int, set[str]] = {}
-    for r in store.q("SELECT photo_id, tag FROM photo_tags"):
+    def read(table, cols):
+        if pids is None:
+            return store.q(f"SELECT {cols} FROM {table}")
+        ids, found = list(pids), []
+        for start in range(0, len(ids), 500):
+            part = ids[start:start + 500]
+            found += store.q(f"SELECT {cols} FROM {table} WHERE photo_id IN ({','.join('?' * len(part))})", part)
+        return found
+    for r in read("photo_tags", "photo_id, tag"):
         out.setdefault(r["photo_id"], set()).add(r["tag"])
-    for r in store.q("SELECT photo_id, tag, val FROM tag_edits"):
+    edits = read("tag_edits", "photo_id, tag, val")
+    for r in edits:
         s = out.setdefault(r["photo_id"], set())
         (s.add if r["val"] else s.discard)(r["tag"])
+    aliases = {r["source"]: r["target"] for r in store.q("SELECT * FROM tag_aliases")}
+    if aliases:
+        def resolve(tag):
+            seen = set()
+            while tag in aliases and tag not in seen:
+                seen.add(tag)
+                tag = aliases[tag]
+            return tag if tag not in seen else None
+        out = {p: {t for key in ts if (t := resolve(key)) is not None} for p, ts in out.items()}
+        for r in edits:
+            if not r["val"] and r["tag"] not in aliases:
+                out.setdefault(r["photo_id"], set()).discard(r["tag"])
     if pids is not None:
         want = set(pids)
         out = {p: t for p, t in out.items() if p in want}
@@ -304,40 +393,74 @@ def diagrams(visible: list[str], sets: dict) -> list[list[str]]:
 
 
 def cluster(sets: dict, open_reps: set, visible: list[str], meta: dict[str, dict], taken: set[str], limit: int = 14) -> list[dict]:
-    """These shots k-means-clustered on their tags (rarer tags and the ones drawn as circles weigh more; broad kinds
-    less), k picked by silhouette. Mutually exclusive: every tagged shot lands in exactly one cluster, named for the
-    tags that set it apart."""
+    """Equal-weight tag cosine clusters, with k picked by sampled silhouette. Every tagged shot lands in one
+    cluster; a sparse path keeps large vocabularies from dropping discoveries or building a huge dense matrix."""
     reps = sorted(r for r in open_reps if sets.get(r))
     if len(reps) < 2:
         return []
     df = Counter(t for r in reps for t in sets[r])
-    vocab = [t for t, c in df.items() if c >= 2 and not t.startswith("y:")] or list(df)
+    vocab = sorted(df)
     col = {t: j for j, t in enumerate(vocab)}
-    vis = set(visible)
     n = len(reps)
-    w = np.array([math.log(1 + n / df[t]) * (1.0 if t in vis else 0.6) * (0.5 if t.startswith("kind:") else 1.0) for t in vocab])
-    X = np.zeros((n, len(vocab)), np.float32)
-    for i, r in enumerate(reps):
-        for t in sets[r]:
-            if t in col:
-                X[i, col[t]] = w[col[t]]
-    keep = np.linalg.norm(X, axis=1) > 0
-    reps = [r for r, k in zip(reps, keep) if k]
-    X = X[keep]
-    n = len(reps)
-    if n < 2:
-        return []
-    X /= np.linalg.norm(X, axis=1, keepdims=True)
-    S = X @ X.T
+
+    def matrix(ids):
+        X = np.zeros((len(ids), len(vocab)), np.float32)
+        for i, r in enumerate(ids):
+            for t in sets[r]:
+                if t in col:
+                    X[i, col[t]] = 1.0
+        X /= np.maximum(np.linalg.norm(X, axis=1, keepdims=True), 1e-9)
+        return X
+
+    # Train and score on a fixed sample; assigning the rest in chunks never needs an n×n matrix.
+    rng = np.random.RandomState(0)
+    sample = sorted(rng.choice(n, min(n, CLUSTER_SAMPLE), replace=False)) if n > CLUSTER_SAMPLE else range(n)
+    sampled = [reps[i] for i in sample]
+    ns = len(sampled)
+    sparse = len(vocab) > CLUSTER_VOCAB
+    if sparse:
+        postings = {}
+        scale = np.array([1 / math.sqrt(len(sets[r])) for r in sampled], np.float32)
+        for i, rep in enumerate(sampled):
+            for tag in sets[rep]:
+                postings.setdefault(tag, []).append(i)
+        gram = np.zeros((ns, ns), np.float32)
+        for ix in postings.values():
+            gram[np.ix_(ix, ix)] += scale[ix, None] * scale[None, ix]
+        X = None
+    else:
+        X = matrix(sampled)
+        gram = X @ X.T
+    D = np.maximum(0, 1 - gram)
+    np.fill_diagonal(D, 0)
 
     def kmeans(k):
         rng = np.random.RandomState(0)
-        cen = [X[rng.randint(n)]]
+        if sparse:
+            # Centroids are combinations of the sample rows, so training needs only a 512×512 Gram matrix.
+            seeds = [rng.randint(ns)]
+            for _ in range(1, k):
+                d = np.clip(1 - gram[:, seeds].max(1), 0, None)
+                seeds.append(rng.choice(ns, p=d / d.sum()) if d.sum() > 1e-9 else rng.randint(ns))
+            C = np.eye(ns, dtype=np.float32)[:, seeds]
+            lab = np.zeros(ns, int)
+            for step in range(30):
+                new = np.argmax(gram @ C, axis=1)
+                if step and (new == lab).all():
+                    break
+                lab = new
+                for j in range(k):
+                    mask = lab == j
+                    if mask.any():
+                        C[:, j] = mask / mask.sum()
+                C /= np.maximum(np.sqrt(np.maximum((C * (gram @ C)).sum(0), 0)), 1e-9)
+            return lab, C
+        cen = [X[rng.randint(ns)]]
         for _ in range(1, k):  # k-means++: spread the starting centres
             d = np.clip(1 - np.max(X @ np.array(cen).T, axis=1), 0, None)  # (rounding can dip below zero)
-            cen.append(X[rng.choice(n, p=d / d.sum())] if d.sum() > 1e-9 else X[rng.randint(n)])
+            cen.append(X[rng.choice(ns, p=d / d.sum())] if d.sum() > 1e-9 else X[rng.randint(ns)])
         C = np.array(cen)
-        lab = np.zeros(n, int)
+        lab = np.zeros(ns, int)
         for _ in range(30):
             new = np.argmax(X @ C.T, axis=1)
             if _ and (new == lab).all():
@@ -348,28 +471,32 @@ def cluster(sets: dict, open_reps: set, visible: list[str], meta: dict[str, dict
                 if len(m):
                     c = m.mean(0)
                     C[j] = c / max(np.linalg.norm(c), 1e-9)
-        return lab
+        return lab, C
 
     def silhouette(lab):
-        D = 1 - S
-        out = []
-        for i in range(n):
-            same = lab == lab[i]
-            if same.sum() <= 1:
-                out.append(0.0)
-                continue
-            a = D[i, same].sum() / (same.sum() - 1)
-            b = min((D[i, lab == j].mean() for j in set(lab.tolist()) if j != lab[i]), default=a)
-            out.append((b - a) / max(a, b, 1e-9))
-        return float(np.mean(out))
-    best, best_lab = -2.0, np.zeros(n, int)
-    for k in range(2, max(2, min(limit, n // 5)) + 1):  # five or more shots a group, on average
-        lab = kmeans(k)
+        labs, inv, counts = np.unique(lab, return_inverse=True, return_counts=True)
+        means = np.column_stack([D[:, lab == j].mean(1) for j in labs])
+        own = means[np.arange(ns), inv]
+        a = own * counts[inv] / np.maximum(1, counts[inv] - 1)
+        means[np.arange(ns), inv] = np.inf
+        b = means.min(1)
+        return float(np.mean(np.where(counts[inv] > 1, (b - a) / np.maximum(np.maximum(a, b), 1e-9), 0)))
+    best, centers = -2.0, np.full((ns, 1), 1 / ns, np.float32) if sparse else np.mean(X, axis=0, keepdims=True)
+    for k in range(2, max(2, min(limit, ns // 5)) + 1):
+        lab, C = kmeans(k)
         if len(set(lab.tolist())) < 2:
             continue
         sc = silhouette(lab) - 0.015 * k  # a nudge toward fewer, bigger groups
         if sc > best:
-            best, best_lab = sc, lab
+            best, centers = sc, C.copy()
+    if sparse:
+        features = np.zeros((len(vocab), centers.shape[1]), np.float32)
+        for i, rep in enumerate(sampled):
+            features[[col[t] for t in sets[rep]]] += scale[i] * centers[i]
+        best_lab = np.array([features[[col[t] for t in sets[r]]].sum(0).argmax() for r in reps])
+    else:
+        best_lab = np.concatenate([np.argmax(matrix(reps[i:i + 2048]) @ centers.T, axis=1)
+                                   for i in range(0, n, 2048)])
     allfreq = {t: df[t] / len(open_reps) for t in vocab}
     out, used = [], set(taken)
     for j in sorted(set(best_lab.tolist()), key=lambda j: -(best_lab == j).sum()):
@@ -384,6 +511,21 @@ def cluster(sets: dict, open_reps: set, visible: list[str], meta: dict[str, dict
     return out
 
 
+_CATCHY = None
+
+
+def catchy_names(key: str) -> list[str]:
+    """The playful names a tag hands to a group or flock it leads: its concept's, its kind's, or a fixed tag's.
+    The Groups page, the suggestions and the sea's flocks all speak with this one voice."""
+    global _CATCHY
+    if _CATCHY is None:
+        _CATCHY = {ALIAS.get(k, k): list(names) for k, _, _, names in themes.CONCEPTS}
+        _CATCHY.update({f"kind:{k}": list(names) for k, names in KIND_NAMES.items()})
+        for k, names in FIXED_NAMES.items():
+            _CATCHY.setdefault(k, list(names))
+    return list(_CATCHY.get(ALIAS.get(key, key), []))
+
+
 def name_for(keys: list[str], meta: dict[str, dict], taken: set[str]) -> tuple[str, str]:
     """A name for a group of shots sharing these tags: a concept's catchy name if one leads, else the tags' own labels;
     when it was rides along at the end (Golden Hour Gang · Summer 2024)."""
@@ -392,17 +534,15 @@ def name_for(keys: list[str], meta: dict[str, dict], taken: set[str]) -> tuple[s
     order = {"season": 0, "y": 1, "day": 2}
     when = sorted((k for k in keys if fam(k) == "when"), key=lambda k: order.get(k.split(":")[0], 3))
     rest = [k for k in keys if fam(k) != "when"]
-    catchy = {ALIAS.get(k, k): names for k, _, _, names in themes.CONCEPTS}
-    catchy.update({f"kind:{k}": names for k, names in KIND_NAMES.items()})
     lead, main = (rest or when or ["?"])[0], None
     for k in rest:
-        main = next((nm for nm in catchy.get(k, []) if nm.lower() not in taken), None)
+        main = next((nm for nm in catchy_names(k) if nm.lower() not in taken), None)
         if main:
             lead = k
             break
-    others = [label(k) for k in rest if k != lead and k != "me"]
+    # A catchy name stands alone (the tags it combines are listed beside the suggestion anyway).
     if main:
-        parts = [main] + others[:1]
+        parts = [main]
     else:
         parts = [" & ".join(label(k) for k in rest[:2])] if rest else []
     if when:

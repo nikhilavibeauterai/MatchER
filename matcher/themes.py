@@ -1,9 +1,7 @@
 """The Draw: every shot goes into a themed group; each group plays a group stage, and its winners the knockouts.
 
-SigLIP similarities inside one library sit in a narrow band (a folder of selfies is all "alike"; in a mixed gallery
-two beach photos are barely closer than a beach and a cat), so nothing here relies on an absolute cut-off:
-candidates are ranked and you make the call, the lines that do exist are percentiles of this library's own
-similarities, and a theme is named for what sets its photos apart from the rest of this library."""
+Likeness and group suggestions are relative to the library. Recognizing a tag needs separate positive evidence:
+being the least unlikely label, or unusual among this folder's photos, does not establish that it is present."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -49,7 +47,7 @@ CONCEPTS: list[tuple[str, str, list[str], list[str]]] = [
     ("cars", "🏎️", ["a car", "a motorcycle", "a sports car"], ["Fast & Curious", "Wheel Deal", "Horsepower"]),
     ("interior", "🛋️", ["the inside of a room", "a cozy living room", "an interior design"],
      ["Home Sweet Home", "Cozy Corner", "Indoor Kids"]),
-    ("dogs", "🐶", ["a dog", "a puppy"], ["Good Boy Gallery", "Pup Culture", "Who's a Good Boy"]),
+    ("dogs", "🐶", ["a dog", "a puppy", "a person with a dog"], ["Good Boy Gallery", "Pup Culture", "Who's a Good Boy"]),
     ("cats", "🐱", ["a cat", "a kitten"], ["Cat Tax", "Purrfect", "Feline Fine"]),
     ("birds", "🐦", ["a bird", "birds flying"], ["Bird Brain", "Tweet Spot", "Wingin' It"]),
     ("wildlife", "🦒", ["a wild animal", "animals at a zoo", "farm animals"], ["Wild Things", "Animal Planet", "Safari Mode"]),
@@ -122,6 +120,23 @@ def concept_scores(E: np.ndarray) -> np.ndarray:
     return np.maximum.reduceat(E @ T.T, starts, axis=1)
 
 
+def evidence_mask(scores: np.ndarray, reference: np.ndarray | None = None) -> np.ndarray:
+    """Conservative evidence for these quantized SigLIP towers, not a calibrated probability.
+
+    Public fixtures put clear matches around .05–.10 cosine. A fixed floor stops tiny numerical outliers;
+    contrast rejects uniformly vague scores; the best-match margin rejects weaker competing explanations.
+    Independently strong evidence can still keep several subjects in the same photo. No library percentile
+    or quota can turn an absent subject into a tag.
+    """
+    scores = np.asarray(scores)
+    ref = scores if reference is None else np.asarray(reference)
+    ref = np.where(np.isfinite(ref), ref, 0.0)
+    baseline = np.median(ref, axis=1, keepdims=True)
+    best = np.max(ref, axis=1, keepdims=True)
+    return (np.isfinite(scores) & (scores >= .05) & (scores >= baseline + .035)
+            & ((scores >= best - .02) | (scores >= .08)))
+
+
 def space(E: np.ndarray, fit: np.ndarray | None = None) -> tuple[np.ndarray, "Namer"]:
     """Where the Draw measures likeness: each shot's image embedding alongside its profile over the theme concepts
     (z-scored over the `fit` shots: the ones in the running), equally weighted. On a mixed test gallery this put 94%
@@ -156,8 +171,12 @@ class Namer:
 
     def options(self, idx, taken: set[str]) -> list[dict]:
         """Names for these shots, best first, skipping names already in use."""
+        idx = list(idx)
+        if not idx:
+            return wild_name(taken)
+        supported = evidence_mask(self.C[idx]).mean(0) >= .6
         out = []
-        for k in np.argsort(-self.z(idx))[:4]:
+        for k in [j for j in np.argsort(-self.z(idx)) if supported[j]][:4]:
             key, emoji, _, names = CONCEPTS[int(k)]
             out += [{"name": n, "emoji": emoji, "concept": key} for n in names if n.lower() not in taken]
         return out or wild_name(taken)
@@ -340,11 +359,16 @@ def auto_draw(F: np.ndarray, pool: np.ndarray, cap: int = THEME_CAP) -> tuple[li
 
 def advancers(sizes: dict, k: int) -> dict:
     """How many shots each group sends to the knockouts: about 2× the leaderboard in all, shared out by group size,
-    at least one each and never more than half a group (a group of one gets a bye)."""
+    at least one each. Small fields keep enough contenders for a four-shot final."""
     total = sum(sizes.values())
     pool = min(total, max(8, 2 * k))
-    return {t: n if n <= 1 else int(min(max(1, round(pool * n / max(1, total))), max(1, n // 2)))
-            for t, n in sizes.items()}
+    places = {t: n if n <= 1 else int(min(max(1, round(pool * n / max(1, total))), max(1, n // 2)))
+              for t, n in sizes.items()}
+    while sum(places.values()) < min(4, total):
+        # A tiny group may send more than half; otherwise six good photos could qualify only three.
+        t = max((t for t, n in sizes.items() if places[t] < n), key=lambda t: sizes[t] / (places[t] + 1))
+        places[t] += 1
+    return places
 
 
 def group_odds(mu: np.ndarray, var: np.ndarray, a: int, rng: np.random.Generator, samples: int = 256) -> np.ndarray:

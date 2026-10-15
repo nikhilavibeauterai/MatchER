@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "matcher-photos"
+dynamic = ["version", "dependencies"]
+description = "Turn a folder of photos into a game. Find the keepers."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{name = "MatchER contributors"}]
+keywords = ["photos", "photo-organizer", "photo-culling", "local-ai", "tournament"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Graphics",
+]
+
+[project.urls]
+Repository = "https://github.com/nikhilavibeauterai/MatchER"
+Issues = "https://github.com/nikhilavibeauterai/MatchER/issues"
+
+[project.scripts]
+matcher = "matcher.__main__:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "matcher.__version__"}
+dependencies = {file = "requirements.txt"}
+
+[tool.setuptools.packages.find]
+include = ["matcher*"]
+
+[tool.setuptools.package-data]
+matcher = ["static/**/*", "demo/*"]

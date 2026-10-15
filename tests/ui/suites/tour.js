@@ -26,14 +26,14 @@ const DIR = OUT + "/../tour";
     await fetch("/api/draw/auto", { method: "POST", headers: h, body: "{}" });
     const b = await (await fetch("/api/draw/board?per=400")).json();
     await fetch("/api/draw/move", { method: "POST", headers: h, body: JSON.stringify({ photos: b.groups.flatMap((g) => g.shots.slice(0, 1).map((x) => x.rep)), theme: null }) });
-    let cards = (await (await fetch("/api/next?n=1&stage=open")).json()).cards;
+    let cards = (await (await fetch("/api/deal?n=1&stage=open", {method:"POST",headers:h,body:"{}"})).json()).cards;
     for (let k = 0; k < 30 && cards.length; k++) {
       const r = await (await fetch("/api/vote", { method: "POST", headers: h, body: JSON.stringify({ card: cards[0].id, outcome: k % 2 ? "a" : "b", ms: 900, stage: "open" }) })).json();
       cards = r.cards;
     }
   });
   const go = async (name, hash, sel) => { await page.goto(BASE + "/#home"); await page.waitForSelector(".journey"); await page.goto(BASE + hash); await page.waitForSelector(sel, { timeout: 15000 }).catch(() => problems.push(`no ${sel} on ${hash}`)); await shot(name); };
-  await go("04-map-midgame", "/#home", ".world");
+  await go("04-map-midgame", "/#home", ".journey");
   await go("05-stacks", "/#stacks", ".stacker");
   await go("06-twin-check", "/#stacks?check=1", ".screen");
   await go("07-groups-sea", "/#draw", ".ps-item");
@@ -41,7 +41,7 @@ const DIR = OUT + "/../tour";
   await go("08-groups-list", "/#draw", ".gsec");
   await page.evaluate(() => localStorage.setItem("matcher-groups-view", "sea"));
   await go("09-quick-sort", "/#draw?sort=1", "#dtop, .big-emoji");
-  const g = await page.evaluate(async () => (await (await fetch("/api/draw")).json()).groups[0].id);
+  const g = await page.evaluate(async () => (await (await fetch("/api/draw/board?per=4&uper=4")).json()).groups[0].id);
   await go("10-find-more", `/#draw?play=${g}`, "#ddeck .swipe-card, #ddeck .deck-note, .bulk-card");
   await go("11-crown", "/#duel?stage=stacks", "#stage.mini-stage, .stage-done");
   await go("12-group-stage", "/#duel?stage=groups", "#stage .side img, #stage.mini-stage, .stage-done");
@@ -57,18 +57,19 @@ const DIR = OUT + "/../tour";
   await page.click("#open-menu");
   await shot("20-menu");
   await page.keyboard.press("Escape");
-  await page.click('[data-m="trophies"]').catch(async () => { await page.click("#open-menu"); await page.click('[data-m="trophies"]'); });
+  await page.click("#open-menu");await page.click('[data-menu-page="play"]');await page.click('[data-m="trophies"]');
   await shot("21-trophies");
   await page.keyboard.press("Escape");
+  if(await page.locator("#menu[open]").count())await page.click("#menu-resume");
   await page.click("#open-menu");
-  await page.click('[data-m="settings"]');
+  await page.click('[data-menu-page="library"]');await page.click('[data-m="settings"]');
   await shot("22-settings");
   await page.keyboard.press("Escape");
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   await phone.addCookies(await ctx.cookies());
   const p2 = await phone.newPage();
   p2.on("pageerror", (e) => problems.push(`phone pageerror: ${e.message}`));
-  for (const [name, hash, sel] of [["p-map", "/#home", ".world"], ["p-stacks", "/#stacks", ".stacker"], ["p-groups", "/#draw", ".screen"],
+  for (const [name, hash, sel] of [["p-map", "/#home", ".journey"], ["p-stacks", "/#stacks", ".stacker"], ["p-groups", "/#draw", ".screen"],
     ["p-quick-sort", "/#draw?sort=1", "#dtop, .big-emoji"], ["p-duel", "/#duel?stage=knockouts", "#stage .side img, #stage.mini-stage"],
     ["p-finals", "/#finals", ".screen.finals"], ["p-leaderboard", "/#shortlist", ".screen.board"], ["p-saves", "/#saves", ".save-card"]]) {
     await p2.goto(BASE + "/#home"); await p2.waitForSelector(".journey").catch(() => {});

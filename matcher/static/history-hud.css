@@ -1,0 +1,16 @@
+/* Reversible choices briefly surface above the world, then leave it clear again. */
+#history-hud { position:fixed; z-index:40; left:50%; bottom:16px; transform:translateX(-50%); display:flex; gap:8px;
+  max-width:calc(100vw - 136px); pointer-events:none; }
+.history-action { display:flex; align-items:center; gap:9px; min-width:0; min-height:54px; max-width:245px; padding:7px 11px;
+  background:#101820ac; backdrop-filter:blur(7px); border:1px solid #ffffff30; border-radius:15px; color:var(--text); cursor:pointer; pointer-events:auto; }
+.history-action img { width:38px; height:38px; object-fit:cover; border-radius:6px; flex:none; }
+.history-action>span:last-child { min-width:0; display:grid; text-align:left; line-height:1.25; gap:3px; }
+.history-action b { font-size:12px; }.history-action small { font-size:11px; overflow-wrap:anywhere; }
+.history-direction { font-size:23px; }.history-action:focus-visible { outline:2px solid #ffd86b; outline-offset:2px; }
+.history-action:hover { border-color:#ffd86b; }.history-notice { padding:10px 14px; border-radius:15px; background:#101820aa; font-size:12px; }
+#main :is([data-o=undo],[data-fin=undo],[data-s=undo],#sw-undo,[data-f=undo],#g-undo,[data-c=undo],#d-undo,#tags-undo,#people-undo,[data-filter-action=undo]) { display:none!important; }
+@media(max-width:600px) {
+  #history-hud { bottom:12px; left:8px; transform:none; max-width:calc(100vw - 70px); gap:4px; }
+  .history-action { flex:1; padding:5px 7px; gap:5px; }.history-action img { width:28px; height:34px; }
+  .history-direction { font-size:19px; }.history-action small { font-size:10px; }
+}

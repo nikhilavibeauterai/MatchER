@@ -1,14 +1,15 @@
 """Paths and constants shared across the app."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-MODELS_DIR = Path(os.environ.get("MATCHER_MODELS", ROOT / "models"))
-DATA_DIR = Path(os.environ.get("MATCHER_DATA", ROOT / "data"))
+from .platforms import storage_paths
 
-PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tif", ".tiff", ".bmp", ".avif"}
+ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR, MODELS_DIR = storage_paths(ROOT)
+
+RAW_EXTS = {".nef", ".dng", ".raw", ".arw", ".cr2", ".cr3", ".orf", ".rw2", ".raf", ".pef"}  # camera raw files, read through LibRaw
+PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".tif", ".tiff", ".bmp", ".avif"} | RAW_EXTS
 
 PREVIEW_EDGE = 1600   # what the duel screen shows
 THUMB_EDGE = 400      # grids
@@ -20,4 +21,5 @@ DEFAULT_SETTINGS = {
     "max_age_years": 0,     # 0 = keep old photos (they only get a prior penalty)
     "match": "normal",      # how strictly a face must match yours: strict | normal | loose
     "mode": "me",           # me: photos of you (profile pics) | gallery: anything (landscapes, food, pets...)
+    "help": True,            # save-specific on-screen controls and guidance
 }

@@ -1,11 +1,13 @@
-"""A sample library for trying MatchER without your own photos: public-domain and CC0 pictures from Wikimedia
-Commons, fetched on request (nothing is downloaded unless you ask), with an attribution file alongside."""
+"""An offline sample of public-domain classics, plus the larger Commons pack used by browser tests."""
 from __future__ import annotations
 
 import json
+import hashlib
+import shutil
 import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -22,6 +24,7 @@ PLAN = {  # folder: (search terms, how many)
     "things": (["vintage car", "bicycle", "old camera"], 5),
 }
 FREE = ("public domain", "cc0", "pd")
+BUNDLE = Path(__file__).with_name("demo")
 
 
 def _get(url: str) -> bytes:
@@ -30,8 +33,8 @@ def _get(url: str) -> bytes:
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
                 return r.read()
-        except Exception:  # rate limits and blips: back off and retry
-            if attempt == 3:
+        except Exception as e:  # blips: back off and retry; don't repeat a rejected request
+            if attempt == 3 or isinstance(e, urllib.error.HTTPError) and e.code in (400, 403, 404, 429):
                 raise
             time.sleep(3 * (attempt + 1))
     raise RuntimeError("unreachable")
@@ -42,16 +45,39 @@ class SampleFetcher:
         self.dest = Path(dest)
         self.lock = threading.Lock()
         self.status = {"state": "done" if (self.dest / "ATTRIBUTION.txt").exists() else "idle",
-                       "done": 0, "total": sum(n for _, n in PLAN.values()) + 4, "path": str(self.dest), "error": None}
+                       "done": 0, "total": len(json.loads((BUNDLE / "manifest.json").read_text())) + 4,
+                       "path": str(self.dest), "error": None}
 
-    def start(self) -> dict:
+    def start(self, online=False) -> dict:
         with self.lock:
             if self.status["state"] not in ("running", "done"):
                 self.status.update(state="running", done=0, error=None)
-                threading.Thread(target=self._run, daemon=True).start()
+                if online:
+                    self.status["total"] = sum(n for _, n in PLAN.values()) + 4
+                threading.Thread(target=self._download if online else self._run, daemon=True).start()
             return dict(self.status)
 
     def _run(self) -> None:
+        try:
+            self.dest.mkdir(parents=True, exist_ok=True)
+            credits = []
+            for photo in json.loads((BUNDLE / "manifest.json").read_text()):
+                src = BUNDLE / photo["file"]
+                if hashlib.sha256(src.read_bytes()).hexdigest() != photo["sha256"]:
+                    raise ValueError(f"The bundled photo {src.name} is damaged.")
+                shutil.copyfile(src, self.dest / src.name)
+                credits.append(f"{src.name}\t{photo['title']}\t{photo['license']}\t{photo['source']}")
+                self.status["done"] += 1
+            self._burst(self.dest / "ducreux-mocking.jpg")
+            (self.dest / "ATTRIBUTION.txt").write_text(
+                "Public-domain sample: classic meme faces, paintings, a moon movie and NASA.\n"
+                "The burst is four edited copies of the Ducreux portrait.\n"
+                "file\ttitle\tlicence\tsource\n" + "\n".join(credits) + "\n")
+            self.status["state"] = "done"
+        except Exception as e:
+            self.status.update(state="error", error=f"Couldn't prepare the sample photos ({e}).")
+
+    def _download(self) -> None:
         try:
             credits = []
             for folder, (terms, want) in PLAN.items():
@@ -61,7 +87,7 @@ class SampleFetcher:
                         break
                     q = {"action": "query", "format": "json", "generator": "search", "gsrnamespace": 6,
                          "gsrlimit": 20, "gsrsearch": f"filetype:bitmap {term}", "prop": "imageinfo",
-                         "iiprop": "url|mime|extmetadata", "iiurlwidth": 1600,
+                         "iiprop": "url|mime|extmetadata", "iiurlwidth": 1280,
                          "iiextmetadatafilter": "LicenseShortName|Artist|ObjectName"}
                     pages = json.loads(_get(f"{API}?{urllib.parse.urlencode(q)}")).get("query", {}).get("pages", {})
                     time.sleep(1)
@@ -74,7 +100,14 @@ class SampleFetcher:
                         name = f"{folder}/{folder}_{got + 1:02d}.jpg"
                         out = self.dest / name
                         out.parent.mkdir(parents=True, exist_ok=True)
-                        out.write_bytes(_get(info["thumburl"]))
+                        try:
+                            data = _get(info["thumburl"])
+                        except urllib.error.HTTPError as e:
+                            if e.code in (404, 429):
+                                time.sleep(1)
+                                continue  # an unavailable thumbnail need not stop the whole test pack
+                            raise
+                        out.write_bytes(data)
                         credits.append(f"{name}\t{page['title']}\t{lic}\t{info.get('descriptionurl', '')}")
                         got += 1
                         self.status["done"] += 1
@@ -89,9 +122,9 @@ class SampleFetcher:
         except Exception as e:  # offline, Commons down: say so and let the person try again
             self.status.update(state="error", error=f"Couldn't download the sample photos ({e}).")
 
-    def _burst(self) -> None:
-        """Four nudged copies of one landscape, a few seconds apart, so the sample has a stack to crown."""
-        src = next(iter(sorted((self.dest / "nature").glob("*.jpg"))), None)
+    def _burst(self, src=None) -> None:
+        """Four nudged copies a few seconds apart, so the sample has a stack to crown."""
+        src = src or next(iter(sorted((self.dest / "nature").glob("*.jpg"))), None)
         if src is None:
             return
         im = Image.open(src).convert("RGB")

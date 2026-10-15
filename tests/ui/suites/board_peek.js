@@ -12,7 +12,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.goto(BASE + "/#duel?stage=groups");
   for (let k = 0; k < 10; k++) { await page.waitForSelector("#stage .side img, .stage-done", { timeout: 10000 }); if (await page.$(".stage-done")) break; await page.keyboard.press("ArrowLeft"); await page.waitForTimeout(500); }
   await page.goto(BASE + "/#home"); await page.waitForSelector(".journey");
-  await page.click(".hud-btn");
+  await page.click("#open-menu");await page.click('[data-menu-page="play"]');await page.click('#menu a[href="#tournament"]');
   await page.waitForSelector(".tb-body");
   await page.waitForTimeout(1500);
   const res = await page.evaluate(() => ({ groups: document.querySelectorAll(".tb-group").length, rows: document.querySelectorAll(".tb-roster li").length,

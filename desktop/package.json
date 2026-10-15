@@ -1,0 +1,41 @@
+{
+  "name": "matcher-desktop",
+  "productName": "MatchER",
+  "desktopName": "matcher.desktop",
+  "version": "0.1.0",
+  "description": "Turn a folder of photos into a game. Find the keepers.",
+  "author": {"name": "MatchER contributors", "email": "nikhilavibeauterai@users.noreply.github.com"},
+  "license": "GPL-3.0-only",
+  "private": true,
+  "main": "main.cjs",
+  "homepage": "https://github.com/nikhilavibeauterai/MatchER",
+  "repository": {"type": "git", "url": "https://github.com/nikhilavibeauterai/MatchER.git"},
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "pack": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {"electron": "44.7.2", "electron-builder": "26.15.3"},
+  "build": {
+    "appId": "io.github.nikhilavibeauterai.matcher",
+    "asar": true,
+    "directories": {"output": "../dist/desktop", "buildResources": "assets"},
+    "files": ["*.cjs", "*.html", "*.css", "assets/icon.png"],
+    "extraResources": [{"from": "../dist/backend/matcher-backend", "to": "backend"}, {"from": "../THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md"}, {"from": "../LICENSE", "to": "MATCHER-LICENSE.txt"}, {"from": "../SOURCE.md", "to": "SOURCE.md"}],
+    "artifactName": "MatchER-${version}-${os}-${arch}.${ext}",
+    "linux": {
+      "executableName": "matcher",
+      "syncDesktopName": true,
+      "target": [{"target": "AppImage", "arch": ["x64"]}, {"target": "deb", "arch": ["x64"]}],
+      "category": "Graphics",
+      "icon": "assets/icon.png",
+      "synopsis": "Find your favourite photos through play",
+      "desktop": {"entry": {"Keywords": "photo;organizer;culling;local;AI;tournament;"}}
+    },
+    "deb": {"artifactName": "MatchER-${version}-linux-x64.${ext}", "depends": ["libgtk-3-0", "libnss3", "libasound2", "libgbm1", "libgl1", "libglib2.0-0"]},
+    "appImage": {"artifactName": "MatchER-${version}-linux-x64.${ext}"},
+    "win": {"target": [{"target": "nsis", "arch": ["x64"]}], "icon": "assets/icon.ico"},
+    "nsis": {"oneClick": false, "perMachine": false, "allowElevation": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "deleteAppDataOnUninstall": false}
+  }
+}

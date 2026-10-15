@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import bisect
 import hashlib
+import heapq
 import json
 import re
 import time
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,7 +24,7 @@ import numpy as np
 from .config import DEFAULT_SETTINGS, MODELS_DIR, PREVIEW_EDGE
 from .store import Store, unblob
 
-DERIVED_VERSION = 6  # bump when refresh() starts producing something new; old libraries refresh on open
+DERIVED_VERSION = 11  # New lessons can revise conflicting earlier examples inside the same visual neighbourhood
 ME_T = 0.32          # SFace cosine to your centroid that counts as "you" (strangers in a real library
                      # peaked at 0.10-0.15 and stopped at ~0.30; your own reflections scored 0.35-0.80)
 MATCH_T = {"strict": 0.40, "normal": ME_T, "loose": 0.27}  # the People page's "face matching" setting
@@ -91,6 +93,7 @@ CATEGORIES: dict[str, list[str]] = {
     "things": ["a photo of an object", "a photo of a car", "a photo of a gadget", "a still life photo",
                "a photo of a painting"],
 }
+_CATEGORY_CACHE = (None, None, None)
 
 # Hand-set prior: (feature, weight, prior sd of the learned weight). Units are logit "skill".
 HAND = [
@@ -121,6 +124,8 @@ CUT_LABELS = {
     "too_small": "You're too small", "blurry": "Blurry", "exposure": "Badly exposed",
     "excluded_person": "Has someone you excluded", "old": "Too old", "tossed": "Tossed by you",
     "document": "Document / receipt / text", "accidental": "Accidental shot",
+    "required_tags": "Missing selected subjects", "excluded_tags": "Selected subject set aside",
+    "filter_fit": "Below your Filter line",
 }
 
 
@@ -149,6 +154,35 @@ def subject_box(pw: int, ph: int, face: dict | None) -> list[float] | None:
     return [round(x0 / pw, 4), round(y0 / ph, 4), round(cw / pw, 4), round(ch / ph, 4)]
 
 
+def fill_salient(store: Store, workdir: Path, cancel=None, on_box=None, batch: int = 100) -> int:
+    """For a library analysed before salient regions were kept: work them out from the thumbnails, a batch at a
+    time, and give a photo without a face frame its subject frame as each arrives (on_box(pid, box) tells a live
+    session). Returns how many photos were measured. Safe to run again: a measured photo stays measured."""
+    import cv2
+
+    done = 0
+    while not (cancel and cancel()):
+        rows = store.q("SELECT id, subject FROM photos WHERE status='analyzed' AND salient IS NULL LIMIT ?", (batch,))
+        if not rows:
+            break
+        results = []
+        for r in rows:
+            bgr = cv2.imread(str(Path(workdir) / "thumbs" / f"{r['id']}.jpg"))
+            from . import visual
+            box = visual.salient_box(bgr) if bgr is not None else None
+            results.append((r["id"], box, r["subject"] in (None, "", "null")))  # refresh() writes JSON null for no frame
+        with store.tx() as c:
+            for pid, box, bare in results:
+                c.execute("UPDATE photos SET salient=? WHERE id=?", (json.dumps(box), pid))
+                if box and bare:
+                    c.execute("UPDATE photos SET subject=? WHERE id=? AND (subject IS NULL OR subject IN ('', 'null'))", (json.dumps(box), pid))
+        for pid, box, bare in results:
+            done += 1
+            if box and bare and on_box:
+                on_box(pid, box)
+    return done
+
+
 def preview_size(w: int, h: int) -> tuple[int, int]:
     s = min(1.0, PREVIEW_EDGE / max(w, h, 1))
     return max(1, round(w * s)), max(1, round(h * s))
@@ -175,9 +209,9 @@ class Lib:
 
 def load(store: Store) -> Lib:
     photos = [dict(r) for r in store.q(
-        "SELECT id, rel, status, error, size, sha256, width, height, fmt, make, model, taken, taken_ts, taken_src, "
+        "SELECT id, rel, status, error, size, mtime_ns, sha256, width, height, fmt, make, model, taken, taken_ts, taken_src, "
         "phash, luma, luma_lo, luma_hi, sharp, chroma, n_faces, emb, crop_emb, crop_face, override, rep_pref, pick, "
-        "stack_key FROM photos WHERE status IN ('analyzed', 'error') ORDER BY id")]
+        "stack_key, recognized_tags FROM photos WHERE status IN ('analyzed', 'error') ORDER BY id")]
     faces = [dict(r) for r in store.q(
         "SELECT f.* FROM faces f JOIN photos p ON p.id = f.photo_id WHERE p.status='analyzed' ORDER BY f.id")]
     pidx = {p["id"]: i for i, p in enumerate(photos)}
@@ -226,21 +260,22 @@ def identify(lib: Lib, store: Store) -> dict:
     for a in anchors_not:
         blocked |= (E @ a) >= ME_T + 0.05
     counts = np.zeros(len(idx), np.int64)
-    for b0 in range(0, len(idx), 2048):  # how many faces each face matches, a block of rows at a time
-        counts[b0:b0 + 2048] = ((R[b0:b0 + 2048] @ R.T) >= ME_T).sum(1)
+    block = max(1, min(2048, 2**20 // len(idx)))
+    for b0 in range(0, len(idx), block):  # bound both dimensions of the temporary similarity matrix
+        counts[b0:b0 + block] = ((R[b0:b0 + block] @ R.T) >= ME_T).sum(1)
     counts -= blocked[idx] * 10**6
     seed = int(np.argmax(counts))
     member = ((R @ R[seed]) >= ME_T) & ~blocked[idx]
-    centroid = _norm(R[member].mean(0))
+    centroid = _norm(R[member].mean(0)) if member.any() else None
     for _ in range(4):
-        sim = R @ centroid
+        sim = R @ centroid if centroid is not None else np.zeros(len(R), np.float32)
         member = (sim >= ME_T) & ~blocked[idx]
         for a in anchors_me:
             member |= (R @ a) >= ME_T + 0.05
         if member.sum() == 0:
             break
         centroid = _norm(R[member].mean(0))
-    sim_all = E @ centroid
+    sim_all = E @ centroid if centroid is not None else np.zeros(len(E), np.float32)
     for a in anchors_me:
         sim_all = np.maximum(sim_all, E @ a)
     is_me = (sim_all >= ME_T) & ~blocked
@@ -254,7 +289,9 @@ def identify(lib: Lib, store: Store) -> dict:
         elif f.get("label") == "other":
             is_me[j] = False
     for pid, js in lib.faces_by_photo.items():
-        best = max(js, key=lambda j: sim_all[j])
+        # An explicitly excluded face can score higher than the real subject beside it.
+        candidates = [j for j in js if is_me[j]] or js
+        best = max(candidates, key=lambda j: sim_all[j])
         me_sim[pid] = float(sim_all[best])
         if is_me[best]:
             me_face[pid] = faces[best]["id"]
@@ -333,24 +370,29 @@ def zero_shot(lib: Lib) -> dict[str, np.ndarray]:
     return out
 
 
-def categorize(lib: Lib) -> list[str]:
-    """What each photo is mostly of (a CATEGORIES key; "" without an embedding). A clearly visible face tips
-    a photo toward people."""
-    from .models import SIGLIP_LOGIT_SCALE
+def category_scores(E: np.ndarray) -> np.ndarray:
+    global _CATEGORY_CACHE
+    if _CATEGORY_CACHE[0] is not _prompt_embeddings:
+        prompts = [q for ps in CATEGORIES.values() for q in ps]
+        edges = np.cumsum([0] + [len(ps) for ps in CATEGORIES.values()])[:-1]
+        _CATEGORY_CACHE = (_prompt_embeddings, _prompt_embeddings(prompts), edges)
+    return np.maximum.reduceat(E @ _CATEGORY_CACHE[1].T, _CATEGORY_CACHE[2], axis=1)
 
+
+def category_names(E: np.ndarray) -> list[str]:
+    """A broad kind only when the image supplies evidence; uncertain photos remain unclassified."""
+    from .themes import evidence_mask
+    scores = category_scores(E)
+    accepted = evidence_mask(scores)
     keys = list(CATEGORIES)
-    prompts = [q for k in keys for q in CATEGORIES[k]]
-    T = _prompt_embeddings(prompts)
-    logits = SIGLIP_LOGIT_SCALE * (lib.emb @ T.T)
-    logits -= logits.max(1, keepdims=True)
-    prob = np.exp(logits)
-    prob /= prob.sum(1, keepdims=True)
-    edges = np.cumsum([0] + [len(CATEGORIES[k]) for k in keys])
-    per = np.stack([prob[:, edges[k]:edges[k + 1]].sum(1) for k in range(len(keys))], 1)
+    return [keys[j] if accepted[i, j] else "" for i, j in enumerate(scores.argmax(1))]
+
+
+def categorize(lib: Lib) -> list[str]:
+    """What each photo is mostly of. A detected face supplies people when the primary scene is uncertain."""
+    cats = category_names(lib.emb)
     face = np.array([any(lib.faces[j]["px"] >= 60 for j in lib.faces_by_photo.get(p["id"], [])) for p in lib.photos])
-    if len(face):
-        per[:, keys.index("people")] += 0.35 * face
-    return [keys[k] if lib.has_emb[i] else "" for i, k in enumerate(per.argmax(1))] if len(per) else []
+    return [c if lib.has_emb[i] and c else "people" if face[i] else "" for i, c in enumerate(cats)]
 
 
 # ----------------------------------------------------------------------------- judgment
@@ -359,41 +401,25 @@ def judge(lib: Lib, ident: dict, zs: dict, settings: dict, excluded: list[np.nda
     """Per photo: a cut reason (or None), soft flags, and the measurements the prior uses."""
     if settings.get("mode") == "gallery":
         return _judge_gallery(lib, zs, settings)
+    from . import filtering
     now = time.time()
+    policy = settings.get("filter_policy") or filtering.defaults(settings)
     cuts, flags, measures = [], [], {}
     face_by_id = {f["id"]: (j, f) for j, f in enumerate(lib.faces)}
-    max_age = float(settings.get("max_age_years") or 0)
     for i, p in enumerate(lib.photos):
         pid = p["id"]
         fl: list[str] = []
         m = {k: float(v[i]) if not np.isnan(v[i]) else None for k, v in zs.items()}
         cut = None
-        name = p["rel"].rsplit("/", 1)[-1]
         js = lib.faces_by_photo.get(pid, [])
         me = face_by_id.get(ident["me_face"].get(pid)) if ident["me_face"].get(pid) else None
         age = (now - p["taken_ts"]) / (365.25 * 86400) if p.get("taken_ts") else None
-        if p["status"] == "error":
-            cut = "unreadable"
-        elif min(p["width"] or 0, p["height"] or 0) < 400:
-            cut = "tiny"
-        elif SCREENSHOT_NAME.search(name) or ((m.get("screenshot") or 0) > 0.85 and not p.get("make")):
-            cut = "screenshot"
-        elif excluded and any(float(lib.femb[j] @ a) >= PERSON_T for j in js for a in excluded):
-            cut = "excluded_person"
-        elif not js:
-            cut = "no_person" if (m.get("no_person") or 0) > 0.6 else "no_face"
-        elif me is None:
-            cut = "not_you" if any(lib.faces[j]["px"] >= 48 for j in js) else "no_face"
-        else:
-            j, f = me
-            if f["h"] < 0.025:
-                cut = "too_small"
-            elif f["px"] >= 80 and (f["sharp"] or 0) < 8 and (p["sharp"] or 0) < 15:
-                cut = "blurry"
-            elif f["luma"] is not None and (f["luma"] < 28 or f["luma"] > 240):
-                cut = "exposure"
-        if cut is None and max_age and age is not None and age > max_age:
-            cut = "old"
+        evidence = {"version": filtering.VERSION, "scores": m, "faces": bool(js), "has_you": me is not None,
+                    "large_face": any(lib.faces[j]["px"] >= 48 for j in js),
+                    "excluded": bool(excluded and any(float(lib.femb[j] @ a) >= PERSON_T for j in js for a in excluded)),
+                    "face": {k: me[1].get(k) for k in ("h", "px", "sharp", "luma")} if me else None}
+        reasons = filtering.evaluate(p, evidence, policy, "me", now=now)
+        cut = next(iter(reasons), None)
 
         # soft flags + measurements (also computed for cut photos, for display)
         if me is not None:
@@ -429,49 +455,36 @@ def judge(lib: Lib, ident: dict, zs: dict, settings: dict, excluded: list[np.nda
             fl.append("old")
         if _num(p.get("luma"), 128) < 55:
             fl.append("dark")
-        if p.get("override") == "keep" and cut:
+        if p.get("override") == "keep" and cut and p["status"] != "error":
             fl.append("rescued:" + cut)
             cut = None
-        if p.get("override") == "toss":
+        if p.get("override") == "toss" and p["status"] != "error":
             cut = "tossed"
         cuts.append(cut)
         flags.append(fl)
-        measures[pid] = {"zs": m, "me": me[1] if me else None, "age": age}
+        measures[pid] = {"zs": m, "me": me[1] if me else None, "age": age, "filter": evidence}
     return cuts, flags, measures
 
 
 def _judge_gallery(lib: Lib, zs: dict, settings: dict) -> tuple[list, list, dict]:
     """Whole-gallery mode: no "is it you" rules, only what nobody keeps (screens, documents, pocket shots,
     hopeless blur or exposure). The subject is the most prominent face, if there is one."""
+    from . import filtering
     now = time.time()
-    max_age = float(settings.get("max_age_years") or 0)
+    policy = settings.get("filter_policy") or filtering.defaults(settings)
     cuts, flags, measures = [], [], {}
     for i, p in enumerate(lib.photos):
         pid = p["id"]
         m = {k: float(v[i]) if not np.isnan(v[i]) else None for k, v in zs.items()}
-        name = p["rel"].rsplit("/", 1)[-1]
         face = max((lib.faces[j] for j in lib.faces_by_photo.get(pid, [])), key=lambda f: f["px"], default=None)
         face = face if face is not None and face["px"] >= 48 else None
         age = (now - p["taken_ts"]) / (365.25 * 86400) if p.get("taken_ts") else None
         luma = p.get("luma")
         cut = None
-        if p["status"] == "error":
-            cut = "unreadable"
-        elif min(p["width"] or 0, p["height"] or 0) < 400:
-            cut = "tiny"
-        elif SCREENSHOT_NAME.search(name) or ((m.get("screenshot") or 0) > 0.85 and not p.get("make")):
-            cut = "screenshot"
-        elif (m.get("document") or 0) > 0.9:
-            cut = "document"
-        elif (luma is not None and luma < 14) or ((m.get("accidental") or 0) > 0.85
-                                                  and (_num(luma, 128) < 45 or _num(p.get("sharp"), 1e9) < 60)):
-            cut = "accidental"  # the scene model alone isn't enough: it also has to be dark or a smear
-        elif _num(p.get("sharp"), 1e9) < 25 and (m.get("blurry") or 0) > 0.8:
-            cut = "blurry"
-        elif luma is not None and luma > 245:
-            cut = "exposure"
-        if cut is None and max_age and age is not None and age > max_age:
-            cut = "old"
+        evidence = {"version": filtering.VERSION, "scores": m,
+                    "face": {k: face.get(k) for k in ("h", "px", "sharp", "luma")} if face else None}
+        reasons = filtering.evaluate(p, evidence, policy, "gallery", now=now)
+        cut = next(iter(reasons), None)
         fl: list[str] = []
         if face is not None and face["h"] >= 0.12 and face.get("blink_l") is not None:
             if min(face["blink_l"], face["blink_r"]) >= 0.55:
@@ -484,14 +497,14 @@ def _judge_gallery(lib: Lib, zs: dict, settings: dict) -> tuple[list, list, dict
             fl.append("bw")
         if _num(luma, 128) < 55:
             fl.append("dark")
-        if p.get("override") == "keep" and cut:
+        if p.get("override") == "keep" and cut and p["status"] != "error":
             fl.append("rescued:" + cut)
             cut = None
-        if p.get("override") == "toss":
+        if p.get("override") == "toss" and p["status"] != "error":
             cut = "tossed"
         cuts.append(cut)
         flags.append(fl)
-        measures[pid] = {"zs": m, "me": face, "age": age}
+        measures[pid] = {"zs": m, "me": face, "age": age, "filter": evidence}
     return cuts, flags, measures
 
 
@@ -820,14 +833,22 @@ def join_stacks(lib: Lib, groups: list[list[int]], dismissed=frozenset(), cap: i
     fi, fj, pk = [], [], []
     for k, (x, y) in enumerate(pairs):
         A, B = groups[x], groups[y]
+        if len(A) + len(B) > cap:
+            continue  # this pair cannot merge, even before either stack grows
         if len(A) == 1 and len(B) == 1:
             fi.append(A[0]); fj.append(B[0]); pk.append(k)
         else:
             for i in A:
                 for j in B:
                     fi.append(i); fj.append(j); pk.append(k)
+    if not fi:
+        return groups
     fi, fj, pk = np.array(fi), np.array(fj), np.array(pk)
-    cos = np.einsum("ij,ij->i", E[fi], E[fj])
+    cos = np.empty(len(fi), np.float32)
+    block = max(1, 2**20 // E.shape[1])
+    for start in range(0, len(fi), block):
+        end = start + block
+        cos[start:end] = np.einsum("ij,ij->i", E[fi[start:end]], E[fj[start:end]])
     sha = np.array([hash(p.get("sha256")) if p.get("sha256") else -1 for p in lib.photos], np.int64)
     ph = np.array([int(p["phash"], 16) if p.get("phash") else 0 for p in lib.photos], np.uint64)
     has_ph = np.array([bool(p.get("phash")) for p in lib.photos])
@@ -934,35 +955,52 @@ def group_shots(lib: Lib, keep: np.ndarray, quality: np.ndarray,
     return join_stacks(lib, list(groups.values()), dismissed) + list(manual.values()) + fixed
 
 
-def suggest_merges(store: Store, limit: int = 60) -> list[dict]:
+def suggest_merges(store: Store, limit: int = 60, with_total: bool = False) -> list[dict] | tuple[list[dict], int]:
     """Shots that look like the same moment but weren't stacked: very similar, and close in time
-    (or no time to go on). Pairs you dismissed don't come back."""
+    (or no time to go on). Pairs you dismissed don't come back. The list is capped at `limit`; with_total also
+    returns how many pairs qualified, so a count never reads as the cap."""
     rows = store.q("SELECT g.id AS gid, g.rep, p.emb, p.taken_ts FROM groups g JOIN photos p ON p.id = g.rep "
                    "WHERE p.emb IS NOT NULL")
-    if len(rows) < 2:
-        return []
+    if len(rows) < 2 or limit <= 0:
+        return ([], 0) if with_total else []
     E = np.stack([unblob(r["emb"]) for r in rows])
     ts = np.array([r["taken_ts"] if r["taken_ts"] is not None else np.nan for r in rows])
     dismissed = {tuple(sorted(d)) for d in (store.get_meta("stack_dismissed", []) or [])}
+    by_rep = {r["rep"]: i for i, r in enumerate(rows)}
+    rejected = {}
+    for a, b in dismissed:
+        if a in by_rep and b in by_rep:
+            i, j = sorted((by_rep[a], by_rep[b]))
+            rejected.setdefault(i, []).append(j)
     found: list[tuple[float, int, int]] = []
-    for b0 in range(0, len(rows), 1024):
-        S = E[b0:b0 + 1024] @ E.T
-        dt = np.abs(ts[b0:b0 + 1024, None] - ts[None, :])
+    total = 0
+    block = max(1, min(1024, 2**20 // len(rows)))
+    for b0 in range(0, len(rows), block):
+        S = E[b0:b0 + block] @ E.T
+        dt = np.abs(ts[b0:b0 + block, None] - ts[None, :])
         ok = ((S >= 0.88) & np.where(np.isnan(dt), False, dt <= 15 * 60)) | (S >= 0.93)
         ok &= np.arange(len(rows))[None, :] > np.arange(b0, b0 + len(S))[:, None]  # each pair once
-        for a, b in zip(*np.nonzero(ok)):
-            found.append((float(S[a, b]), b0 + int(a), int(b)))
+        for a in range(len(S)):
+            ok[a, rejected.get(b0 + a, [])] = False
+            cols = np.flatnonzero(ok[a])
+            total += len(cols)
+            if len(cols) > limit:
+                cols = cols[np.lexsort((-cols, -S[a, cols]))[:limit]]
+            for b in cols:
+                pair = (float(S[a, b]), b0 + a, int(b))
+                if len(found) < limit:
+                    heapq.heappush(found, pair)
+                elif pair > found[0]:
+                    heapq.heapreplace(found, pair)
     out = []
     for sim, a, b in sorted(found, reverse=True):
         ra, rb = rows[a], rows[b]
-        if tuple(sorted((ra["rep"], rb["rep"]))) in dismissed:
-            continue
         gap = abs(ts[a] - ts[b])
         out.append({"a": ra["rep"], "b": rb["rep"], "similarity": round(sim, 3),
                     "seconds_apart": None if np.isnan(gap) else int(gap)})
         if len(out) >= limit:
             break
-    return out
+    return (out, total) if with_total else out
 
 
 SCENE_REACH = 300  # a shot joins one of the last this-many scenes of its session (an endless "session" stays fast)
@@ -1014,11 +1052,20 @@ def refresh(store: Store, identity_only: bool = False, report=None) -> dict:
 _BASE: dict[str, dict] = {}
 
 
+def release(store: Store) -> None:
+    """A closed save no longer needs its photos and face embeddings in the regroup cache."""
+    with store.refresh_lock:
+        _BASE.pop(str(store.path), None)
+
+
 def _inputs_sig(store: Store) -> str:
     """Fingerprint of everything a refresh depends on except the stacking (stack_key, rep_pref)."""
     h = hashlib.sha1()
-    for key in ("settings", "excluded_people", "me_anchors", "not_me_anchors"):
-        h.update(json.dumps(store.get_meta(key), sort_keys=True).encode())
+    for key in ("settings", "excluded_people", "me_anchors", "not_me_anchors", "filter_policy", "tag_version"):
+        value = store.get_meta(key)
+        if key == "settings" and isinstance(value, dict):
+            value = {k: v for k, v in value.items() if k != "help"}
+        h.update(json.dumps(value, sort_keys=True).encode())
     row = store.one("SELECT group_concat(id || ',' || status || ',' || ifnull(override, ''), ';') "
                     "AS s FROM (SELECT * FROM photos WHERE status IN ('analyzed', 'error') ORDER BY id)")
     h.update((row["s"] or "").encode())
@@ -1077,15 +1124,24 @@ def _refresh(store: Store, identity_only: bool, report=None) -> dict:
             best = max(sims, key=sims.get) if sims else None
             keys.append(best if best is not None and sims[best] >= PERSON_T else -(k + 1))
         store.set_meta("excluded_keys", keys)
-    if ident["centroid"] is not None:
-        store.set_meta("me_centroid", ident["centroid"].tolist())
+    store.set_meta("me_centroid", ident["centroid"].tolist() if ident["centroid"] is not None else None)
     report("people", people=len(ident["people"]), me=int(sum(1 for v in ident["me_face"].values() if v is not None)))
     if identity_only:
         _BASE.pop(str(store.path), None)
         return {"seconds": time.time() - t0}
     base, judged = _judge_all(store, lib, ident, sig)
     from . import tags  # (tags builds on themes, which builds on this module)
-    found = tags.write_auto(store, lib, *tags.auto_tags(lib, ident, base["zs"], base["cats"], base["flags"], base["keep"], base["mode"]))
+    found = tags.write_auto(store, lib, *tags.auto_tags(lib, ident, base["zs"], base["cats"], base["flags"], base["keep"], base["mode"], base["recognized"]))
+    _filter_base(store, base, judged)  # New discoveries and your corrections both count for content rules.
+    from . import filtering
+    for p in lib.photos:
+        p["zs"] = json.dumps(base["evidence"][p["id"]])
+    with store.tx() as c:
+        c.executemany("UPDATE photos SET zs=? WHERE id=?", [(p["zs"], p["id"]) for p in lib.photos])
+    store.set_meta("filter_revision", filtering.input_revision(lib.photos, base["policy"], base["mode"], tags.effective(store)))
+    store.set_meta("filter_counts", {"total": len(lib.photos), "kept": int(base["keep"].sum()),
+                                   "aside": int((~base["keep"]).sum()),
+                                   "reviewed": sum(p.get("override") is not None for p in lib.photos)})
     cut = [(lib.photos[i]["id"], j[0]) for i, j in enumerate(judged) if j[0]]
     report("throwouts", cut=cut[:60], counts=base["cut"],
            kinds={k: int(n) for k, n in zip(*np.unique([c for c, keep in zip(base["cats"], base["keep"]) if c and keep], return_counts=True))}
@@ -1099,26 +1155,58 @@ def _refresh(store: Store, identity_only: bool, report=None) -> dict:
 def _judge_all(store: Store, lib: Lib, ident: dict, sig: str) -> tuple[dict, list]:
     """Throw-outs, flags, hand features and priors for every photo: what regroup reuses, plus the rows to write."""
     settings = {**DEFAULT_SETTINGS, **(store.get_meta("settings", {}) or {})}
+    from . import filtering
+    settings["filter_policy"] = filtering.policy(store, settings)
     mode = settings.get("mode", "me")
     zs = zero_shot(lib) if len(lib.photos) else {}
     cats = categorize(lib) if len(lib.photos) else []
     excluded = [np.asarray(a, np.float32) for a in store.get_meta("excluded_people", [])]
     cuts, flags, measures = judge(lib, ident, zs, settings, excluded)
+    from . import tags
+    recognized = tags.recognize(lib.emb, lib.crop)
+    inferred = {name: tag for name, (tag, _) in tags.ATTR_TAGS.items()}
+    inferred["text"] = "text"
+    # Printed flags make the same claims as tags; a binary preference alone is insufficient there too.
+    flags = [[flag for flag in row if flag not in inferred or inferred[flag] in recognized[i]
+              or (flag == "blurry" and _num(lib.photos[i].get("sharp"), 1e9) < 25)] for i, row in enumerate(flags)]
     spec = hand_spec(mode)
     H = hand_features(lib, measures, flags, mode, cats)
     prior = H @ np.array([h[1] for h in spec], np.float32)
     base = {
         "sig": sig, "lib": lib, "H": H, "prior": prior, "keep": np.array([c is None for c in cuts]),
-        "hand": spec, "cats": cats, "zs": zs, "flags": flags, "mode": mode,
+        "hand": spec, "cats": cats, "zs": zs, "flags": flags, "mode": mode, "recognized": recognized,
+        "policy": settings["filter_policy"], "evidence": {pid: m["filter"] for pid, m in measures.items()},
         # Tossed photos stay in the model as inactive items: what you threw out teaches your taste.
         "tossed": [i for i, p in enumerate(lib.photos) if p.get("override") == "toss" and lib.has_emb[i]],
         "crops": np.where(lib.has_crop[:, None], lib.crop, lib.emb), "pca": None,
         "cut": {k: int(sum(1 for c in cuts if c == k)) for k in CUT_LABELS if any(c == k for c in cuts)},
     }
+    # The auto-crop frame: around the main face; otherwise around the salient region the analysis found (an
+    # animal, a thing, a person from behind), or nothing (the centre) when it found no particular subject.
+    salient = {r["id"]: r["salient"] for r in store.q("SELECT id, salient FROM photos WHERE salient IS NOT NULL")}
     judged = [(cuts[i], json.dumps(flags[i]), float(prior[i]),
-               json.dumps(subject_box(p["pw"], p["ph"], measures[p["id"]]["me"])), cats[i] or None)
+               json.dumps(subject_box(p["pw"], p["ph"], measures[p["id"]]["me"]) or json.loads(salient.get(p["id"]) or "null")), cats[i] or None)
               for i, p in enumerate(lib.photos)]
+    _filter_base(store, base, judged)
     return base, judged
+
+
+def _filter_base(store, base, judged):
+    from . import filtering, filter_fit, tags
+    effective = tags.effective(store)
+    assessed = filter_fit.assess(store, base["lib"].photos, effective, base["policy"], base["mode"], base["evidence"])
+    cuts = []
+    for i, photo in enumerate(base["lib"].photos):
+        reasons = assessed[photo["id"]][0]
+        cut = filtering.disposition(photo, reasons)
+        flags = [f for f in base["flags"][i] if not f.startswith("rescued:")]
+        if photo.get("override") == "keep" and reasons and photo["status"] != "error":
+            flags.append("rescued:" + reasons[0])
+        base["flags"][i] = flags
+        judged[i] = (cut, json.dumps(flags), *judged[i][2:])
+        cuts.append(cut)
+    base["keep"] = np.array([cut is None for cut in cuts], dtype=bool)
+    base["cut"] = dict(Counter(c for c in cuts if c))
 
 
 def _stack(store: Store, base: dict, t0: float, judged: list | None = None, report=None) -> dict:
@@ -1151,7 +1239,7 @@ def _stack(store: Store, base: dict, t0: float, judged: list | None = None, repo
     sd_all = np.concatenate([[h[2] for h in spec], np.full(PCA_FULL + PCA_CROP, PCA_SD)]).astype(np.float32)
     gids = [min(lib.photos[i]["id"] for i in g) for g in shots] + [-lib.photos[i]["id"] for i in tossed]
     item_reps = [lib.photos[g[0]]["id"] for g in shots] + [lib.photos[i]["id"] for i in tossed]
-    active = np.array([True] * len(shots) + [False] * len(tossed))
+    active = np.array([True] * len(shots) + [False] * len(tossed), dtype=bool)
 
     gid_of = {i: (-lib.photos[i]["id"], None) for i in tossed}
     group_rows = []
@@ -1187,4 +1275,6 @@ def _stack(store: Store, base: dict, t0: float, judged: list | None = None, repo
     store.set_meta("summary", summary)
     store.set_meta("derived_version", DERIVED_VERSION)
     store.set_meta("state_version", time.time())
+    from . import tournament
+    tournament.reconcile(store)
     return summary

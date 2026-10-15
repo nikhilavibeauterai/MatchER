@@ -1,4 +1,5 @@
 const { chromium } = require("playwright-core");
+const assert = require("node:assert/strict");
 const { BASE, LINK, LIB, OUT } = process.env;
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -44,7 +45,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.waitForTimeout(800);
   res.urlAfterRename = page.url().replace(/^.*#/, "#");
   res.cardAfterRename = (await page.$eval("#dtop", (d) => d.dataset.photo).catch(() => null)) === photoBefore;
-  res.renamed = await page.evaluate(async () => (await (await fetch("/api/draw")).json()).groups.some((g) => g.name === "A Rather Long Group Name For Testing Overflow"));
+  res.renamed = await page.evaluate(async () => (await (await fetch("/api/draw/board?per=4&uper=4")).json()).groups.some((g) => g.name === "A Rather Long Group Name For Testing Overflow"));
   await page.evaluate(async () => {  // enough groups for the 10th and 11th keys
     const h = { "Content-Type": "application/json", "X-MatchER": "1" };
     for (let k = 0; k < 12; k++) {
@@ -92,7 +93,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.waitForTimeout(900);
   res.emojiFromList = await page.$eval("#bins .bin:not(.new) .bin-emoji", (e) => e.textContent.trim());
   // Find more: head rename + look-for
-  const g = await page.evaluate(async () => (await (await fetch("/api/draw")).json()).groups[0].id);
+  const g = await page.evaluate(async () => (await (await fetch("/api/draw/board?per=4&uper=4")).json()).groups[0].id);
   await page.goto(`${BASE}/#draw?play=${g}`);
   await page.waitForSelector("#t-name");
   await page.click("#t-name");
@@ -119,8 +120,8 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.goto(BASE + "/#home");
   await page.waitForSelector(".journey");
   await page.goto(BASE + "/#draw");
-  await page.waitForSelector(".ps-tag");
-  await page.click(".ps-tag");
+  await page.waitForSelector('.vn-catalog [data-tag]');
+  await page.locator('.vn-catalog [data-tag]').first().click({button:'right'});
   await page.waitForSelector(".island-pop");
   res.spills.push(...(await spill()));
   await page.click(".island-pop [data-tp=emoji]");
@@ -135,6 +136,10 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await p2.waitForSelector("#path");
   res.phoneSpill = await p2.evaluate(() => { const i = document.querySelector("#path"), r = i.closest(".row").getBoundingClientRect(), a = i.getBoundingClientRect(); return Math.round(a.right - r.right); });
   res.phoneOverflow = await p2.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+  assert.deepEqual(res.spills, []);
+  for (const key of ["spaceKeptCard", "cardAfterRename", "renamed", "shiftMoved", "cursorFollowed", "key0", "keyAlt1", "pencilOpens"]) assert.equal(res[key], true, key);
+  assert.equal(res.phoneOverflow, false);
+  assert.ok(res.phoneSpill <= 1);
   console.log(JSON.stringify({ ...res, problems }));
   await browser.close();
 })().catch(async (e) => { console.error("FAILED:", e.message, JSON.stringify(globalThis.__probs || [])); process.exit(1); });

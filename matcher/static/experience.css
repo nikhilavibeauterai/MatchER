@@ -1,0 +1,58 @@
+/* Rewards belong to the game's HUD, leaving photos and decision controls clear. */
+.reward-note { display:flex; align-items:center; gap:8px; min-width:0; max-width:420px; height:38px; padding:5px 12px;
+  border:1px solid #ffd86b66; border-radius:12px; background:#2a2418; color:var(--gold,#ffd86b); cursor:pointer; }
+.reward-note span { flex:none; font-size:19px; }
+.reward-note b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.reward-note:hover,.reward-note:focus-visible { border-color:#ffd86b; background:#393020; }
+.duel-feedback { display:none; }
+.duel-head .rank-pop { position:static; transform:none; animation:none; box-shadow:none; background:transparent; border:0; padding:0;
+  color:var(--text); height:28px; font-size:12px; white-space:nowrap; }
+.duel-head .rank-pop.out { opacity:0; transform:none; }
+.duel-head .rank-pop img { width:24px; height:24px; }
+@media(min-width:761px) {
+  .duel-head { display:grid; grid-template-columns:minmax(180px,1fr) auto; gap:2px 16px; }
+  .duel-head .question { grid-column:1; grid-row:1; }
+  .duel-head .learnt { grid-column:1; grid-row:2; min-height:28px; max-width:100%; }
+  .duel-head .hud { grid-column:2; grid-row:1 / span 2; }
+}
+.gt-qualify { margin-left:auto; min-height:36px; font-size:12px; }
+.qualification { max-width:620px; }
+.qualify-groups { display:grid; gap:14px; max-height:45vh; overflow-y:auto; margin:18px 0; }
+.qualify-groups section>b { display:flex; justify-content:space-between; gap:12px; }
+.qualify-groups section>b span { color:var(--muted); font-size:12px; white-space:nowrap; }
+.qualify-groups section>div { display:flex; align-items:center; gap:6px; margin-top:6px; }
+.qualify-groups img { width:46px; height:52px; object-fit:cover; border-radius:6px; }
+@media(max-width:760px) {
+  .reward-note { flex:1; height:38px; gap:5px; padding:5px 8px; }
+  .reward-note b { font-size:12px; }
+  #topbar .hud-btn,#topbar .menu-btn { flex:none; }
+  .duel-feedback { display:block; min-width:0; flex:1; overflow:hidden; }
+  .duel-feedback .rank-pop { gap:4px; font-size:11px; }
+  .duel-feedback .rank-pop .story { font-size:10px; padding:1px 3px; }
+  .duel-feedback .rank-pop small { overflow:hidden; text-overflow:ellipsis; }
+  #view-duel.with-table .gt-head { flex-flow:row nowrap; align-items:center; gap:6px; }
+  #view-duel.with-table .gt-toggle { min-width:0; flex:1; }
+  #view-duel.with-table .gt-head:has(.gt-qualify) .gt-toggle span { display:none; }
+  .gt-qualify { flex:none; min-height:44px; padding:5px 8px; font-size:11px; }
+}
+
+/* The pause panel has steady actions; its tools scroll inside the same frame. */
+#menu { position:fixed; inset:0; margin:auto; width:min(560px,calc(100vw - 32px)); max-height:min(720px,calc(100dvh - 32px));
+  padding:20px; border:1px solid #ffffff30; border-radius:24px; background:#111419f2; box-shadow:0 24px 100px #0009; }
+#menu[open] { display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:14px; }
+#menu::backdrop { background:#07091099; backdrop-filter:blur(5px); }
+#menu .menu-head { padding:0; gap:16px; align-items:flex-start; }
+#menu .menu-head h2 { margin:3px 0 0; font-size:26px; line-height:1.2; overflow-wrap:anywhere; }
+#menu .menu-head .icon { width:44px; height:44px; flex:none; }
+#menu .menu-play { display:grid; grid-template-columns:1fr; gap:10px; }
+#menu .menu-play button { min-height:48px; white-space:normal; }
+#menu .menu-list { overflow:auto; overscroll-behavior:contain; min-height:0; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; border-top:1px solid var(--line); padding-top:10px; }
+#menu .menu-list>a,#menu .menu-list>button { min-height:44px; gap:8px; min-width:0; font-size:14px; }
+#menu .menu-list span { min-width:0; overflow-wrap:anywhere; }
+.game-paused #world .ps-item,.game-paused #main:not(:has(.analysis)) .side,.game-paused #main .side::before,.game-paused #main .filter-print,.game-paused #main .tag-call img { animation-play-state:paused!important; }
+@media(max-width:480px) {
+  #menu { width:calc(100vw - 24px); max-height:calc(100dvh - 24px); padding:16px; border-radius:20px; }
+  #menu .menu-head h2 { font-size:23px; }
+  #menu .menu-play { grid-template-columns:1fr; gap:8px; }
+  #menu .menu-list { grid-template-columns:1fr; }
+}

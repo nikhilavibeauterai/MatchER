@@ -37,7 +37,10 @@ def _app(tmp_path, mode, craft=None):
 
 @pytest.fixture
 def client(tmp_path, fake_prompts):
-    return _app(tmp_path, "me")
+    c = _app(tmp_path, "me")
+    yield c
+    for session in c.matcher._sessions.values():
+        session.shutdown()
 
 
 @pytest.fixture
@@ -55,16 +58,20 @@ def gallery(tmp_path, fake_prompts, monkeypatch):
             for k, r in enumerate(rows[:28]):
                 e = _unit((nature if k < 14 else food) + rng.normal(0, 0.02, 768)).astype(np.float16)
                 c.execute("UPDATE photos SET emb=?, crop_emb=? WHERE id=?", (e.tobytes(), e.tobytes(), r["id"]))
-    return _app(tmp_path, "gallery", craft)
+    c = _app(tmp_path, "gallery", craft)
+    yield c
+    for session in c.matcher._sessions.values():
+        session.shutdown()
 
 
 def play_duels(c, n, outcome="a", lr=None):
-    cards = c.get("/api/next?n=1").get_json()["cards"]
+    cards = post(c, "/api/deal?n=1").get_json()["cards"]
     last = None
     for _ in range(n):
         card = cards[0]
         if card["type"] == "mini":
-            last = post(c, "/api/vote", {"card": card["id"], "outcome": "skip", "ms": 900, "lr": lr}).get_json()
+            pick = "a" if card["a"] == card["champ"] else "b"
+            last = post(c, "/api/vote", {"card": card["id"], "outcome": pick, "ms": 900, "lr": lr}).get_json()
         else:
             last = post(c, "/api/vote", {"card": card["id"], "outcome": outcome, "ms": 900, "lr": lr}).get_json()
         cards = last["cards"]
@@ -85,7 +92,7 @@ def test_gallery_mode_keeps_everyone_and_sorts_photos_into_cups(gallery):
     j = post(gallery, "/api/cup", {"cup": "nature"}).get_json()
     assert j["cup"] == "nature"
     nature = {r["id"] for r in s.store.q("SELECT id FROM photos WHERE category='nature'")}
-    card = gallery.get("/api/next?n=1").get_json()["cards"][0]
+    card = post(gallery, "/api/deal?n=1").get_json()["cards"][0]
     shown = {card["a"], card["b"]} if card["type"] == "duel" else set(card["frames"])
     assert shown <= nature
     assert post(gallery, "/api/cup", {"cup": "nowhere"}).status_code == 400
@@ -130,7 +137,7 @@ def test_sweep_rescues_and_tosses_and_undo_puts_it_back(client):
 
 # ---------------------------------------------------------------- stacks stage
 def test_the_stacks_stage_plays_only_mini_tournaments(client):
-    r = client.get("/api/next?n=1&stage=stacks").get_json()
+    r = post(client, "/api/deal?n=1&stage=stacks").get_json()
     left = r["left"]
     assert left >= 1 and r["cards"][0]["type"] == "mini"
     card, crowned = r["cards"][0], 0
@@ -142,7 +149,7 @@ def test_the_stacks_stage_plays_only_mini_tournaments(client):
         card = v["cards"][0]
         assert card["type"] == "mini"
     assert crowned >= left                     # crowning one can make another worth crowning
-    assert client.get("/api/next?n=1&stage=stacks").get_json()["left"] == 0
+    assert post(client, "/api/deal?n=1&stage=stacks").get_json()["left"] == 0
 
 
 # ---------------------------------------------------------------- finals
@@ -157,7 +164,7 @@ def test_finals_seed_a_bracket_crown_a_champion_and_undo_steps_back(client):
     while f["card"]:
         card = f["card"]
         played.append(card["round"])
-        assert post(client, "/api/vote", {"card": card["id"], "outcome": "skip"}).status_code == 400  # no ties
+        assert post(client, "/api/vote", {"card": card["id"], "outcome": "great"}).status_code == 400  # no ties
         f = client.get("/api/finals").get_json()
         card = f["card"]
         f = post(client, "/api/vote", {"card": card["id"], "outcome": "a", "ms": 1500}).get_json()
@@ -179,8 +186,11 @@ def test_finals_seed_a_bracket_crown_a_champion_and_undo_steps_back(client):
 def test_best_of_export_keeps_the_original_files(client):
     play_duels(client, 5)
     r = post(client, "/api/export", {"kind": "bestof"}).get_json()
-    files = sorted(p.name for p in __import__("pathlib").Path(r["dir"]).iterdir())
+    out = __import__("pathlib").Path(r["dir"])
+    files = sorted(p.name for p in out.iterdir() if p.is_file())
     assert r["count"] == len(files) and files[0].startswith("01 - ")
+    touched = sorted(p.name for p in (out / "touched up").iterdir())  # the same shots with Enhance baked in
+    assert r["touched"] == len(touched) == len(files) and touched[0] == files[0].rsplit(".", 1)[0] + ".jpg"
     rel = next(x for x in client.get("/api/shortlist").get_json()["items"] if x["rank"] == 1)["rel"]
     assert (__import__("pathlib").Path(r["dir"]) / files[0]).read_bytes() == (client.src / rel).read_bytes()
     assert "ship" in client.get("/api/game").get_json()["stats"]["unlocked"]

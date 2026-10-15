@@ -8,16 +8,31 @@ const fmt = (n) => Number(n || 0).toLocaleString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pct = (x) => `${Math.round((x || 0) * 100)}%`;
 const plural = (n, word, many = `${word}s`) => `${fmt(n)} ${n === 1 ? word : many}`;
-const P = (id) => `/img/p/${id}.jpg`;
-const T = (id) => `/img/t/${id}.jpg`;
-const F = (id) => `/img/f/${id}.jpg`;
+const imageKey = () => encodeURIComponent(S.lib?.image_key || 'local');
+const P = (id) => `/img/p/${id}.jpg?v=${imageKey()}`;
+const T = (id) => `/img/t/${id}.jpg?v=${imageKey()}`;
+// The pyramid: the smallest stored halving of a photo (50, 100, 200, 400, 800, 1600 px) that still has a device
+// pixel for every screen pixel of a card `cssPx` wide, so a print never decodes more than it shows. The thumbnail
+// and preview addresses carry the level (`&m=`), so every rule that recognises a card still does.
+const MIPS = [50, 100, 200, 400, 800, 1600];
+// Only a caller that says so (a print filling four fifths of the screen) gets the original file; every other
+// size stops at the preview.
+const M = (id, cssPx, full = false) => {
+  if (full) return `${P(id)}&m=full`;
+  const need = Math.max(1, cssPx) * (devicePixelRatio || 1), level = MIPS.find((l) => l >= need) || 1600;
+  return level === 1600 ? P(id) : level === 400 ? T(id) : level === 800 ? `${P(id)}&m=800` : `${T(id)}&m=${level}`;
+};
+const F = (id) => `/img/f/${id}.jpg?v=${imageKey()}`;
+const groupHue = (id) => hueOf(`g${id}`);  // the lasso's hue (photo-sea.js), so a team keeps one colour everywhere
 
 async function api(path, body) {
+  const source=S.lib?.source||'';
   const opts = body === undefined ? {} : {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-MatchER": "1" },
     body: JSON.stringify(body),
   };
+  if(path==="/api/settings"&&body&&Object.keys(body).length===1&&typeof body.help==="boolean")opts.keepalive=true;
   const r = await fetch(path, opts);
   let data = null;
   try { data = await r.json(); } catch (_) { /* not JSON */ }
@@ -28,17 +43,39 @@ async function api(path, body) {
     throw e;
   }
   // a change to what's in the cup, its groups, stacks or tags: the sea behind every screen catches up
-  if (body !== undefined && /^\/api\/(draw|tags|groups|rescue|sweep|cup|settings|frame|undo|people)/.test(path) && typeof World !== "undefined") World.dirty();
+  if (body !== undefined && (/^\/api\/(draw|tags|groups|rescue|sweep|cup|settings|frame|undo|people)/.test(path)
+    || /^\/api\/filter\/(apply|decision)$/.test(path) || path==="/api/stacks/auto" || path==="/api/vote"&&(data?.crowned||data?.swap)) && typeof World !== "undefined") World.dirty();
+  if(body!==undefined&&path==="/api/undo")DuelSides.undo(data,source);
+  if(body!==undefined&&typeof HistoryHUD!=="undefined")HistoryHUD.reply(path,data);
   return data;
 }
 
 let toastTimer = null;
+// Routine confirmations explain themselves once per session; the undo chip in the HUD says the rest afterwards.
+const toastedOnce = new Set();
+function toastOnce(key, msg, ms) { if (toastedOnce.has(key)) return; toastedOnce.add(key); toast(msg, ms); }
+
 function toast(msg, ms = 2600) {
   const t = $("#toast");
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove("show"), ms);
+}
+
+function askInGame(message, action = "Continue") {
+  const m = $("#modal");
+  m.className = "";
+  m.onclick = null;
+  m.innerHTML = `<h2>${esc(action)}</h2><p>${esc(message)}</p><div class="row spread">
+    <button class="btn" data-answer="no">Back</button><button class="btn primary" data-answer="yes">${esc(action)}</button></div>`;
+  return new Promise((resolve) => {
+    let answer = false;
+    m.addEventListener("close", () => resolve(answer), { once: true });
+    $("[data-answer=no]",m).onclick = () => m.close();
+    $("[data-answer=yes]",m).onclick = () => { answer = true; m.close(); };
+    m.showModal();
+  });
 }
 
 const LOCK = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M17 9h-1V7a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2zm-7-2a2 2 0 1 1 4 0v2h-4V7z"/></svg>`;
@@ -74,13 +111,19 @@ const flagHtml = (flags) => (flags || []).filter((f) => FLAG_LABELS[f])
 // ---------------------------------------------------------------- state + routing
 const S = { lib: null, recent: [], poll: null, cards: [], current: null, shownAt: 0, busy: false, progress: null, milestone: 0,
   crop: (() => { try { return localStorage.getItem("matcher-crop") !== "off"; } catch (_) { return true; } })() };
-const VIEWS = { onboard: viewOnboard, analyze: viewAnalyze, home: viewHome, ready: viewHome, duel: viewDuel,
+const VIEWS = { onboard: viewOnboard, analyze: viewAnalyze, home: viewHome, ready: viewHome, filter: viewFilter, duel: viewDuel,
   shortlist: viewShortlist, leaderboard: viewShortlist, draw: viewDraw, cuts: viewCuts, people: viewPeople,
-  sweep: viewSweep, finals: viewFinals, reveal: viewReveal, saves: viewSaves, stacks: viewStacks, tournament: viewTournament };
+  sweep: viewSweep, finals: viewFinals, reveal: viewReveal, saves: viewSaves, stacks: viewStacks, tournament: viewTournament, tags: viewTags };
 
+let stateRequest = 0;
 async function loadState() {
+  const request = ++stateRequest;
   const st = await api("/api/state");
+  if (request !== stateRequest) return st;
+  if (S.lib?.source !== st.library?.source) { S.journey = null; S.game = null; S.homeTag = null; }
   S.lib = st.library;
+  const pending=readHelpPreference(S.lib);
+  if(pending){S.lib.settings={...S.lib.settings,help:pending.value};saveHelpPreference(S.lib,pending.value);}
   S.recent = st.recent || [];
   return st;
 }
@@ -92,6 +135,13 @@ function stopPolling() {
 
 function route() {
   stopPolling();
+  closeHelp();
+  S.events?.abort();
+  S.events = new AbortController();
+  // Pending replies belong to the old screen; its input queue must leave with it.
+  S.busy = false; S.queued = []; S.undoQueued = 0;
+  if (S.lr) cancelAnimationFrame(S.lr.raf);
+  S.lr = null; S.lrLevel = null;
   let [name, query] = location.hash.slice(1).split("?");
   if (name === "groups") name = "draw";  // the Draw grew out of the Groups page
   let v = name;
@@ -104,19 +154,22 @@ function route() {
   if (v !== name) { history.replaceState(null, "", `#${v}`); query = ""; }
   const bare = v === "onboard" || v === "analyze" || v === "saves";
   $("#topbar").hidden = bare;
+  $("#journey-dock").hidden = bare;
   document.body.classList.toggle("no-bar", bare);
   document.body.classList.toggle("mode-gallery", MODE() === "gallery");
   document.body.classList.remove("is-dragging");
   paintSaveChip();
-  S.onKey = null;
+  S.hint=null;paintGameHelp();
+  if (!bare) paintTrack();
+  S.onKey = null; S.pauseActivity = null; S.historyActions = null; S.forward = null;
   S.filter = filterPref();
   S.crop = cropPref();
   S.view = (S.view || 0) + 1;
   const main = $("#main");
+  if (typeof World !== "undefined") World.release(main);
   main.innerHTML = "";
-  window.scrollTo(0, 0);
+  window.scrollTo(0, 0); main.scrollTop = 0;
   if (typeof World !== "undefined") {
-    World.release();
     const q2 = new URLSearchParams(query || "");
     const groupsView = (() => { try { return localStorage.getItem("matcher-groups-view"); } catch (_) { return null; } })() || (innerWidth >= 900 ? "sea" : "list");
     World.setMode(bare ? "hidden" : v === "draw" ? (q2.get("sort") || q2.get("play") ? "focus" : groupsView === "sea" ? "live" : "dim")
@@ -126,22 +179,53 @@ function route() {
   if (!bare && v !== "home") refreshHud();
 }
 
+// Keep native typing intact; game screens receive one shared directional vocabulary.
+function gameInput(e) {
+  const key = {w:"ArrowUp",a:"ArrowLeft",s:"ArrowDown",d:"ArrowRight"}[e.key.toLowerCase()];
+  if (!key) return e;
+  return new Proxy(e, {get(event, prop) {
+    if (prop === "key") return key;
+    const value = Reflect.get(event, prop, event);
+    return typeof value === "function" ? value.bind(event) : value;
+  }});
+}
+const gamePhotoTarget = (root = document) => root && ($(".side[data-photo]:focus-within", root) || $(".side[data-photo]:hover", root));
+
 window.addEventListener("hashchange", route);
-document.addEventListener("keydown", (e) => {  // the sweep and the finals bring their own keys
-  if (e.target.closest("input, select, textarea, dialog") || e.ctrlKey || e.metaKey || (e.altKey && !/^Digit/.test(e.code))
+document.addEventListener("keydown", (e) => {  // each activity gives the shared directions their meaning
+  if(e.key==="Escape"&&!e.defaultPrevented){
+    if($(".help-pop")){e.preventDefault();e.stopImmediatePropagation();closeHelp(true);return;}
+    if($("dialog[open]"))return;  // the top native dialog owns its cancel key
+    if($(".inspect,.ceremony")){S.onKey?.(e);e.preventDefault();e.stopImmediatePropagation();return;}
+    const reason=$('.filter-stage [data-reason-toggle][aria-expanded="true"]');
+    if(reason){e.preventDefault();e.stopImmediatePropagation();reason.click();reason.focus({preventScroll:true});return;}
+    // A selection or focused group is a local layer: dismiss it before pausing the activity.
+    const [name,query]=location.hash.slice(1).split('?'),params=new URLSearchParams(query||'');
+    if(['draw','groups'].includes(name)&&!params.has('play')&&!params.has('sort')&&
+      ($('[data-sel-act="clear"]')||World.sea?.focusCluster||World.sea?.focusKeys.size)){S.onKey?.(e);if(e.defaultPrevented){e.stopImmediatePropagation();return;}}
+    if(!e.target.closest('input,select,textarea,.island-pop,.emoji-pop,.bin-editor')){
+      e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)openMenu();return;
+    }
+  }
+  if (e.defaultPrevented || e.target.isContentEditable || e.target.closest("input, select, textarea, dialog, .vn-catalog, .vn-tag, .vn-lasso-tag, .island-pop, .sea-tag-pop") || e.ctrlKey || e.metaKey || (e.altKey && !/^Digit/.test(e.code))
     || $("dialog[open]")) return;
+  if (["Enter", " "].includes(e.key) && e.target.closest("button, a, summary, [role=button]")) return;
+  e = gameInput(e);
+  if (e.repeat && [" ","z","x","c","f","enter","arrowleft","arrowright","arrowup","arrowdown"].includes(e.key.toLowerCase())) { e.preventDefault(); return; }
+  if(e.key.toLowerCase()==='z'&&S.lib&&typeof HistoryHUD!=='undefined') { e.preventDefault();HistoryHUD.act('undo');return; }
   if (S.onKey) S.onKey(e);
   if (e.defaultPrevented || e.repeat || location.hash.startsWith("#duel") || !S.lib) return;
   if (e.key === "f" || e.key === "F") { e.preventDefault(); toggleFilter(); }  // the auto-filter and auto-crop, anywhere
   else if (e.key === "c" || e.key === "C") { e.preventDefault(); toggleCrop(); }
+  else if (e.key.toLowerCase() === "z" && typeof HistoryHUD !== "undefined") { e.preventDefault(); HistoryHUD.fallback('undo'); }
   else if (e.key === "Enter" && (!document.activeElement || document.activeElement === document.body)) {
-    const go = $(".screen-bar .bar-right a.btn.primary, .next-up a.btn.primary");  // Enter takes the way forward, on every screen
+    const go = $("#journey-next.ready") || $$(".screen-bar .bar-right .btn.primary, .next-up a.btn.primary").find(b=>!b.disabled&&b.getClientRects().length);  // Enter takes the visible way forward, including exports.
     if (go) { e.preventDefault(); go.click(); }
   }
 });
 
 // While a screen loads (or if it can't), the same frame it will fill, so nothing jumps from a page to a screen.
-const LOADING = (text = "Loading…") => `<div class="screen no-rail"><div class="screen-body fill"><div class="empty">${text}</div></div></div>`;
+const LOADING = (text = "Loading…") => `<div class="screen no-rail"><div class="screen-body fill"><div class="empty loading" role="status">${text}</div></div></div>`;
 const FAILED = (msg) => `<div class="screen no-rail"><div class="screen-body fill"><div class="empty error">${esc(msg)}</div></div></div>`;
 
 // True once the person has moved on from the page that started this request (its reply must not render).
@@ -149,21 +233,25 @@ const left = (token) => token !== S.view;
 
 // ---------------------------------------------------------------- onboarding
 function viewOnboard(main) {
+  const view = S.view;
+  let browsing = 0, opening = false;
   main.innerHTML = `
     <div class="screen onboard no-rail">
       <div class="screen-head">
         <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i></span>MatchER</div>
         <h1>New save</h1>
         <span class="grow"></span>
-        ${helpBtn(`Point it at a folder. It clears out the junk on its own, then you play quick head-to-head duels. It learns your taste as
-          you go, ranks everything (even the photos you never see), and crowns champions. Each folder is its own save.`)}
+        ${helpBtn(`Each folder is its own save. It learns your taste as you play and ranks even the photos you haven't compared.<br><br>${STAGES.map(([,icon,,title,line])=>`<b>${icon} ${title}</b>: ${line}`).join('<br><br>')}`)}
       </div>
       <div class="screen-body onboard-body">
         <div class="onboard-hero">
           <h2 class="hero-title">Photo tournaments that find your best shots.</h2>
-          <p class="lede">Point it at a folder. It clears out the junk on its own, then you play quick head-to-head duels.
-            It learns your taste as you go, ranks everything (even the photos you never see), and crowns champions.</p>
-          <ol class="onboard-path" aria-label="How it plays">${STAGES.map(([, icon, , title, line]) =>
+          <p class="lede">Your photos. Your calls. A shortlist worth keeping.</p>
+          <ol class="onboard-path" aria-label="How it plays">${[
+            ['🎛️','Choose','Preview what stays in play. Every set-aside photo can return.'],
+            ['🧩','Organize','Gather similar takes into stacks and themes into teams.'],
+            ['🏆','Play','Pick your favourites in quick duels. Crown and save your best.'],
+          ].map(([icon,title,line]) =>
             `<li><span class="op-ico">${icon}</span><span><b>${title}</b><span class="muted small">${line}</span></span></li>`).join("")}</ol>
           <div class="lock">${LOCK}<span>Runs entirely on this computer. Nothing is uploaded; the export is a folder you decide to share.</span></div>
         </div>
@@ -191,7 +279,7 @@ function viewOnboard(main) {
                 <div id="pick-error" class="error" hidden></div>
                 <div class="sample-row"><span class="muted small">No photos handy?</span>
                   <button class="btn ghost" id="sample">Try it with sample photos</button>
-                  <span class="faint small" id="sample-note">about 45 public-domain photos from Wikimedia Commons, downloaded when you click</span></div>
+                  <span class="faint small" id="sample-note">Public-domain meme faces and classics · works offline</span></div>
               </div>
             </div></div>
           </div>
@@ -204,7 +292,7 @@ function viewOnboard(main) {
       </div>
     </div>`;
 
-  const err = (msg) => { const e = $("#pick-error"); e.textContent = msg || ""; e.hidden = !msg; };
+  const err = (msg) => { const e = $("#pick-error", main); if (left(view) || !e) return; e.textContent = msg || ""; e.hidden = !msg; };
   let mode = "gallery";
   $$(".mode-card").forEach((b) => (b.onclick = () => {
     mode = b.dataset.mode;
@@ -216,7 +304,8 @@ function viewOnboard(main) {
     b.textContent = "Waiting for the folder dialog…";
     err("");
     try {
-      const r = await api("/api/pick-native", { start: "" });
+      const r = window.matcherDesktop ? await window.matcherDesktop.chooseFolder() : await api("/api/pick-native", { start: "" });
+      if (left(view)) return;
       if (!r.available) { toast("No desktop folder dialog found; browse here instead."); openBrowser(); }
       else if (r.path) await openLibrary(r.path);
     } catch (e) { err(e.message); }
@@ -230,10 +319,13 @@ function viewOnboard(main) {
     err("");
     let st;
     try { st = await api("/api/sample", {}); } catch (e) { err(e.message); b.disabled = false; return; }
+    if (left(view)) return;
     while (st.state === "running") {
-      $("#sample-note").textContent = `Downloading… ${st.done} of ${st.total}`;
+      $("#sample-note").textContent = `Preparing… ${st.done} of ${st.total}`;
       await sleep(1200);
+      if (left(view)) return;
       try { st = await api("/api/sample"); } catch (e) { st = { state: "error", error: e.message }; }
+      if (left(view)) return;
     }
     if (st.state === "error") { err(st.error); b.disabled = false; $("#sample-note").textContent = ""; return; }
     mode = "gallery";
@@ -243,10 +335,12 @@ function viewOnboard(main) {
   $("#path").addEventListener("keydown", (e) => { if (e.key === "Enter") openLibrary($("#path").value); });
 
   async function openBrowser(path) {
+    const request = ++browsing;
     const box = $("#browser");
     box.hidden = false;
     let d;
     try { d = await api(`/api/browse?path=${encodeURIComponent(path || "")}`); } catch (e) { err(e.message); return; }
+    if (left(view) || request !== browsing) return;
     const parts = d.path.split("/").filter(Boolean);
     const crumbs = `<button data-go="/">/</button>` + parts.map((p, i) =>
       `<button data-go="/${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`).join('<span class="faint">/</span>');
@@ -258,7 +352,7 @@ function viewOnboard(main) {
           <span class="n ${x.photos ? "has" : ""}">${x.photos ? `${fmt(x.photos)} photo${x.photos === 1 ? "" : "s"}` : ""}</span></button>`).join("")
         : `<div class="dir faint">No subfolders</div>`}</div>
       <div class="browser-foot">
-        <span class="muted small">${d.photos ? `${fmt(d.photos)} photos directly in this folder` : "No photos directly in this folder"}</span>
+        <span class="muted small">${d.photos == null ? "Photos in this folder and its subfolders will be scanned after you choose it." : d.photos ? plural(d.photos,"photo")+" directly in this folder" : "No photos directly in this folder"}</span>
         <button class="btn primary" id="use-this">Use this folder</button>
       </div>`;
     $$("[data-go]", box).forEach((b) => (b.onclick = () => openBrowser(b.dataset.go)));
@@ -266,14 +360,16 @@ function viewOnboard(main) {
   }
 
   async function openLibrary(path, resume = false) {
+    if (opening || left(view)) return;
     err("");
     if (!path || !path.trim()) { err("Pick or paste a folder first."); return; }
+    opening = true;
     try {
       await api("/api/library", resume ? { path: path.trim() } : { path: path.trim(), mode });
       await loadState();
       location.hash = "analyze";
       route();
-    } catch (e) { err(e.message); }
+    } catch (e) { err(e.message); } finally { opening = false; }
   }
 }
 
@@ -299,9 +395,9 @@ function paintSaveChip() {
   const xp = g.level_next ? Math.round(((g.xp - g.level_floor) / (g.level_next - g.level_floor)) * 100) : 100;
   chip.innerHTML = `${sv.cover ? `<img src="/img/save/${esc(sv.slug)}/${sv.cover}.jpg" alt="">` : `<span class="chip-blank">${MODE() === "gallery" ? "🌄" : "💘"}</span>`}
     <span class="chip-text"><span class="chip-name">${esc(sv.name)}</span>
-      ${g.level ? `<span class="chip-lvl">Lv ${g.level} <span class="chip-title">${esc(g.level_name || "")}</span></span>` : ""}
+      ${g.xp != null ? `<span class="chip-lvl">${g.level ? `Lv ${g.level} · ` : ""}${fmt(g.xp)} XP</span>` : ""}
       <span class="xpbar"><i style="width:${xp}%"></i></span></span>`;
-  chip.title = `${sv.name} · ${g.xp != null ? `${fmt(g.xp)} XP` : ""}: switch save`;
+  chip.title = `${sv.name} · ${g.level ? `Lv ${g.level} · ` : ""}${g.xp != null ? `${fmt(g.xp)} XP` : ""}: switch save`;
 }
 
 async function viewSaves(main) {
@@ -313,8 +409,9 @@ async function viewSaves(main) {
   const card = (sv, i) => {
     const xp = sv.level_next ? Math.round(((sv.xp - sv.level_floor) / (sv.level_next - sv.level_floor)) * 100) : 100;
     return `
-    <div class="save-card ${sv.current ? "current" : ""} ${sv.exists ? "" : "missing"}" data-save="${i}" tabindex="0" role="button"
+    <div class="save-card ${sv.current ? "current" : ""} ${sv.exists ? "" : "missing"}" data-save="${i}" role="group"
       aria-label="${esc(sv.name)}${sv.current ? " (playing now)" : ""}" style="--i:${i}">
+      <button class="save-open" aria-label="Play ${esc(sv.name)}">
       <span class="save-art">${sv.cover ? `<img src="/img/save/${esc(sv.slug)}/${sv.cover}.jpg" alt="" loading="lazy">`
         : `<span class="save-blank">${sv.mode === "me" ? "💘" : "🌄"}</span>`}
         ${sv.current ? `<span class="save-ribbon">Playing</span>` : ""}
@@ -328,7 +425,7 @@ async function viewSaves(main) {
           <span title="Themed groups">🗂️ ${fmt(sv.groups)}</span><span title="Champions">🏆 ${fmt(sv.champions)}</span></span>`}
         <span class="faint small">${sv.exists ? (sv.played ? `Played ${ago(sv.played)}` : "") : "Folder missing (moved or unplugged?)"}</span>
       </span>
-      <button class="save-forget" data-forget="${i}" title="Forget this save" aria-label="Forget the save for ${esc(sv.name)}">✕</button>
+      </button><button class="save-forget" data-forget="${i}" title="Forget this save" aria-label="Forget the save for ${esc(sv.name)}">✕</button>
     </div>`;
   };
   const cur = d.saves.findIndex((sv) => sv.current && sv.exists);
@@ -348,7 +445,7 @@ async function viewSaves(main) {
       <div class="screen-bar action-bar">
         <div class="bar-left"><span class="lock">${LOCK}<span>Runs entirely on this computer. Nothing is uploaded.</span></span></div>
         <div class="bar-mid">${cur >= 0 ? `<a class="btn ghost" href="#onboard?new=1">＋ New save</a>` : ""}</div>
-        <div class="bar-right">${cur >= 0 ? `<button class="btn primary big" id="continue">Continue: ${esc(d.saves[cur].name)} <kbd>Enter</kbd></button>`
+        <div class="bar-right">${cur >= 0 ? `<button class="btn primary big" id="continue">Continue this save <kbd>Enter</kbd></button>`
           : `<a class="btn primary big" href="#onboard?new=1">＋ New save</a>`}</div>
       </div>
     </div>`;
@@ -372,7 +469,7 @@ async function viewSaves(main) {
   if (go) go.onclick = () => open(d.saves[cur]);
   // arrows walk the saves like a game's save menu; Enter plays the focused one (or the one you were playing)
   S.onKey = (e) => {
-    const cards = $$(".save-card", main), at = cards.indexOf(document.activeElement);
+    const cards = $$(".save-open, .save-card.new", main), at = cards.indexOf(document.activeElement);
     if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key)) {
       e.preventDefault();
       const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
@@ -381,7 +478,7 @@ async function viewSaves(main) {
   };
   $$("[data-forget]", main).forEach((b) => (b.onclick = async () => {
     const sv = d.saves[Number(b.dataset.forget)];
-    if (!confirm(`Forget the save for ${sv.name}? Its level, groups, votes and previews are deleted. Your photos themselves are never touched.`)) return;
+    if (!await askInGame(`Forget the save for ${sv.name}? Its level, groups, votes and previews are deleted. Your photos themselves are never touched.`, "Forget this save")) return;
     try { await api("/api/library/forget", { path: sv.path }); } catch (e) { toast(e.message); return; }
     await loadState();
     route();
@@ -406,18 +503,7 @@ const GALLERY_PHASES = {
   organizing: "Folding bursts, sorting photos into cups",
 };
 
-const TIPS = [
-  "Duels: two photos, one gut call. Fast calls (under 2.5 s) earn bonus XP and build your streak.",
-  "Bursts and near-duplicates become stacks; each stack plays a mini-tournament to crown its best take.",
-  "Losing once never knocks a photo out. Every call teaches it your taste, so it ranks the photos you never see.",
-  "The finals: your top 8 face off in a bracket. Quarterfinals, semis, a bronze match, the final.",
-  "⚡ Lightning round: 60 seconds, as many calls as you can. Beat your record.",
-  "Hit 30 calls a day to keep your day streak alive.",
-  "Set aside means set aside, not deleted. Anything the sorter got wrong comes back in one click.",
-];
 
-// The analysis, shown as it happens: each step gets a scene of what it's finding right now (faces on the photos it's
-// reading, photos landing in their kind, your face, bursts folding), then a reveal of everything it found.
 const KINDS = { people: ["🧑‍🤝‍🧑", "People"], nature: ["🏔️", "Nature"], places: ["🏙️", "Places"], animals: ["🐾", "Animals"],
   food: ["🍜", "Food"], things: ["🎲", "Things"] };
 const STEP_ICONS = { models: "📦", listing: "📂", reading: "👀", understanding: "🧠", identity: "🙂", details: "🔍", organizing: "🧩" };
@@ -426,43 +512,40 @@ function viewAnalyze(main) {
   main.innerHTML = `
     <div class="screen no-rail analyzing">
       <div class="screen-head">
-        <h1>✨ Getting to know your photos</h1>
+        <h1>✨ <span class="an-title-long">Getting to know your photos</span><span class="an-title-short">Meet your photos</span></h1>
         <span class="stat-chip" id="an-src"></span>
         <span class="grow"></span>
         <ol class="an-steps" id="an-steps"></ol>
       </div>
       <div class="screen-body fill an-body" id="an-body">
         <div class="ps-field an-field" id="an-sea"></div>
-        <aside class="an-panel" id="an-panel"></aside>
+        <aside class="an-panel" id="an-panel" hidden></aside>
       </div>
       <div class="screen-bar an-foot">
         <div class="an-progress"><div class="row spread"><b id="an-label">Starting…</b><span class="muted small" id="an-eta"></span></div>
           <div class="bar"><i id="an-bar"></i></div></div>
-        <div class="tip" id="an-tip"></div>
+        <div class="an-go-slot" id="an-forward"></div>
         <div class="error" id="an-error" hidden></div>
       </div>
     </div>`;
-  let tipAt = Math.floor(Math.random() * TIPS.length);
-  const showTip = () => { const t = $("#an-tip"); if (t) t.innerHTML = `<b>How it plays</b> ${esc(TIPS[tipAt++ % TIPS.length])}`; };
-  showTip();
-  const tipTimer = setInterval(() => { if (!$("#an-tip")) clearInterval(tipTimer); else showTip(); }, 6000);
   $("#an-src").textContent = S.lib ? S.lib.source.split("/").filter(Boolean).pop() || S.lib.source : "";
   // The sea: every photo it reads joins it and stays. Every tag it finds pulls the photos that share it together (the
-  // same tag physics as the Groups page), the biggest tags drawn as fuzzy circles. One photo at a time is grabbed out of
+  // same tag physics as the Groups page), with lassos following its flocks. One photo at a time is grabbed out of
   // the sea to the middle, bigger, with what's being found shown right on it, then shrinks back among its kind.
   const sea = new VennSea($("#an-sea"), {});
-  const info = new Map(), meta = new Map(), counts = new Map(), queue = [], forced = [];
+  const info = new Map(), changed = new Set(), meta = new Map(), counts = new Map(), queue = [], forced = [];
   const facesOf = new Map(), catOf = new Map();
   let dirty = false, dripTimer = null, lastRead = null, lastCat = null, lastSeen = null;
   let scene = null, worked = false, finale = false, orgPlayed = false;
-  const fr = { read: 0, cats: 0, seen: 0 };
+  const fr = { read: 0, cats: 0, seen: 0, identity: 0, org: 0 };
+  let lastIdentity = null, feeding = false;
   const words = () => (MODE() === "gallery" ? GALLERY_PHASES : {});
   const tagOf = (key, emoji, label) => { if (!meta.has(key)) meta.set(key, { emoji, label }); return key; };
-  const addPhoto = (id) => { if (!info.has(id)) { info.set(id, { tags: new Set(), n: 1 }); dirty = true; } return info.get(id); };
-  const give = (id, key) => { const r = addPhoto(id); if (!r.tags.has(key)) { r.tags.add(key); counts.set(key, (counts.get(key) || 0) + 1); dirty = true; } };
+  const addPhoto = (id) => { if (!info.has(id)) { info.set(id, { tags: new Set(), n: 1 }); changed.add(id); dirty = true; } return info.get(id); };
+  const give = (id, key) => { const r = addPhoto(id); if (!r.tags.has(key)) { r.tags.add(key); counts.set(key, (counts.get(key) || 0) + 1); changed.add(id); dirty = true; } };
   // tags land a few at a time, so photos drift toward each other as you watch instead of jumping in one go
   const drip = () => {
-    if (!queue.length || !$("#an-sea")) { clearInterval(dripTimer); dripTimer = null; return; }
+    if (!queue.length || left(view0) || !$("#an-sea")) { clearInterval(dripTimer); dripTimer = null; return; }
     for (let k = Math.max(4, Math.ceil(queue.length / 10)); k > 0 && queue.length; k--) { const [id, key] = queue.shift(); give(id, key); }
     flush();
   };
@@ -470,155 +553,183 @@ function viewAnalyze(main) {
   const flush = () => {
     if (!dirty) return;
     dirty = false;
-    const top = [...forced, ...[...counts].filter(([k]) => !forced.includes(k)).sort((a, b) => b[1] - a[1]).map(([k]) => k)].slice(0, 6);
+    const top = [...counts].filter(([,n])=>n>0).map(([k])=>k);
     sea.setVenn(top.map((k) => { const m = meta.get(k) || { emoji: "🏷️", label: k };
-      return { id: k, label: m.label, emoji: m.emoji, html: `${esc(m.emoji)} ${esc(m.label)} <span class="ps-count">${fmt(counts.get(k) || 0)}</span>` }; }),
-      [...info].map(([id, r]) => ({ id, photo: id, tags: [...r.tags], n: r.n })), []);
+      return { id: k, label: m.label, emoji: m.emoji, catchy: m.catchy, html: `${esc(m.emoji)} ${esc(m.label)} <span class="ps-count">${fmt(counts.get(k) || 0)}</span>` }; }),
+      [...changed].map((id) => { const r = info.get(id); return { id, photo: id, tags: [...r.tags], n: r.n,
+        group:r.group,sugg:r.sugg,cut:r.cut,members:r.members,rep:r.rep,category:r.category,visual:r.visual,take:r.rep&&r.rep!==id }; }),
+      [], true);
+    changed.clear();
   };
   // everything the analysis found since the last look, photo by photo: none is skipped however fast they go
   async function readFeed() {
+    if (feeding || left(view0)) return false;
+    feeding = true;
     let f;
-    try { f = await api(`/api/analysis/feed?read=${fr.read}&cats=${fr.cats}&seen=${fr.seen}`); } catch (_) { return; }
-    fr.read += f.read.length; fr.cats += f.cats.length; fr.seen += f.seen.length;
-    for (const [id, boxes, smiles, blinks] of f.read) {
-      addPhoto(id);
+    try { f = await api(`/api/analysis/feed?${new URLSearchParams(fr)}`); } catch (_) { feeding = false; return false; }
+    feeding = false;
+    if (left(view0)) return false;
+    for (const k of Object.keys(fr)) fr[k] += (f[k] || []).length;
+    for (const [id, boxes, smiles, blinks, visual] of f.read) {
+      addPhoto(id).visual=visual;changed.add(id);dirty=true;
       facesOf.set(id, { boxes, smiles, blinks });
-      if (boxes.length) enqueue(id, tagOf("t:faces", "🙂", "Faces"));
-      if (smiles) enqueue(id, tagOf("t:Smiling", "😄", "Smiling"));
-      if (blinks) enqueue(id, tagOf("t:Eyes closed", "😑", "Eyes closed"));
+      if (boxes.length) enqueue(id, tagOf("faces", "🙂", "Faces"));
+      if (smiles) enqueue(id, tagOf("smiling", "😄", "Smiling"));
+      if (blinks) enqueue(id, tagOf("eyes_closed", "😑", "Eyes closed"));
       lastRead = id;
     }
     for (const [id, kind, themes] of f.cats) {
       addPhoto(id);
       const [icon, name] = KINDS[kind] || ["🏷️", kind];
-      enqueue(id, tagOf(`kind:${kind}`, icon, name));
-      for (const [emoji, label] of themes) enqueue(id, tagOf(`t:${label}`, emoji, label));
+      if(kind)enqueue(id, tagOf(`kind:${kind}`, icon, name));
+      for (const [emoji, label, score, key] of themes) enqueue(id, tagOf(key || `t:${label}`, emoji, label));
       catOf.set(id, [kind, themes]);
+      addPhoto(id).sugg = kind ? `kind:${kind}` : null;addPhoto(id).category=kind||null;changed.add(id);dirty=true;
       lastCat = id;
     }
     for (const [id, box, found] of f.seen) {
       addPhoto(id);
-      for (const [emoji, label] of found || []) enqueue(id, tagOf(`t:${label}`, emoji, label));
+      if (box) seenOf.set(id, box);
+      for (const [emoji, label, score, key] of found || []) enqueue(id, tagOf(key || `t:${label}`, emoji, label));
       lastSeen = [id, box, found || []];
     }
+    for (const row of f.identity || []) { lastIdentity = row; addPhoto(row[0]); }
+    for (const row of f.org || []) {
+      const r = addPhoto(row[0]); r.group = row[3] ? "cut" : null; r.cut = !!row[3]; r.n = row[0] === row[2] ? row[4].length : 1;
+      r.members = row[4]; r.rep = row[2]; changed.add(row[0]); dirty = true;
+    }
     flush();
+    return Object.keys(fr).some((k) => fr[k] < (f[`${k}_n`] || 0));
   }
   // the grab: a photo lifts out of its spot, grows into the middle with what's being found on it, then goes back
-  let grabbing = false;
-  async function grab(id, overlay, chrome) {
+  let grabbing = false, grabEpoch = 0, cancelGrab = () => {};
+  // The grab always lands in the same place, so the sea is parted there once (and again only when the viewport
+  // changes), never closed and reopened around every photo that comes up: that re-arranged thousands of prints twice
+  // per grab. The zone is sized from the field alone, so it is the same for every grab.
+  const grabZone = () => {
+    const field = $("#an-sea");
+    if (!field) return null;
+    const fw = field.clientWidth, fh = field.clientHeight, h = Math.min(fh * .42, fw * .5 * 4 / 3), w = h * 3 / 4, x0 = (fw - w) / 2, y0 = Math.max(12, (fh - h) / 2 - 50);
+    const cw = Math.min(fw - 32, Math.max(w, 320)), pad = Math.max(24, h * .08 + w * .075);
+    return { x0: x0 + (w - Math.max(w, cw)) / 2 - pad, y0: y0 - pad, x1: x0 + (w + Math.max(w, cw)) / 2 + pad, y1: y0 + h + Math.max(150, h * .3) + 24 };
+  };
+  const partSea = () => {
+    const z = grabZone(), o = sea.obstacles?.[0];
+    if (!z || (o && ["x0", "y0", "x1", "y1"].every((k) => Math.abs(o[k] - z[k]) < 8))) return;
+    sea.obstacles = [z]; sea.layout(); sea.stir(120);
+  };
+  const seenOf = new Map();  // photo id -> its subject box, once "looking closer" has found one
+  // The subject to frame on, as auto-crop would: the subject box if found, otherwise every face found so far.
+  const subjectOf = (id) => {
+    if (seenOf.get(id)) return seenOf.get(id);
+    const faces = facesOf.get(id)?.boxes || [];
+    if (!faces.length) return null;
+    const x0 = Math.min(...faces.map((f) => f[0])), y0 = Math.min(...faces.map((f) => f[1]));
+    return [x0, y0, Math.max(...faces.map((f) => f[0] + f[2])) - x0, Math.max(...faces.map((f) => f[1] + f[3])) - y0];
+  };
+  const clearGrab = () => { cancelGrab(); ++grabEpoch; grabbing = false; cancelGrab = () => {}; };
+  async function grab(id, overlay, chrome, members = []) {
     const field = $("#an-sea"), it = sea.items.get(id);
     if (grabbing || finale || !field || !it) return;
     grabbing = true;
+    const epoch = ++grabEpoch;
     const img = new Image();
     img.src = P(id);
-    try { await img.decode(); } catch (_) { grabbing = false; return; }
-    if (!$("#an-sea")) return;
-    const fw = field.clientWidth, fh = field.clientHeight, k = Math.min((fw * 0.46) / img.naturalWidth, (fh * 0.52) / img.naturalHeight);
-    const w = img.naturalWidth * k, h = img.naturalHeight * k, x0 = (fw - w) / 2, y0 = Math.max(12, (fh - h) / 2 - 50);
+    try { await img.decode(); } catch (_) { if (epoch === grabEpoch) grabbing = false; return; }
+    if (epoch !== grabEpoch || finale || !$("#an-sea")) return;
     const box = document.createElement("div");
     box.className = "an-grab";
-    box.innerHTML = `<div class="an-grab-photo" style="width:${w}px;height:${h}px"><img src="${P(id)}" alt="">${overlay}</div><div class="an-grab-chrome">${chrome}</div>`;
-    Object.assign(box.style, { left: `${x0}px`, top: `${y0}px`, width: `${w}px` });
-    const from = (t) => `translate(${t.x - sea.s / 2 - x0}px, ${t.y - sea.s / 2 - y0}px) scale(${sea.s / w})`;
-    box.style.transform = from(it);
+    box.dataset.photo = id;
+    box.innerHTML = `<div class="an-grab-photo print ${members.length > 1 ? "stacked" : ""}">${pilePhotos(id,members)}<div class="paper"><div class="window"><div class="picture"><img class="${members.length > 1 ? "pile-cover" : ""}" src="${P(id)}" alt="">${overlay}</div></div></div></div><div class="an-grab-chrome">${chrome}</div>`;
+    const photo=$('.an-grab-photo',box),cover=$('.an-grab-photo .picture > img',box),picture=$('.an-grab-photo .picture',box);
+    photo.style.opacity='0';
     field.append(box);
-    it.el.classList.add("lifted");
-    box.getBoundingClientRect();
+    let returning=false,flight=null;
+    const fit=()=>{
+      if(returning||epoch!==grabEpoch)return;
+      // One polaroid card as large as fits; the picture is contained in its window, with the overlays on it.
+      const fw=field.clientWidth,fh=field.clientHeight,h=Math.min(fh*.42,fw*.5*4/3),w=h*3/4,x0=(fw-w)/2,y0=Math.max(12,(fh-h)/2-50);
+      Object.assign(photo.style,{width:`${w}px`,height:`${h}px`});
+      // Framed by the crop mode (C), on the subject or the faces found so far; the overlays ride on the picture.
+      const ww=w*.89,wh=h-w*.225,rect=frameRect(ww,wh,img.naturalWidth||1,img.naturalHeight||1,subjectOf(id),normCrop(S.crop));
+      Object.assign(picture.style,{left:`${rect.x}px`,top:`${rect.y}px`,width:`${rect.w}px`,height:`${rect.h}px`});
+      Object.assign(box.style,{left:`${x0}px`,top:`${y0}px`,width:`${w}px`,gap:`${members.length>1?h*.08+w*.075+10:10}px`});
+      const cw=Math.min(fw-32,Math.max(w,320));
+      box.style.setProperty('--chrome-width',`${cw}px`);
+      partSea();
+    };
+    fit();const resize=new ResizeObserver(fit);resize.observe(field);
+    S.refitGrab=fit;  // C during the show reframes the photo in hand
+    const source=sea.promote(id)||it,from=World.rect(source.el.querySelector('.pile-cover')||source.el);
+    const lifted=members.length>1?[...sea.items.values()].filter(p=>p.stack===it.stack):[it];
+    lifted.forEach(p=>p.el.classList.add('lifted'));
+    cancelGrab = () => { ++grabEpoch;flight?.cancel();resize.disconnect();box.remove();lifted.forEach(p=>p.el.classList.remove('lifted'));grabbing=false;S.refitGrab=null; };
     box.classList.add("open");
-    box.style.transform = "none";
-    sea.obstacles = [{ x0: x0 - 6, y0: y0 - 6, x1: x0 + w + 6, y1: y0 + h + 96, brief: true }];  // the sea makes room around it (for a moment: tiles keep their size)
-    sea.layout(); sea.stir(120);
-    await sleep(1700);
+    if(from?.width)flight=World.fly(P(id),from,()=>World.rect(cover),{ms:450,valid:()=>epoch===grabEpoch&&box.isConnected,frameTo:()=>World.frameOf(cover),
+      finish:()=>{if(epoch===grabEpoch&&!returning)photo.style.opacity='';}});
+    else photo.style.opacity='';
+    await sleep(members.length>1?1350:2600);
+    if (epoch !== grabEpoch) return;
     const back = sea.items.get(id);
+    const origin={...(flight&&!flight.img.isConnected?World.rect(cover):flight?.rect||World.rect(cover))},shown=World.frameOf(cover);
+    returning=true;resize.disconnect();flight?.cancel();S.refitGrab=null;
     box.classList.remove("open");
-    sea.obstacles = [];
-    sea.layout(); sea.stir(120);
-    if (back) box.style.transform = from(back);
-    await sleep(480);
+    photo.style.opacity='0';
+    if(back&&origin.width){flight=World.fly(P(id),origin,()=>World.rect(back.el.querySelector('.pile-cover')||back.el),{
+      ms:450,valid:()=>epoch===grabEpoch&&box.isConnected,frameFrom:shown});await flight.promise;}
+    if (epoch !== grabEpoch) return;
     box.remove();
-    back?.el.classList.remove("lifted");
+    lifted.forEach(p=>p.el.classList.remove('lifted'));
     grabbing = false;
+    cancelGrab = () => {};
   }
-  const chips = (list) => list.map(([emoji, label], i) => `<span class="tag-chip on" style="--i:${i}">${esc(emoji)} ${esc(label)}</span>`).join("");
+  // The spotlight is a quick discovery, not the classifier's whole score sheet. Every tag still joins the shelf.
+  const findings = (list, caption) => {
+    const seen = new Set(), top = list.filter(([,label]) => {
+      const key = String(label || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key); return true;
+    }).slice(0, 5);
+    return `<div class="an-grab-findings"><div class="an-grab-tags">${top.map(([emoji, label], i) =>
+      `<span class="tag-chip on" style="--i:${i}">${esc(emoji)} ${esc(label)}</span>`).join("")}</div>
+      <span class="an-grab-caption">${esc(caption)}</span></div>`;
+  };
+  let spotlightKey=null;
   const grabTimer = setInterval(() => {
-    if (!$("#an-sea")) { clearInterval(grabTimer); return; }
+    if (left(view0) || !$("#an-sea")) { clearInterval(grabTimer); return; }
     if (grabbing || finale) return;
+    const current=scene==='reading'?lastRead:scene==='understanding'?lastCat:scene==='details'?lastSeen?.[0]:scene==='identity'?lastIdentity?.[0]:null;
+    const key=`${scene}:${current}`;if(current==null||key===spotlightKey)return;spotlightKey=key;
     if (scene === "reading" && lastRead != null) {
       const f = facesOf.get(lastRead) || { boxes: [], smiles: 0, blinks: 0 };
       grab(lastRead, f.boxes.map(([x, y, w, h]) => `<i class="face-box" style="left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%"></i>`).join(""),
-        f.boxes.length ? `<b>${plural(f.boxes.length, "face")}</b>${f.smiles ? ` · 😄 ${plural(f.smiles, "smile")}` : ""}${f.blinks ? ` · 😑 ${f.blinks} blinking` : ""}`
+        f.boxes.length ? findings([["🙂", plural(f.boxes.length, "face")], ...(f.smiles ? [["😄", plural(f.smiles, "smile")]] : []),
+          ...(f.blinks ? [["😑", plural(f.blinks, "blink")]] : [])], "Face scan complete")
           : `<span class="muted">No faces: light, colour and sharpness read</span>`);
     } else if (scene === "understanding" && lastCat != null) {
       const [kind, themes] = catOf.get(lastCat) || ["", []];
       const [icon, name] = KINDS[kind] || ["🏷️", kind];
-      grab(lastCat, "", `<div class="an-grab-tags">${chips([[icon, name], ...themes])}</div>`);
+      const f = facesOf.get(lastCat);
+      grab(lastCat, "", findings([...(kind ? [[icon, name]] : []), ...themes], `${kind||themes.length?"Scene recognized":"Scene scan complete"}${f?.boxes.length ? ` · ${plural(f.boxes.length, "face")}` : ""}`));
     } else if (scene === "details" && lastSeen) {
       const [id, [x, y, w, h], found] = lastSeen;
       grab(id, `<i class="crop-box" style="left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%"></i>`,
-        found.length ? `<div class="an-seen">${found.map(([emoji, label, conf], i) => `<div class="an-seen-row" style="--i:${i}">
-          <span>${esc(emoji)} ${esc(label)}</span><div class="bar"><i style="width:${pct(conf)}"></i></div></div>`).join("")}</div>`
-          : `<span class="muted">Nothing stands out in this one</span>`);
+        findings(found, found.length ? "Details recognized" : "Closer look complete"));
+    } else if (scene === "identity" && lastIdentity) {
+      const [id, similarity, face, n] = lastIdentity;
+      grab(id, "", `<b>Finding you</b><span>${similarity != null ? `${pct(similarity)} similarity to you` : "No matching face"} · ${plural(n || 0, "face")}</span>${face ? `<img class="identity-face" src="${F(face)}" alt="Matched face">` : ""}`);
     }
-  }, 2300);
-  const cloud = () => [...counts].filter(([k]) => k !== "x:cut").sort((a, b) => b[1] - a[1]).slice(0, 24)
-    .map(([k, n], i) => { const m = meta.get(k) || { emoji: "🏷️", label: k }; return `<span class="tag-chip on" style="--i:${i}">${esc(m.emoji)} ${esc(m.label)} <b>${fmt(n)}</b></span>`; }).join("");
-  const panel = (html, cls = "") => { const p = $("#an-panel"); if (p.dataset.scene !== scene) { p.dataset.scene = scene; p.className = `an-panel ${cls}`; p.innerHTML = html; } return p; };
+  }, 650);
+  const panel=(html)=>{const p=$('#an-panel');if(p.dataset.scene!==scene){p.dataset.scene=scene;p.innerHTML=html;}return p;};
   function stage(p) {
-    if (p.phase !== scene) {
-      scene = p.phase;
-      $("#an-body").dataset.scene = scene;
-    }
-    if (scene === "models") panel(`<div class="an-big">📦</div><h2>Fetching the models</h2><p class="muted">First run only: the face and scene
-      models, checked byte for byte. <span id="an-model"></span></p>`, "center");
-    if (scene === "models" && $("#an-model")) $("#an-model").textContent = p.detail || "";
-    if (scene === "listing") {
-      panel(`<div class="an-big an-bob">📂</div><h2>Looking through the folder</h2><p class="muted">Every photo, in every subfolder. Your files are only ever read.</p>
-        <div class="an-counts one"><div><b id="c-listed">0</b><span>photos found</span></div><div><b id="c-new">0</b><span>new to analyze</span></div></div>`, "center");
-      $("#c-listed").textContent = fmt(p.listed || 0);
-      $("#c-new").textContent = fmt(p.new || 0);
-    }
-    if (scene === "reading") {
-      worked = worked || p.total > 0;
-      panel(`<h2>Reading every photo</h2><p class="muted small">Light, sharpness, and every face: where it is, whether it smiles, whether its
-        eyes are open. Each photo joins the sea as it's read.</p>
-        <div class="an-counts"><div><b id="c-read">0</b><span>photos read</span></div><div><b id="c-faces">0</b><span>faces found</span></div>
-          <div><b id="c-smiles">0</b><span>smiles</span></div><div><b id="c-blinks">0</b><span>caught blinking</span></div></div>`);
-      $("#c-read").textContent = fmt(p.done);
-      $("#c-faces").textContent = fmt(p.faces || 0);
-      $("#c-smiles").textContent = fmt(p.smiles || 0);
-      $("#c-blinks").textContent = fmt(p.blinks || 0);
-    }
-    if (scene === "understanding") {
-      worked = worked || p.total > 0;
-      panel(`<h2>Working out what each photo shows</h2><p class="muted small">Every photo against a few hundred descriptions: what kind of photo it
-        is and every theme it stands out for (beaches, dogs, night out, food, mountains…). Photos that share a tag drift together.</p>
-        <h3 class="an-sub">Found so far</h3><div class="an-tagcloud live" id="an-cloud"></div>`);
-      $("#an-cloud").innerHTML = cloud();
-    }
-    if (scene === "identity") {
-      panel(`<h2>${MODE() === "gallery" ? "Spotting the people" : "Working out which face is you"}</h2><p class="muted small">Every face compared with
-        every other: the one that turns up most is ${MODE() === "gallery" ? "the main character" : "you"}; mirror reflections still count as you.</p>
-        <div class="an-faces" id="an-faces"></div><p class="muted" id="an-who-n"></p>`);
-      const me = p.me;
-      if (me && !$("#an-faces").children.length) {
-        $("#an-faces").innerHTML = me.faces.map((f, i) => `<img src="${F(f)}" alt="" style="--i:${i}">`).join("");
-        $("#an-who-n").textContent = MODE() === "gallery" ? `${plural(me.people, "person", "people")} turn up again and again`
-          : `That's you: in ${plural(me.photos, "photo")}. ${plural(me.people, "other person", "other people")} come up too.`;
-      }
-    }
-    if (scene === "details") {
-      panel(`<h2>${MODE() === "gallery" ? "Looking closer at the people in them" : "Looking closer at you"}</h2>
-        <p class="muted small">Head and shoulders picked out, then each photo checked against everything it knows: what's in it, who,
-          how it looks. What it finds becomes the photo's tags, and pulls it toward the photos that share them.</p>
-        <h3 class="an-sub">Found so far</h3><div class="an-tagcloud live" id="an-cloud"></div>`);
-      $("#an-cloud").innerHTML = cloud();
-    }
-    if (scene === "organizing" || (p.phase === "done" && !orgPlayed)) playOrganizing(p.org || {});
+    if(p.phase!==scene){clearGrab();scene=p.phase;$('#an-body').dataset.scene=scene;}
+    if(['reading','understanding','details'].includes(scene))worked=worked||p.total>0;
+    if(scene==='organizing'||p.phase==='done'&&!orgPlayed)playOrganizing(p.org||{});
     flush();
   }
   // Organizing plays back what the last step really did: who it found, what it set aside and why, the bursts it stacked.
   function playOrganizing(org) {
-    if (orgPlayed || !(org.throwouts || org.stacks)) {
+    if (orgPlayed || !org.stacks || !org.tags) {  // the report arrives in parts; wait for the stacks and their tags
       panel(`<h2>Putting it all in order</h2><ul class="an-checks" id="an-checks"></ul>`);
       return;
     }
@@ -637,6 +748,12 @@ function viewAnalyze(main) {
     ];
     const list = $("#an-checks");
     list.innerHTML = steps.map(([k, icon, text]) => `<li data-step="${k}"><span class="an-check">${icon}</span><span>${text()}</span></li>`).join("");
+    const focus = (step,id,chrome,members=[]) => {
+      clearGrab();
+      list.querySelector('[aria-current]')?.removeAttribute("aria-current");
+      list.querySelector(`[data-step="${step}"]`).setAttribute("aria-current","step");
+      grab(id,"",chrome,members);
+    };
     let t = 0;
     const at = (ms, fn) => setTimeout(() => { if (!left(view0)) fn(); }, (t += ms));
     at(200, () => list.querySelector('[data-step="people"]').classList.add("done"));
@@ -645,15 +762,25 @@ function viewAnalyze(main) {
         forced.push(tagOf("x:cut", "🗃️", "Set aside"));
         org.throwouts.cut.forEach(([id]) => give(id, "x:cut"));
         flush();
+        const [id,reason] = org.throwouts.cut[0];
+        focus("throwouts",id,`<b>🫙 Set aside</b><br><span>${esc(labels[reason] || reason)}</span>`);
       });
     }
     at(1400, () => list.querySelector('[data-step="throwouts"]').classList.add("done"));
-    for (const st of ((org.stacks || {}).stacks || []).slice(0, 10)) {  // each burst's frames gather, then fold into one
-      const frames = st.filter((x) => x > 0 && !(st.length > 8 && x === st[st.length - 1]));
-      at(350, () => { frames.forEach((id) => addPhoto(id)); flush(); });
-      at(650, () => { frames.slice(1).forEach((id) => info.delete(id)); const rep = info.get(frames[0]); if (rep) rep.n = frames.length; dirty = true; flush(); });
+    for (const st of ((org.stacks || {}).stacks || []).slice(0, 10)) {  // each burst's frames gather, then choose their cover
+      const frames = st.slice(0,8), id = frames[0], n = st.length > 8 ? st[8] : frames.length;
+      at(350, () => {
+        frames.forEach((id) => addPhoto(id)); flush();
+        const members = info.get(id).members || frames;
+        focus("stacks",id,`<b>⧉ ${plural(n,"take")} of the same shot</b><br><span>Folding this stack · best guess on top</span>`,members);
+      });
+      at(1500, () => {
+        const members = info.get(id).members || frames;
+        frames.forEach((pid) => { const take = addPhoto(pid); take.rep = id; take.members = members; take.n = pid === id ? n : 1; changed.add(pid); });
+        dirty = true; flush();
+      });
     }
-    at(500, () => list.querySelector('[data-step="stacks"]').classList.add("done"));
+    at(500, () => { list.querySelector('[data-step="stacks"]').classList.add("done"); list.querySelector('[aria-current]')?.removeAttribute("aria-current"); });
     at(700, () => list.querySelector('[data-step="scenes"]').classList.add("done"));
     if (org.tags && org.tags.top && org.tags.top.length) {  // what it recognized, one tag at a time
       at(300, () => { list.insertAdjacentHTML("afterend", `<div class="an-tagcloud">${org.tags.top.map(([emoji, label, n], i) =>
@@ -667,6 +794,7 @@ function viewAnalyze(main) {
   function reveal(found) {
     finale = true;
     clearInterval(grabTimer);
+    clearGrab();
     const cut = found.cut || {}, labels = (S.lib && S.lib.labels) || {};
     const reasons = Object.entries(cut).sort((a, b) => b[1] - a[1]).slice(0, 3);
     const cutN = Object.values(cut).reduce((a, b) => a + b, 0);
@@ -674,6 +802,7 @@ function viewAnalyze(main) {
     $("#an-steps").innerHTML = Object.entries(STEP_ICONS).map(([, i]) => `<li class="done">${i}</li>`).join("");
     $("#an-body").dataset.scene = "reveal";
     $("#an-panel").className = "an-panel an-reveal-panel";
+    $("#an-panel").hidden=false;
     $("#an-panel").innerHTML = `<div class="an-reveal">
       <h2>Here's what I found</h2>
       <div class="an-cards">
@@ -690,21 +819,30 @@ function viewAnalyze(main) {
         ${found.tags ? `<div class="an-card wide" style="--i:5"><span class="an-card-ico">🏷️</span><b>${fmt(found.tags.tags)}</b><span>tags, the groups are worked out from</span>
           <span class="an-kinds-mini">${(found.tags.top || []).slice(0, 8).map(([emoji, label, n]) => `<span>${esc(emoji)} ${esc(label)} ${fmt(n)}</span>`).join("")}</span></div>` : ""}
       </div></div>`;
-    const tip = $("#an-tip");  // the way on takes the tip's place: bottom right, like every screen's forward action
-    if (tip) tip.outerHTML = `<div class="an-go-slot"><a class="btn primary big" href="#home" id="an-go">Let's play → <kbd>Enter</kbd></a></div>`;
+    $("#an-forward").innerHTML=`<a class="btn primary big" href="#home" id="an-go">Let's play → <kbd>Enter</kbd></a>`;
     $("#an-label").textContent = "All done";
     $("#an-bar").style.width = "100%";
     $("#an-eta").textContent = "";
     Sound.play("crown");
     confetti(window.innerWidth / 2, window.innerHeight / 3, 80);
+    $("#an-go").onclick = () => World.handover(sea);
     $("#an-go").focus();
-    S.onKey = (e) => { if (e.key === "Enter" || e.key === "ArrowRight") { e.preventDefault(); location.hash = "#home"; } };
+    S.onKey = (e) => { if (e.key === "Enter" || e.key === "ArrowRight") { e.preventDefault(); World.handover(sea); location.hash = "#home"; } };
   }
   const tick = async () => {
-    if (finale) return;
+    if (finale || left(view0)) return;
     try { await loadState(); } catch (_) { return; }
+    if (left(view0)) return;
     if (!S.lib) { route(); return; }
+    if (left(view0) || !$("#an-sea")) return;
     const p = S.lib.progress || {};
+    await readFeed();
+    if (S.lib.analyzed && !S.lib.analyzing) {
+      while (await readFeed()) { await sleep(0); }
+      while (queue.length) { const [id, key] = queue.shift(); give(id, key); }
+      flush();
+    }
+    if (left(view0) || !$("#an-sea")) return;
     const order = Object.keys(STEP_ICONS);
     const idx = order.indexOf(p.phase);
     if (idx >= 0) $("#an-steps").innerHTML = order.map((k, i) => `<li class="${i < idx ? "done" : i === idx ? "now" : ""}"
@@ -721,7 +859,6 @@ function viewAnalyze(main) {
       stopPolling();
       return reveal({ ...p.found, tags: (p.org || {}).tags });
     }
-    await readFeed();
     const label = idx >= 0 ? words()[p.phase] || PHASES[PHASES.findIndex(([k]) => k === p.phase)][1] : p.phase === "error" ? "Something went wrong" : "Starting…";
     $("#an-label").textContent = p.total ? `${label} · ${fmt(p.done)} / ${fmt(p.total)}` : label;
     $("#an-bar").style.width = `${Math.round((p.total ? p.done / p.total : 0) * 100)}%`;
@@ -737,33 +874,54 @@ function viewAnalyze(main) {
     e.hidden = p.phase !== "error";
     if (p.phase === "error") {
       e.innerHTML = `${esc(p.error || "Unknown error")} <button class="btn" id="retry">Try again</button>`;
-      $("#retry").onclick = async () => { await api("/api/rescan", {}); };
+      $("#retry").onclick = async () => { try { await api("/api/rescan", {}); } catch (e) { if (!left(view0)) toast(e.message); } };
     }
   };
-  tick();
-  S.poll = setInterval(tick, 600);
+  let polling = false;
+  const poll = async () => {
+    if (polling) return;
+    polling = true;
+    try { await tick(); } catch (e) { if (!left(view0)) toast(e.message); }
+    finally { polling = false; }
+  };
+  poll();
+  S.poll = setInterval(poll, 600);
 }
 
 // ---------------------------------------------------------------- home: the journey
-// The journey, in order. Organize first: stacks (the same picture or burst, one stack each), then groups (every stack
+// The journey, in order. Filter chooses contenders, then organize: stacks (the same picture or burst), then groups (every stack
 // and shot into a theme). Then play: crown (duels inside each stack), the group stage (duels inside each group), the
 // knockouts (the best of each group), the finals, the reveal. The sweep is a side quest. The map (home) and the track
-// in the top bar both read journeyStatus.
+// in the top HUD both read journeyStatus.
 const STAGES = [
+  ["filter", "🎛️", "Filter", "Choose your contenders", "Preview quality and subject rules. Every set-aside photo can come back."],
   ["stacks", "🧩", "Stacks", "Stack the takes", "The same picture (a crop, a copy) or a burst: one stack each. Check the possible twins."],
-  ["draw", "🗂️", "Groups", "Group them", "Every stack and single shot goes into a themed group."],
   ["crown", "👑", "Crown", "Crown the stacks", "Each stack's takes duel for the one that plays on."],
+  ["draw", "🗂️", "Groups", "Group them", "Every stack and single shot goes into a themed group."],
   ["groups", "⚽", "Group stage", "Group stage", "A mini-tournament inside each group. The best of each go through."],
   ["duels", "⚔️", "Knockouts", "Knockouts", "The group winners face off. Every call moves the leaderboard."],
   ["finals", "🏆", "Finals", "Finals", "Your top 8 in a bracket: quarterfinals, semis, bronze, the final."],
   ["reveal", "🎉", "Reveal", "Reveal", "The podium, what you go for, and your best shots to keep."],
 ];
+// The HUD's track also carries the two places around the game: the map (home: every photo on the sea) before Filter
+// and the leaderboard (the finishing stage) after Reveal. They are waypoints, not stages of the journey's order.
+const TRACK = [["map", "🗺️", "Map", "The map", "Every photo on the sea: home."], ...STAGES,
+  ["board", "🏅", "Leaderboard", "Leaderboard", "Your best, one still card at a time, finished and kept."]];
 const ring = (frac) => `<svg viewBox="0 0 36 36" class="ring" aria-hidden="true"><circle cx="18" cy="18" r="15.5" class="ring-bg"/>
   ${frac > 0 ? `<circle cx="18" cy="18" r="15.5" class="ring-fg" stroke-dasharray="${(Math.min(1, frac) * 97.4).toFixed(1)} 97.4"/>` : ""}</svg>`;
+
+// Groups lead on to the group stage: the kickoff the first time, the matches once it has started.
+function groupStageForward() {
+  const g = S.journey?.stages?.groups;
+  return { label: "Next: Group stage →", name: "Group stage", href: g?.played ? "#duel?stage=groups" : "#tournament?kickoff=1" };
+}
 
 function journeyStatus(j) {
   const st = j.stages, fin = st.finals;
   const out = {
+    map: { line: "Every photo on the sea", go: "#home", label: "Map" },
+    filter: { done: !!st.filter?.done, line: st.filter?.done ? `${plural(st.filter.kept,"photo")} in · ${fmt(st.filter.aside)} set aside`
+        : "Choose what enters the tournament", go: "#filter", label: st.filter?.done ? "Review filter" : "Start Filter" },
     stacks: st.stacks.twins ? { line: `${plural(st.stacks.twins, "possible twin")} to check · ${plural(st.stacks.stacks, "stack")} so far`,
       go: "#stacks", label: "Check them" }
       : { done: true, line: `Stacks look right · ${plural(st.stacks.stacks, "stack")}`, go: "#stacks", label: "Open" },
@@ -779,207 +937,313 @@ function journeyStatus(j) {
       : st.groups.done ? { done: true, line: `All ${plural(st.groups.groups, "group")} decided · ${fmt(st.groups.through)} through to the knockouts`,
           go: "#duel?stage=groups", label: "Open" }
       : { line: `${st.groups.now ? `Now: Group ${st.groups.now.letter}, ${esc(st.groups.now.emoji)} ${esc(st.groups.now.name)} · ` : ""}${fmt(st.groups.settled)} of ${fmt(st.groups.groups)} decided`,
-          go: "#duel?stage=groups", label: st.groups.settled ? "Continue" : "Kick off", bar: st.groups.settled / st.groups.groups },
-    duels: { done: st.duels.done || fin.state === "done", go: st.groups.groups ? "#duel?stage=knockouts" : "#duel?stage=open",
-      label: st.duels.votes ? "Keep playing" : "Play",
-      line: `Top ${st.duels.k} at <b>${pct(st.duels.quality)}</b> of its best · ${plural(st.duels.votes, "call")}`, bar: st.duels.quality },
+          go: st.groups.played ? "#duel?stage=groups" : "#tournament?kickoff=1", label: st.groups.played ? "Continue" : "Kick off", bar: st.groups.settled / st.groups.groups },
+    duels: { done: st.duels.done || fin.state === "done", skipped: !!st.duels.skipped, go: st.duels.skipped ? "#finals" : "#duel?stage=knockouts",
+      label: st.duels.skipped ? "Finals" : st.duels.votes ? "Keep playing" : "Play",
+      line: st.duels.skipped ? `Skipped: ${plural(st.duels.knockouts?.qualified?.length || 4,"finalist")} went straight to the bracket`
+        : st.duels.done ? `${plural(st.duels.knockouts?.qualified?.length || 8,"finalist")} qualified` : st.duels.knockouts?.rounds?.length ? `${plural(st.duels.left,"match")} left in the current round` : "Elimination rounds decide who reaches the finals", bar: st.duels.done ? 1 : 0 },
     finals: fin.state === "done" ? { done: true, line: "Champion crowned", go: "#finals", label: "Bracket", thumb: fin.champion }
       : fin.state === "playing" ? { line: "The bracket is on", go: "#finals", label: "Continue" }
       : !fin.eligible ? { line: "Needs at least 4 shots in this cup", go: "#finals", label: "Finals" }
-      : fin.state === "ready" ? { line: "Your top 8 are ready to face off", go: "#finals", label: "Start the finals" }
+      : fin.state === "ready" ? { line: "Your finalists are ready to face off", go: "#finals", label: "Start the finals" }
       : { line: `Fairest from 80% (you're at ${pct(st.duels.quality)})`, go: "#finals", label: "Finals" },
     reveal: { line: st.reveal.ready ? "Ready when you are" : "Best after the finals", go: "#reveal", label: "Open" },
+    board: { line: fin.state === "done" ? "Your best, finished and kept" : "Your best so far, one card at a time", go: "#shortlist", label: "Leaderboard" },
     sweep: !st.sweep.done ? { line: `${plural(st.sweep.left, "quick keep-or-toss call")} on photos the sorter wasn't sure about`, go: "#sweep", label: "Sweep" }
       : { done: true, line: "Swept", go: "#sweep", label: "Open" },
   };
+  for (const [k,pid] of Object.entries(j.thumbs || {})) if (out[k] && pid) out[k].thumb=pid;
   out.next = (j.order || STAGES.map((x) => x[0])).find((k) => !out[k].done) || "reveal";
   return out;
 }
 
 // ---------------------------------------------------------------- the HUD: your save, the journey track, the menu
 S.journey = null;
-let hudAt = 0, hudBusy = null;
+let hudAt = 0, hudBusy = null, hudSource = null;
 async function refreshHud(force) {
   if (!S.lib || !S.lib.analyzed || S.lib.analyzing) return;
-  if (!force && S.journey && performance.now() - hudAt < 2000) { paintTrack(); return; }
+  const source = `${S.lib.source}:${S.lib.cup}`;
+  if (!force && hudSource === source && hudBusy) return hudBusy;
+  if (!force && hudSource === source && S.journey && performance.now() - hudAt < 2000) { paintTrack(); return; }
   hudAt = performance.now();
-  if (hudBusy) return hudBusy;
-  hudBusy = api("/api/journey").then((j) => { S.journey = j; if (j.progress && j.progress.game && !S.game) S.game = j.progress.game; })
-    .catch(() => {}).finally(() => { hudBusy = null; paintTrack(); paintSaveChip(); });
-  return hudBusy;
+  hudSource = source;
+  const request = api("/api/journey").then((j) => {
+    if (hudBusy !== request || source !== `${S.lib?.source}:${S.lib?.cup}`) return;
+    S.journey = j; if (j.progress && j.progress.game && !S.game) S.game = j.progress.game;
+  }).catch(() => {}).finally(() => {
+    if (hudBusy !== request) return;
+    hudBusy = null; paintTrack(); paintSaveChip();
+  });
+  hudBusy = request;
+  return request;
 }
 function currentStage() {
   const [name, q] = location.hash.slice(1).split("?");
   const p = new URLSearchParams(q || "");
-  if (name === "draw" || name === "finals" || name === "reveal" || name === "stacks") return name;
+  if (["filter","draw","finals","reveal","stacks"].includes(name)) return name;
+  if (["home","ready","map",""].includes(name)) return "map";
+  if (["shortlist","leaderboard"].includes(name)) return "board";
+  if (["cuts","sweep","people"].includes(name)) return "filter";
+  if (name === "tags") return "draw";
+  if (name === "tournament" && p.get("kickoff") === "1") return "groups";
   if (name === "duel") {
     const st = p.get("stage") || S.stage;
-    return st === "stacks" ? "crown" : st === "groups" ? "groups" : "duels";
+    return st === "stacks" ? "crown" : st === "groups" ? "groups" : st === "open" ? null : "duels";
   }
   return null;
 }
 function paintTrack() {
-  const nav = $("#track");
-  const j = S.journey;
-  if (!nav || !j) return;
-  const st = journeyStatus(j), here = currentStage();
-  const cup = j.mode === "gallery" && j.cups.length > 1 ? j.cups.find((c) => c.key === j.cup) : null;
-  nav.innerHTML = (cup ? `<a class="tcup" href="#home" title="${esc(cup.name)}: switch cups on the map">${cup.icon}</a>` : "") +
-    STAGES.map(([k, icon, short, title], i) => `${i ? `<i class="tline ${st[STAGES[i - 1][0]].done ? "done" : ""}"></i>` : ""}
-      <a class="tnode ${st[k].done ? "done" : ""} ${k === st.next ? "next" : ""} ${k === here ? "here" : ""}" href="${st[k].go}"
-        title="${esc(title)}: ${esc(st[k].line.replace(/<[^>]+>/g, ""))}" ${k === here ? `aria-current="step"` : ""}>
-        <span class="tico">${icon}</span>${st[k].done ? `<span class="tcheck" aria-label="done">✓</span>` : ""}<span class="tlabel">${short}</span></a>`).join("");
+  const nav = $("#track"),j=S.journey;
+  if (!nav) return;
+  if (!j) { nav.replaceChildren(); nav.journeyMarkup = null; return; }
+  const st=journeyStatus(j),here=currentStage(),index=TRACK.findIndex(([k])=>k===here);
+  // The map's forward arrow leads to the journey's next stage, every other place's to its neighbour on the track.
+  const next=here&&here!=='map'?TRACK[index+1]?.[0]:st.next,previous=here?TRACK[index-1]?.[0]:null;
+  const label=key=>({stacks:'Stack',draw:'Group'})[key]||TRACK.find(([k])=>k===key)?.[2];
+  const title=here&&here!=='map'?label(here):menuActivity().title;
+  const available=S.pauseActivity?.canForward,canForward=(typeof available==='function'?available():available)!==false;
+  const ready=S.forward;
+  const step=(id,key,icon)=>id==='next'&&ready?`<a id="journey-next" class="journey-step ready" href="${esc(ready.href||'#')}" aria-disabled="false" aria-label="Next: ${esc(ready.name||label(key)||'')}" title="${esc(ready.label)}"><span class="journey-go">${esc(ready.label)}</span></a>`
+    :key?`<a id="journey-${id}" class="journey-step" href="${st[key].go}"${id==='next'?` aria-disabled="${!canForward}"`:""} aria-label="${id==='prev'?'Previous':'Next'}: ${label(key)}" title="${label(key)}">${icon}</a>`:`<span class="journey-step empty" aria-hidden="true"></span>`;
+  const html=`${step('prev',previous,'‹')}<ol class="track-stages">${TRACK.map(([k,icon,short,description])=>{
+    const n=STAGES.findIndex(([s])=>s===k)+1,skipped=!!st[k].skipped,state=k===here?'Current':st[k].done?'Complete':k===next?'Next':n?`Stage ${n}`:short;
+    return `<li><a class="tnode ${st[k].done?'done':''} ${skipped?'skipped':''} ${k===next?'next':''} ${k===here?'here':''}"
+      data-stage="${k}" href="${st[k].go}" aria-label="${short}: ${state.toLowerCase()}${st[k].done&&k===here?', complete':''}${skipped?', skipped':''}"
+      title="${esc(description)}: ${esc(st[k].line.replace(/<[^>]+>/g,''))}" ${k===here?'aria-current="step"':''}>
+      <span class="tico" aria-hidden="true">${icon}${st[k].done?`<i class="tcheck ${skipped?'skip':''}">${skipped?'–':'✓'}</i>`:''}</span><span class="twords"><span class="tlabel">${label(k)}</span></span></a></li>`;
+  }).join('')}</ol>${step('next',next,'›')}<h1 id="journey-title" title="Back to the map" tabindex="0" role="link">${esc(title)}</h1>`;
+  // HUD refreshes must not steal keyboard focus while someone walks the journey.
+  if(nav.journeyMarkup===html)return;
+  const focused=nav.contains(document.activeElement)?document.activeElement:null,stage=focused?.dataset.stage,id=focused?.id;
+  nav.innerHTML=html;nav.journeyMarkup=html;
+  if(stage)nav.querySelector(`[data-stage="${stage}"]`)?.focus({preventScroll:true});else if(id)$(`#${id}`,nav)?.focus({preventScroll:true});
+  const forward=$('#journey-next',nav);
+  if(forward)forward.onclick=e=>{
+    // A ready stage runs its own way on; otherwise Filter's arrow confirms its preview before leaving the stage.
+    // The pressed button lets go of keyboard focus: the next screen's game keys (Space, arrows) belong to the game.
+    if(S.forward){forward.blur();if(S.forward.run){e.preventDefault();S.forward.run();}return;}
+    if(!S.pauseActivity?.forward)return;
+    e.preventDefault();
+    const allowed=S.pauseActivity?.canForward;
+    if((typeof allowed==='function'?allowed():allowed)===false)return;
+    S.pauseActivity.forward();
+  };
+}
+// The one way forward lives in the HUD's next slot. A view declares it when its stage is ready to proceed
+// ({label, name, href} or {label, name, run}); until then the slot stays the quiet arrow.
+function setForward(forward) { S.forward = forward || null; paintTrack(); }
+function forwardGo() { const f = S.forward; if (!f) return false; if (f.run) f.run(); else if (f.href) location.hash = f.href; return true; }
+function paintGameHelp() {
+  const button=$('#game-help'),hint=$('#game-help-hint'),bare=document.body.classList.contains('no-bar');
+  if(!button)return;button.hidden=hint.hidden=bare;
+  const on=S.lib?.settings?.help!==false;
+  document.body.classList.toggle('help-off',!on);
+  button.setAttribute('aria-pressed',String(on));button.setAttribute('aria-label',`Helpful overlays ${on?'on':'off'}`);
+  button.title=`Turn helpful overlays ${on?'off':'on'}`;
+  hint.textContent=S.hint??defaultHint();
+}
+// A hint describes the current state, not just the view: finish screens and minigames set their own; route() clears it.
+function defaultHint() {
+  const [name,query]=location.hash.slice(1).split('?'),p=new URLSearchParams(query||'');
+  if(name==='filter')return 'Drag the line. Takes on the right stay in play.';
+  if(name==='stacks')return p.has('check')?'Same shot? Right stacks them; left keeps them apart.':'Open a stack to spread its takes.';
+  if(name==='draw')return p.has('sort')?'→ files it in the starred group. ↑ ↓ pick another, N starts a new one.':p.has('play')?'→ adds it to the group, ← leaves it out.':'Gather photos by tag, then shape your groups.';
+  if(name==='duel'||name==='finals')return 'Choose a photo. Space saves this match for later.';
+  if(name==='reveal')return 'Enter saves your best shots to a folder.';
+  if(name==='tournament')return 'Pick a group to play, or kick off from the first.';
+  return 'Drag photos onto each other to stack. Click to zoom; double-click grabs. Enter starts the next stage.';
+}
+function setHint(text) { S.hint=text||null; paintGameHelp(); }
+const helpPreferenceKey=library=>library?.source?`matcher-help:${library.source}`:null;
+function readHelpPreference(library) {
+  const key=helpPreferenceKey(library);if(!key)return null;
+  try{const saved=JSON.parse(localStorage.getItem(key)||'null');return saved?.pending&&typeof saved.value==='boolean'?saved:null;}catch(_){return null;}
+}
+const helpSaves=new Map();
+async function saveHelpPreference(library,value) {
+  const key=helpPreferenceKey(library);if(!key)return;
+  const existing=helpSaves.get(key);if(existing){await existing.catch(()=>{});if(readHelpPreference(library)?.value!==value)return;}
+  if(S.lib?.source!==library.source)return;  // A queued preference belongs to the save that produced it.
+  // Cache before sending: an immediate reload must not resurrect the first-time hints.
+  const task=api('/api/settings',{help:value});helpSaves.set(key,task);
+  try{const reply=await task,pending=readHelpPreference(library);if(reply.settings?.help===value&&pending?.value===value)localStorage.removeItem(key);}
+  catch(_){/* A pending per-save preference is retried when this save is opened again. */}
+  finally{if(helpSaves.get(key)===task)helpSaves.delete(key);}
+}
+function toggleGameHelp() {
+  if(!S.lib)return;const library=S.lib,value=library.settings?.help===false;
+  library.settings={...library.settings,help:value};
+  try{localStorage.setItem(helpPreferenceKey(library),JSON.stringify({value,pending:true}));}catch(_){}
+  paintGameHelp();saveHelpPreference(library,value);
+}
+$('#game-help').onclick=toggleGameHelp;
+// Pause keeps the current activity mounted; leaving it is an explicit choice.
+function playTime() {
+  const now=performance.now();
+  return now-(S.pauseTotal||0)-(S.pause?now-S.pause.at:0);
+}
+function menuActivity() {
+  const [name,query]=location.hash.slice(1).split('?'),p=new URLSearchParams(query||'');
+  if(S.pauseActivity)return S.pauseActivity;
+  if(name==='tags'&&p.has('play'))return {title:'Tag check',label:'Back to Tag lab',href:`#tags?key=${encodeURIComponent(p.get('play'))}`};
+  if(name==='stacks'&&p.has('check'))return {title:'Same shot?',label:'Back to Stacks',href:'#stacks'};
+  if(['draw','groups'].includes(name)&&(p.has('play')||p.has('sort')))return {title:p.has('play')?'Find more':'Quick sort',label:'Back to Groups',href:p.has('play')?`#draw?g=${encodeURIComponent(p.get('play'))}`:'#draw'};
+  if(name==='duel'){
+    const back={stacks:['Back to Stacks','#stacks'],groups:['Back to Groups','#draw'],knockouts:['Back to Tournament','#tournament']}[S.stage]||['Leave activity · Map','#home'];
+    return {title:S.lr?'Lightning round':({stacks:'Crown',groups:'Group stage',knockouts:'Knockouts',open:'Open arena'}[S.stage]||'Duels'),label:back[0],href:back[1]};
+  }
+  if(name==='finals')return {title:'Finals',label:'Back to Tournament',href:'#tournament'};
+  if(name==='sweep')return {title:'Clean-up sweep',label:'Back to Filter',href:'#filter'};
+  if(name==='people')return {title:"Who's who",label:'Leave activity · Map',href:'#home'};
+  return {title:({home:'The map',filter:'Filter',draw:'Groups',groups:'Groups',stacks:'Stacks',tags:'Tag lab',finals:'Finals',reveal:'Reveal',shortlist:'Leaderboard',leaderboard:'Leaderboard',cuts:'Set aside',tournament:'Tournament',saves:'Your saves',onboard:'New save',analyze:'Analysis'}[name]||'MatchER')};
+}
+function closeMenu(resume=true) {
+  const pause=S.pause,m=$('#menu');
+  if(!pause){if(m.open)m.close();return;}
+  S.pauseTotal=(S.pauseTotal||0)+performance.now()-pause.at;
+  S.pause=null;pause.signal?.removeEventListener('abort',pause.abort);document.body.classList.remove('game-paused');
+  if(m.open)m.close();
+  if(left(pause.view))return;
+  if(pause.sea&&pause.sea===World.sea){pause.sea.paused=pause.seaPaused;if(resume&&!pause.seaPaused){pause.sea.last=0;pause.sea.kick();}}
+  if(resume){
+    const now=performance.now(),lr=S.lr;
+    if(lr?.pausedAt!=null){lr.ends+=now-lr.pausedAt;delete lr.pausedAt;lr.tick?.();}
+    if(pause.focus?.isConnected)pause.focus.focus({preventScroll:true});
+  }
 }
 function openMenu() {
-  const m = $("#menu");
-  const sw = S.journey && S.journey.stages.sweep;
-  m.innerHTML = `<div class="menu-head"><b>Menu</b><button class="icon" id="menu-close" aria-label="Close">✕</button></div>
-    <nav class="menu-list">
-      <a href="#home">🗺️ <span>The map</span></a>
-      <a href="#shortlist">🏅 <span>Leaderboard</span></a>
-      <a href="#sweep">🧹 <span>Side quest: clean-up sweep</span>${sw && !sw.done && sw.left ? `<b class="menu-badge">${fmt(sw.left)}</b>` : ""}</a>
-      <a href="#cuts">🗃️ <span>Set aside</span></a>
-      ${MODE() === "me" ? `<a href="#people">🧑 <span>People</span></a>` : ""}
-      <button data-m="trophies">🏆 <span>Trophies</span></button>
-      <a href="#saves">💾 <span>Switch save</span></a>
-      <button data-m="sound">${Sound.on ? "🔊" : "🔇"} <span>Sound ${Sound.on ? "on" : "off"}</span></button>
-      <button data-m="sea">🌊 <span>Sea of colour ${Sea.on ? "on" : "off"}</span></button>
-      <button data-m="filter">🎨 <span>Auto-filter ${S.filter ? "on" : "off"}</span><kbd>F</kbd></button>
-      <button data-m="crop">🔲 <span>Auto-crop ${S.crop ? "on" : "off"}</span><kbd>C</kbd></button>
-      <button data-m="settings">⚙️ <span>Settings</span></button>
-    </nav>`;
-  $("#menu-close").onclick = () => m.close();
-  $$(".menu-list a", m).forEach((a) => (a.onclick = () => m.close()));
-  $$("[data-m]", m).forEach((b) => (b.onclick = () => {
-    m.close();
-    if (b.dataset.m === "trophies") openTrophies();
-    else if (b.dataset.m === "settings") openSettings();
-    else if (b.dataset.m === "sea") { Sea.toggle(); toast(Sea.on ? "Sea of colour on." : "Sea of colour off."); }
-    else if (b.dataset.m === "filter") toggleFilter();
-    else if (b.dataset.m === "crop") toggleCrop();
-    else { Sound.toggle(); paintSound(); toast(Sound.on ? "Sound on." : "Sound off."); }
-  }));
-  m.onclick = (e) => { if (e.target === m) m.close(); };
-  m.showModal();
+  const m=$('#menu');if(m.open)return;
+  if(S.pause)closeMenu();
+  const analysisPage=location.hash.startsWith('#analyze'),running=!!S.lib?.analyzing,ready=S.lib?.analyzed&&!running;
+  const activity=menuActivity(),sea=World.sea,signal=S.events?.signal;
+  const pause=S.pause={view:S.view,at:performance.now(),focus:document.activeElement,sea,seaPaused:sea?.paused,signal};
+  pause.abort=()=>closeMenu(false);signal?.addEventListener('abort',pause.abort,{once:true});
+  if(sea){sea.paused=true;cancelAnimationFrame(sea.raf);sea.raf=0;}
+  if(S.lr){S.lr.pausedAt=performance.now();cancelAnimationFrame(S.lr.raf);}
+  document.body.classList.add('game-paused');closeHelp();
+  const sw=S.journey?.stages.sweep,cup=S.journey?.cups?.find(c=>c.key===S.journey.cup);let menuPage='';
+  function paint(page='',focus=true){
+    menuPage=page;
+    const title=({play:'Activities',view:'Picture & sound',library:'Library'})[page]||activity.title;
+    const pages={
+      play:`<a href="#home">🗺️ <span>The map</span></a><a href="#tournament">🏟️ <span>Tournament board</span></a><a href="#shortlist">🏅 <span>Leaderboard</span></a>
+        <a href="#filter">✦ <span>Filter</span></a><a href="#tags">🏷️ <span>Tag lab</span></a>
+        <a href="#sweep">🧹 <span>Clean-up sweep</span>${sw&&!sw.done&&sw.left?`<b class="menu-badge">${fmt(sw.left)}</b>`:''}</a>
+        <a href="#cuts">🗃️ <span>Set aside</span></a>${MODE()==='me'?'<a href="#people">🧑 <span>People</span></a>':''}
+        ${S.homeTag?`<a href="#tags?play=${encodeURIComponent(S.homeTag)}">🏷️ <span>Tag check</span></a>`:''}
+        ${cup?.shots>=2?'<a href="#duel?stage=open">⚔️ <span>Open arena</span></a><a href="#duel?stage=open&lightning=1">⚡ <span>60-second round</span></a>':''}
+        <button data-m="trophies">🏆 <span>Trophies</span></button>`,
+      view:`<button data-m="sound">${Sound.on?'🔊':'🔇'} <span>Sound ${Sound.on?'on':'off'}</span></button>
+        <button data-m="sea">🌊 <span>Colour wash ${Sea.on?'on':'off'}</span></button>
+        ${ready?`<button data-m="filter">🎨 <span>Enhance ${S.filter?'on':'off'}</span><kbd>F</kbd></button>
+        <button data-m="crop">🔲 <span>Auto-crop ${CROP_MENU[normCrop(S.crop)]}</span><kbd>C</kbd></button>`:''}`,
+      library:`${S.lib||S.recent.length?'<a href="#saves">💾 <span>Switch save</span></a>':''}${ready?'<button data-m="settings">⚙️ <span>Settings</span></button>':''}`
+    };
+    const played=S.journey?.progress||S.progress,confidence=ready&&played?.k&&played.quality!=null?` · leaderboard at ${pct(played.quality)} of its best`:'';
+    m.innerHTML=`<div class="menu-head"><div><span class="muted small">${running?'Analysis continues':ready?'Paused':'Menu'}${confidence}</span><h2>${esc(title)}</h2></div><button class="icon" id="menu-close" aria-label="Resume">✕</button></div>
+      <div class="menu-play"><button class="btn primary big" id="menu-resume">${analysisPage?'Back to analysis':'Resume'} <kbd>Esc</kbd></button>
+      ${!page&&activity.label?`<button class="btn" id="menu-leave">${esc(activity.label)}</button>`:''}</div>
+      <nav class="menu-list" aria-label="Game tools">${page?`<button id="menu-back">← <span>Back</span></button>${pages[page]}`:
+        `${(activity.actions||[]).map((a,i)=>`<button data-menu-action="${i}"${a.id?` id="${esc(a.id)}"`:''}>↶ <span>${esc(a.label)}</span></button>`).join('')}${ready&&!location.hash.startsWith('#home')&&location.hash!==''?'<a href="#home">🗺️ <span>The map</span></a>':''}${ready?'<button data-menu-page="play">🎮 <span>Activities</span>›</button>':''}${$('#main [data-help]')?'<button data-m="help">? <span>How this works</span></button>':''}${ready&&!location.hash.startsWith('#filter')?'<button data-m="history-undo">↶ <span>Undo last change</span><kbd>Z</kbd></button>':''}<button data-menu-page="view">🎨 <span>Picture & sound</span>›</button>${S.lib||S.recent.length?'<button data-menu-page="library">💾 <span>Library</span>›</button>':''}`}</nav>`;
+    $('#menu-close',m).onclick=$('#menu-resume',m).onclick=()=>closeMenu();
+    if(page)$('#menu-back',m).onclick=()=>paint();
+    const leave=$('#menu-leave',m);if(leave)leave.onclick=()=>{closeMenu();if(activity.leave)activity.leave();else location.hash=activity.href;};
+    $$('[data-menu-page]',m).forEach(b=>b.onclick=()=>paint(b.dataset.menuPage));
+    $$('[data-menu-action]',m).forEach(b=>b.onclick=()=>{closeMenu();activity.actions[Number(b.dataset.menuAction)].run();});
+    $$('.menu-list a',m).forEach(a=>a.onclick=()=>closeMenu());
+    $$('[data-m]',m).forEach(b=>b.onclick=()=>{
+      if(b.dataset.m==='help'){closeMenu();queueMicrotask(()=>showHelp($('#main [data-help]')?.dataset.help,$('#game-help')));return;}
+      if(b.dataset.m==='history-undo'){closeMenu();if(typeof HistoryHUD!=='undefined')HistoryHUD.act('undo');return;}
+      if(b.dataset.m==='trophies'){openTrophies();return;}
+      if(b.dataset.m==='settings'){openSettings();return;}
+      if(b.dataset.m==='sea'){Sea.toggle();b.innerHTML=`🌊 <span>Colour wash ${Sea.on?'on':'off'}</span>`;}
+      else if(b.dataset.m==='filter'){toggleFilter();b.querySelector('span').textContent=`Enhance ${S.filter?'on':'off'}`;}
+      else if(b.dataset.m==='crop'){toggleCrop();b.querySelector('span').textContent=`Auto-crop ${CROP_MENU[normCrop(S.crop)]}`;}
+      else {Sound.toggle();paintSound();b.innerHTML=`${Sound.on?'🔊':'🔇'} <span>Sound ${Sound.on?'on':'off'}</span>`;}
+    });
+    if(focus)$(page?'#menu-back':'#menu-resume',m).focus();
+  }
+  paint('',false);
+  m.onclick=e=>{if(e.target===m)closeMenu();};
+  m.oncancel=e=>{e.preventDefault();if(menuPage)paint();else closeMenu();};
+  m.onclose=()=>{if(!m.open&&S.pause===pause)closeMenu();};
+  m.showModal();$('#menu-resume',m).focus();
 }
 
-// The map: where you are, the one thing to do next (always in the same spot, up top), then the whole journey.
+// The map is the sea. Its activities and cup choices live in the pause menu.
 async function viewHome(main) {
-  main.innerHTML = LOADING();
-  let j;
-  const view = S.view;
-  try { j = await api("/api/journey"); } catch (e) { if (!left(view)) main.innerHTML = FAILED(e.message); return; }
-  if (left(view)) return;
-  S.journey = j;
-  hudAt = performance.now();
-  paintTrack();
-  const g = j.progress.game || {};
-  S.game = S.game || g;
-  paintSaveChip();
-  Ach.check(g);
-  const s = j.summary || {}, cut = s.cut || {};
-  const cup = j.cups.find((c) => c.key === j.cup) || j.cups[0] || { name: "Your cup", icon: "🏆", shots: 0 };
-  const status = journeyStatus(j), next = status.next;
-  const nx = STAGES.find((x) => x[0] === next);
-  const days = g.days || 0;
-  const xp = g.level_next ? Math.round(((g.xp - g.level_floor) / (g.level_next - g.level_floor)) * 100) : 100;
-  main.innerHTML = `
-    <div class="screen map journey">
-      <div class="screen-head">
-        <h1>${cup.icon} ${esc(cup.name)}</h1>
-        <span class="stat-chip"><b>${fmt(cup.shots)}</b> shots in the running</span>
-        <span class="stat-chip">${plural(s.photos, "photo")} · ${plural(s.in_bursts, "burst take")} stacked ·
-          <a href="#cuts">${fmt(Object.values(cut).reduce((a, b) => a + b, 0))} set aside</a></span>
-        <span class="grow"></span>
-        ${helpBtn(`<b>Organize, then play.</b> Stack the same shots, sort everything into themed groups, then the tournament runs:
-          each stack crowns its best take, each group plays its own mini-tournament, and the best of each group duel it out
-          in the knockouts and the finals. Click any stage to go there; the glowing one is next.`)}
-      </div>
-      <div class="screen-body map-body">
-        <ol class="world" style="--n:${STAGES.length}">${STAGES.map(([k, icon, , title, desc], i) => {
-          const x = status[k];
-          return `<li class="wnode ${x.done ? "done" : ""} ${k === next ? "next" : ""}" style="--i:${i}">
-            <a href="${x.go}" title="${esc(desc)}"><span class="wico">${icon}${x.done ? `<i class="wcheck">✓</i>` : ""}</span>
-              <span class="wstep">${i + 1}</span><b>${title}</b>
-              <span class="wline">${x.thumb ? `<img class="mini-thumb" src="${T(x.thumb)}" alt="">` : ""}${x.line}</span>
-              ${x.bar != null && !x.done ? `<span class="bar"><i style="width:${pct(x.bar)}"></i></span>` : ""}</a></li>`;
-        }).join("")}</ol>
-        <div class="map-sea"><span class="map-sea-note">${j.progress.votes ? "Every photo, in its groups: the top of the board wear their rank"
-          : "Every photo, in its groups: the numbers are the machine's first guess at your best"} · <a class="linkish" href="#shortlist">Full leaderboard →</a></span></div>
-        <div class="card next-up">
-          <span class="node big">${nx[1]}</span>
-          <div class="next-body"><small>Next up · stage ${STAGES.findIndex((x) => x[0] === next) + 1} of ${STAGES.length}</small><b>${nx[3]}</b>
-            <span class="muted">${nx[4]}</span><span>${status[next].line}</span>
-            ${status[next].bar != null ? `<div class="bar"><i style="width:${pct(status[next].bar)}"></i></div>` : ""}</div>
-          <a class="btn primary big" href="${status[next].go}">${status[next].label} → <kbd>Enter</kbd></a>
-        </div>
-      </div>
-      <aside class="screen-rail">
-        <button class="rail-card player-card" id="j-trophies" title="Your trophy case">
-          <span class="big-lvl">Lv ${g.level || 1}</span>
-          <span class="player-name"><b>${esc(g.level_name || "")}</b><span class="muted small">${fmt(g.xp || 0)} XP${g.level_next ? ` · ${fmt(g.level_next - g.xp)} to Lv ${g.level + 1}` : ""}</span>
-            <span class="xpbar"><i style="width:${xp}%"></i></span></span>
-        </button>
-        <div class="rail-card player-stats">
-          <div class="pstat" title="Calls today (daily goal ${g.daily_goal || 30})">${ring((g.today || 0) / (g.daily_goal || 30))}
-            <div><b>${fmt(g.today || 0)}<span class="faint">/${g.daily_goal || 30}</span></b><span>today</span></div></div>
-          <div class="pstat" title="Days in a row with at least one call"><span class="pemoji ${days ? "" : "dim"}">🔥</span>
-            <div><b>${days ? plural(days, "day") : "0 days"}</b><span>${days ? "streak" : "start one"}</span></div></div>
-          <div class="pstat"><span class="pemoji ${(g.unlocked || []).length ? "" : "dim"}">🏆</span>
-            <div><b>${fmt((g.unlocked || []).length)}</b><span>trophies</span></div></div>
-        </div>
-        ${j.cups.length > 1 ? `<div class="rail-card"><h3>Cups</h3><div class="cup-list">${j.cups.map((c) => `
-          <button class="cup-row ${c.key === j.cup ? "on" : ""}" data-cup="${c.key}" title="Play the ${esc(c.name)}">
-            ${c.cover ? `<img src="${T(c.cover)}" alt="" loading="lazy">` : `<span class="cup-blank"></span>`}
-            <span><b>${c.icon} ${esc(c.name)}</b><span class="muted small">${plural(c.shots, "shot")}${c.champion ? " · 🏆 crowned" : c.finals === "playing" ? " · finals on" : ""}</span></span>
-          </button>`).join("")}</div></div>` : ""}
-        ${!status.sweep.done ? `<div class="rail-card side-quest"><small>Side quest</small><b>🧹 Clean-up sweep</b>
-          <span class="muted small">${status.sweep.line}</span><a class="btn" href="#sweep">Sweep</a></div>` : ""}
-      </aside>
-    </div>`;
-  $("#j-trophies").onclick = openTrophies;
-  World.ranks((j.top || []).slice(0, 9).map((x) => x.photo));  // the top of the board wear their rank in the sea
-  $$("[data-cup]").forEach((b) => (b.onclick = async () => {
-    if (b.classList.contains("on")) return;
-    try { await api("/api/cup", { cup: b.dataset.cup }); } catch (e) { toast(e.message); return; }
-    Sound.play("pick");
-    viewHome(main);
-  }));
+  main.innerHTML=LOADING();const view=S.view,signal=S.events.signal;let j,tags;
+  try{[j,tags]=await Promise.all([api('/api/journey'),api('/api/tags?all=1').then(r=>r.tags||[]).catch(()=>[])]);}
+  catch(e){if(!left(view))main.innerHTML=FAILED(e.message);return;}
+  if(left(view))return;
+  S.journey=j;hudAt=performance.now();S.game=j.progress.game||{};
+  S.homeTag=tags.filter(t=>t.count).sort((a,b)=>b.count-a.count)[0]?.key||null;
+  const status=journeyStatus(j),forward=()=>{location.hash=status[status.next].go;};
+  S.pauseActivity={title:'The map',forward,actions:j.cups.length>1?[{id:'home-cups',label:'Choose cup',run:chooseCup}]:[]};
+  S.onKey=e=>{if(e.key==='Enter'){e.preventDefault();forward();}};
+  const nextStage=STAGES.find(([k])=>k===status.next);
+  main.innerHTML=`<div class="screen map journey no-rail"><span hidden data-help="${esc('Explore the sea or choose a stage above. The coral Next button and Enter continue your journey. Activities, cups and trophies are in the menu.')}" aria-hidden="true"></span><div class="screen-body map-body"><div class="map-sea" aria-hidden="true"></div></div></div>`;
+  setForward({label:`Next: ${nextStage?.[2]||'Reveal'} →`,name:nextStage?.[2]||'Reveal',href:status[status.next].go});
+  const sea=World.sea,catalog=sea.catalog;sea.catalog=false;sea.el.classList.add('home-world');
+  sea.dock?.classList.remove('tag-dock');sea.dock=null;sea.el.append(sea.tray);sea.tray.hidden=true;
+  // The previous tag shelf can catch the pointer while Home loads. Hiding it also releases its hover.
+  sea.highlight(null);for(const circle of sea.circles.values()){circle.hot=false;circle.still=false;}sea.layout();
+  signal.addEventListener('abort',()=>{sea.catalog=catalog;sea.el.classList.remove('home-world');},{once:true});
+  // The ranker's starting guesses wear no leaderboard ranks: badges appear once there are calls behind them.
+  paintTrack();paintSaveChip();Ach.check(S.game);World.ranks((j.progress?.votes||0)>0?(j.top||[]).slice(0,9).map(x=>x.photo):[]);
+  function chooseCup(){
+    const modal=$('#modal');modal.className='';modal.onclick=null;
+    modal.innerHTML=`<div class="row spread"><h2>Cups</h2><button class="btn" id="cups-close">Close</button></div><div class="cup-list">${j.cups.map(c=>`<button class="cup-row ${c.key===j.cup?'on':''}" data-cup="${esc(c.key)}" aria-pressed="${c.key===j.cup}">${c.cover?`<img src="${T(c.cover)}" alt="">`:'<span class="cup-blank"></span>'}<span><b>${esc(c.icon)} ${esc(c.name)}</b><span class="muted small">${plural(c.shots,'shot')}${c.champion?' · 🏆 crowned':c.finals==='playing'?' · finals on':''}</span></span></button>`).join('')}</div>`;
+    $('#cups-close',modal).onclick=()=>modal.close();
+    let busy=false;
+    $$('[data-cup]',modal).forEach(button=>button.onclick=async()=>{
+      if(busy)return;if(button.dataset.cup===j.cup){modal.close();return;}busy=true;
+      try{await api('/api/cup',{cup:button.dataset.cup});await loadState();if(left(view))return;modal.close();Sound.play('pick');route();}
+      catch(error){if(!left(view))toast(error.message);}finally{busy=false;}
+    });
+    modal.showModal();signal.addEventListener('abort',()=>modal.close(),{once:true});
+  }
 }
 
 // ---------------------------------------------------------------- duel
 function viewDuel(main, params) {
+  const stack=params.get("stack"),crown=!!stack||params.get("stage")==="stacks";
   main.innerHTML = `
-    <section id="view-duel">
+    <section id="view-duel" class="${crown ? "crown-play" : ["groups","knockouts"].includes(params.get("stage")) ? "with-table" : ""}">
       <div class="duel-head">
         <div class="question" id="duel-q">${QUESTION[MODE()]} <span>Gut call.</span></div>
+        <span class="learnt" id="duel-learnt"></span>
         <div class="hud">
-          <button class="icon bolt" id="hud-bolt" title="Lightning round: as many calls as you can in 60 seconds" aria-label="Start a lightning round">⚡</button>
+          <button class="icon bolt" id="hud-bolt" ${crown ? "hidden" : ""} title="Lightning round: as many calls as you can in 60 seconds" aria-label="Start a lightning round">⚡</button>
           <span class="streak" id="hud-streak" title="Quick calls in a row (under 4 s)"><span class="flame">🔥</span><b>0</b></span>
+          <span id="duel-feedback" class="duel-feedback"></span>
           <div class="meter" title="How close your current leaderboard is to the best possible one (estimated; near-misses count as nearly as good)">
             <span id="m-votes"></span><div class="bar"><i id="m-bar"></i></div><span id="m-conf"></span>
           </div>
           <button class="icon" id="hud-sound" title="Sound effects" aria-label="Sound effects"></button>
-          ${helpBtn(`Two photos, one gut call: click the better one, or <b>←</b> / <b>→</b>. <b>↑</b> both great, <b>↓</b> both meh,
-            <b>Space</b> skips, <b>Q</b> / <b>E</b> toss the left / right photo for good, <b>Z</b> undoes. <b>C</b> crops to the face,
-            <b>F</b> toggles the auto-filter. Calls under 2.5 s build your streak; ⚡ starts a 60-second lightning round.`)}
+          ${helpBtn(crown ? `Choose the better take: click it, or use <b>←</b> / <b>→</b> (<b>A</b> / <b>D</b>).
+            <b>Space</b> saves the challenger for later; <b>Z</b> undoes. Point at a take and press <b>X</b> to set it aside.
+            <b>C</b> toggles crop; <b>F</b> toggles enhancement. <b>Enter</b> continues to the group stage.
+            Picture controls and keeping the remaining best guesses are in the menu.` : `Two photos, one gut call: click the better one, or <b>←</b> / <b>→</b>. <b>↑</b> both great, <b>↓</b> both meh,
+            <b>Space</b> skips, <b>X</b> tosses the photo you point at, <b>Z</b> undoes. Set-aside photos stay recoverable in Filter.
+            <b>WASD</b> also works. <b>C</b> crops to the face, <b>F</b> toggles photo enhancement. Calls under 4 s build your streak; ⚡ starts a 60-second lightning round.`)}
         </div>
       </div>
       <div id="lr-slot"></div>
-      <div id="done-slot"></div>
+      <div id="done-slot" aria-live="polite"></div>
       <div id="stage" class="arena"><div class="empty">Loading…</div></div>
       <div class="group-table" id="group-table" hidden></div>
       <div class="controls action-bar" id="controls">
-        <div class="bar-left"><button class="btn big" data-o="a"><kbd>←</kbd> <span class="lbl-wide">Left</span><span class="lbl-narrow">Top</span></button></div>
+        <div class="bar-left"><button class="btn big" data-o="a"><kbd>←</kbd> <span class="lbl-wide">Left wins</span><span class="lbl-narrow">Top wins</span></button></div>
         <div class="bar-mid">
-          <button class="btn" data-o="great"><kbd>↑</kbd> Both great</button>
-          <button class="btn" data-o="skip"><kbd>Space</kbd> Skip</button>
-          <button class="btn" data-o="meh"><kbd>↓</kbd> Both meh</button>
-          <button class="btn ghost" data-o="undo"><kbd>Z</kbd> Undo</button>
-          <button class="btn ghost" data-o="crop" id="crop-btn"><kbd>C</kbd> <span>${S.crop ? "Crop on" : "Crop off"}</span></button>
-          <button class="btn ghost filter-btn" data-o="filter"><kbd>F</kbd> <span>${S.filter ? "Filter on" : "Filter off"}</span></button>
+          <div class="dpad"><button class="btn" data-o="great"><kbd>↑</kbd> Both great</button>
+            <button class="btn" data-o="skip"><kbd>Space</kbd> Skip</button>
+            <button class="btn" data-o="meh"><kbd>↓</kbd> Both meh</button></div>
+          <div class="tools"><button class="btn ghost" data-o="undo"><kbd>Z</kbd> Undo</button>
+            <button class="btn ghost" data-o="crop" id="crop-btn"><kbd>C</kbd> <span>${CROP_WORD[normCrop(S.crop)]}</span></button>
+            <button class="btn ghost filter-btn" data-o="filter"><kbd>F</kbd> <span>${S.filter ? "Enhance on" : "Enhance off"}</span></button></div>
         </div>
-        <div class="bar-right"><button class="btn big" data-o="b"><span class="lbl-wide">Right</span><span class="lbl-narrow">Bottom</span> <kbd>→</kbd></button></div>
+        <div class="bar-right"><button class="btn big" data-o="b"><span class="lbl-wide">Right wins</span><span class="lbl-narrow">Bottom wins</span> <kbd>→</kbd></button></div>
       </div>
       <div class="controls action-bar" id="finish-bar" hidden></div>
     </section>`;
@@ -989,29 +1253,43 @@ function viewDuel(main, params) {
   $("#hud-sound").onclick = () => { Sound.toggle(); paintSound(); };
   $("#hud-bolt").onclick = () => (S.lr ? endLightning() : startLightning());
   S.crop = cropPref();
-  $("#crop-btn span").textContent = S.crop ? "Crop on" : "Crop off";
-  S.stage = params && ["stacks", "groups", "knockouts", "open"].includes(params.get("stage")) ? params.get("stage") : null;
+  $("#crop-btn span").textContent = CROP_WORD[normCrop(S.crop)];
+  S.stage = crown ? "stacks" : ["groups", "knockouts", "open"].includes(params.get("stage")) ? params.get("stage") : null;
+  if(crown){
+    const forward=()=>{if(!S.busy)location.hash='#tournament?kickoff=1';};
+    S.pauseActivity={title:'Crown',label:'Back to Stacks',href:'#stacks',forward,canForward:()=>!S.busy,
+      get actions(){return S.stacksLeft>1?[{id:'crown-rest',label:'Keep best guesses for remaining stacks',run:crownBestGuesses}]:[];}};
+    // Enter advances even after a choice button has focus; it must never cast another vote.
+    document.addEventListener('keydown',e=>{
+      if(e.key!=='Enter'||e.ctrlKey||e.metaKey||e.altKey||e.target.isContentEditable||e.target.closest('dialog,input,textarea,select')||$('dialog[open]'))return;
+      e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)forward();
+    },{capture:true,signal:S.events.signal});
+  }
+  S.groupFocus = params.get("group"); S.koMatch = params.get("match");
   S.table = null;
+  S.tableExpanded = false;
   S.lr = null;
+  S.autoLightning = params.get("lightning")==="1"&&!crown;
   paintSound();
   S.cards = [];
   S.current = null;
   S.game = null;
-  const stack = params && params.get("stack");
-  if (stack) history.replaceState(null, "", "#duel");
+  S.stagePhotos = [];
+  if (stack) history.replaceState(null, "", "#duel?stage=stacks");
   loadCards(stack);
 }
 
 const preloaded = new Map();
 function preload(cards) {
   for (const c of cards) {
-    const ids = c.type === "duel" ? [c.a, c.b] : c.type === "mini" ? c.frames : c.members || [];
+    const ids = ["duel","final","knockout"].includes(c.type) ? [c.a, c.b] : c.type === "mini" ? c.frames : c.members || [];
     for (const id of ids) {
-      if (preloaded.has(id)) continue;
+      const src = P(id);
+      if (preloaded.has(src)) continue;
       const img = new Image();
       img.decoding = "async";
-      img.src = P(id);
-      preloaded.set(id, img);
+      img.src = src;
+      preloaded.set(src, img);
       if (preloaded.size > 80) preloaded.delete(preloaded.keys().next().value);
     }
   }
@@ -1020,20 +1298,92 @@ function preload(cards) {
 async function loadCards(stack) {
   const view = S.view;
   try {
-    const r = await api("/api/next?n=2" + (stack ? `&stack=${encodeURIComponent(stack)}` : "") + (S.stage ? `&stage=${S.stage}` : ""));
+    const r = await api("/api/deal?n=2" + (stack ? `&stack=${encodeURIComponent(stack)}` : "") + (S.stage ? `&stage=${S.stage}` : "")
+      + (S.groupFocus ? `&group=${encodeURIComponent(S.groupFocus)}` : "") + (S.koMatch != null ? `&match=${encodeURIComponent(S.koMatch)}` : ""), {});
     if (left(view)) return;
+    S.groupFocus = null; S.koMatch = null;
     S.cards = r.cards;
     S.stage = r.stage || (S.stage === "open" ? "open" : null);  // plain Play follows the journey: groups, then knockouts
     S.drawInfo = r.draw;
     paintTrack();
     if (S.stage === "stacks") S.stacksLeft = r.left;
+    if(S.stage==="knockouts")S.finalists=r.knockouts?.qualified?.length || r.knockouts?.target || 8;
     preload(S.cards);
     updateMeter(r.progress);
     showNext();
+    if(S.autoLightning&&S.current){
+      S.autoLightning=false;
+      const query=new URLSearchParams(location.hash.split('?')[1]);query.delete('lightning');
+      history.replaceState(null,'',`#duel${query.size?'?'+query:''}`);
+      startLightning();
+    }
   } catch (e) {
-    if (!left(view)) $("#stage").innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+    if (!left(view)) { $("#stage").innerHTML = `<div class="empty">${esc(e.message)}<button class="btn primary" id="deal-again">Try again</button><a class="btn" href="#home">The map →</a></div>`; $("#deal-again").onclick=()=>loadCards(stack); }
   }
 }
+
+// Cards can arrive before the previous call. Choose their displayed sides only when they reach the arena.
+const DuelSides = {
+  key(card){return `${card.type}:${Math.min(card.a,card.b)}:${Math.max(card.a,card.b)}`;},
+  state(source=S.lib?.source||''){
+    if(this.current?.source===source)return this.current;
+    let saved;try{saved=JSON.parse(sessionStorage.getItem(`matcher-duel-sides:${source}`)||'null');}catch(_){}
+    const valid=x=>x&&Number.isFinite(x.photo)&&['a','b'].includes(x.side);
+    const history=Array.isArray(saved?.history)?saved.history.filter(x=>x&&typeof x.key==='string'&&Number.isFinite(x.a)&&Number.isFinite(x.b)&&(!x.winner||valid(x.winner))).slice(-64):[];
+    const state={source,history,defender:valid(saved?.defender)?saved.defender:null,base:valid(saved?.base)?saved.base:null,last:history.slice().reverse().find(x=>x.winner)?.winner||(valid(saved?.base)?saved.base:null)};
+    if(source===(S.lib?.source||''))this.current=state;
+    return state;
+  },
+  save(state){
+    state.last=state.history.slice().reverse().find(x=>x.winner)?.winner||state.base;
+    try{sessionStorage.setItem(`matcher-duel-sides:${state.source}`,JSON.stringify({history:state.history,base:state.base,defender:state.defender}));}catch(_){}
+  },
+  present(card){
+    if(!card||!['mini','duel','knockout','final'].includes(card.type))return card;
+    const state=this.state(),wire=card.wire||{a:card.a,b:card.b};let {a,b}=card;
+    const anchor=state.last&&[a,b].includes(state.last.photo)?state.last:card.type==='mini'&&state.defender?.photo===card.champ?state.defender:null;
+    if(state.replay?.key===this.key(card))({a,b}=state.replay);
+    else if(anchor&&[a,b].includes(anchor.photo)&&({a,b})[anchor.side]!==anchor.photo)[a,b]=[b,a];
+    state.replay=null;
+    let commentary=card.commentary;
+    if(a!==card.a){
+      if(commentary?.startsWith('Rematch:'))commentary=commentary.replace(/\b(left|right)\b/g,x=>x==='left'?'right':'left');
+      else if(/^#(?:\d+|–) · #(?:\d+|–)$/.test(commentary))commentary=commentary.split(' · ').reverse().join(' · ');
+    }
+    return {...card,a,b,wire,commentary};
+  },
+  outcome(card,outcome){
+    const side=outcome.startsWith('toss_')?outcome.slice(5):outcome;
+    if(!card.wire||!['a','b'].includes(side))return outcome;
+    return `${outcome.startsWith('toss_')?'toss_':''}${card[side]===card.wire.a?'a':'b'}`;
+  },
+  pick(card,outcome){
+    if(!['mini','duel','knockout','final'].includes(card.type))return null;
+    if(card.type==='mini'&&outcome==='skip') {
+      // The first challenger can be deferred before anyone has won. Remember position, not a victory.
+      const state=this.state();state.defender={photo:card.champ,side:card.champ===card.a?'a':'b'};this.save(state);return null;
+    }
+    const state=this.state(),photo=outcome==='a'?card.a:outcome==='b'?card.b:card.type==='mini'?card.champ:null;
+    const entry={key:this.key(card),a:card.a,b:card.b,kind:card.type==='duel'?(['a','b'].includes(outcome)?'duel':outcome.startsWith('toss_')?'toss':outcome):card.type==='mini'?'mini':card.type,
+      winner:photo==null?null:{photo,side:photo===card.a?'a':'b'}};
+    state.history.push(entry);if(state.history.length>64){const old=state.history.shift();if(old.winner)state.base=old.winner;}
+    this.save(state);return {state,entry};
+  },
+  reject(ticket){
+    if(!ticket)return;const {state,entry}=ticket,index=state.history.indexOf(entry);
+    if(index>=0){state.history.splice(index,1);this.save(state);}
+  },
+  undo(reply,source){
+    if(!reply?.undone)return;
+    const state=this.state(source),kind=reply.undone==='frame'?'mini':reply.undone,card=reply.cards?.[0]||reply.card;
+    let index=state.history.length-1;
+    while(index>=0&&state.history[index].kind!==kind)index--;
+    if(index<0)return;
+    const [entry]=state.history.splice(index,1);
+    if(card&&entry.key===this.key(card))state.replay=entry;
+    this.save(state);
+  },
+};
 
 function showNext() {
   const gone = World.grab($("#stage"));
@@ -1041,11 +1391,12 @@ function showNext() {
   World.swap($("#stage"), gone);
 }
 function showCard() {
-  S.current = S.cards.shift() || null;
+  S.current = DuelSides.present(S.cards.shift() || null);
   const stage = $("#stage");
   if (!stage) return;
   const c = S.current;
   $("#finish-bar").hidden = true;
+  World.calm(false); setForward(null);
   if (!c && S.stage === "stacks") { stagesDone(); return; }
   if (!c && S.stage === "groups") { groupStageDone(); return; }
   if (!c && S.progress && S.progress.shots < 2) {
@@ -1054,30 +1405,31 @@ function showCard() {
         Bring some back from Set aside, or add photos.` });
     return;
   }
-  if (!c) { stage.className = "arena"; stage.innerHTML = `<div class="empty">Thinking…</div>`; return; }
+  if (!c && S.stage === "knockouts") { knockoutsDone(); return; }
+  if (!c) { stage.className = "arena"; stage.innerHTML = `<div class="empty">No pair is ready.<button class="btn primary" id="deal-again">Deal again</button><a class="btn" href="#home">The map →</a></div>`; $("#deal-again").onclick=()=>loadCards(); return; }
   if (c.type === "mini") {
     renderMini(stage, c);
-  } else if (c.type === "duel") {
+  } else if (c.type === "duel" || c.type === "knockout") {
     stage.className = "arena";
     $("#controls").classList.remove("mini-mode");
-    const rowOf = (pid) => S.table && c.group && S.table.id === c.group.id && S.table.rows.find((r) => r.photo === pid);
+    const rowOf = (pid) => S.table && c.group && S.table.id === c.group.id && S.table.rows?.find((r) => r.photo === pid);
     const ra = rowOf(c.a), rb = rowOf(c.b);
     const decider = ra && rb && (ra.through !== rb.through || (Math.abs(ra.odds - 0.5) < 0.25 && Math.abs(rb.odds - 0.5) < 0.25));
     $("#duel-q").innerHTML = c.group
       ? `⚽ <b>Group ${esc(c.group.letter)}</b> <span>${esc(c.group.emoji)} ${esc(c.group.name)} · match ${fmt(Math.min(c.group.played + 1, c.group.budget))}/${fmt(c.group.budget)}</span>${decider ? ` <span class="decider">⚡ Decider: this one can send a photo through</span>` : ""}`
-      : S.stage === "knockouts" ? `⚔️ <b>Knockouts</b> <span>${QUESTION[MODE()]}</span>`
-      : `${QUESTION[MODE()]} <span>Gut call.</span>`;
+      : S.stage === "knockouts" ? `⚔️ <b>${esc(c.label || "Knockouts")}</b> <span>Win to advance · ${esc(c.commentary || "")}</span>`
+      : `${QUESTION[MODE()]} <span>${esc(c.commentary || "Gut call.")}</span>`;
     if (c.group && (!S.table || S.table.id !== c.group.id)) loadTable(c.group.id);
     else if (!c.group && S.stage === "knockouts") loadSeats(c);  // the knockouts: the race for the finals' seats beside the duel
     else if (!c.group) renderTable(null);
     stage.innerHTML = ["a", "b"].map((side) => {
-      const n = photoInfo(c, c[side]).frames;
+      const n = photoInfo(c, c[side]).frames, team = c.group || c.teams?.[c[side]];
       return `
-      <div class="slot slot-${side}"><div class="side" data-side="${side}" data-photo="${c[side]}">
-        <img src="${P(c[side])}" alt="${side === "a" ? "Left" : "Right"} photo" draggable="false">
-        ${n > 1 ? `<span class="stack" title="A stack of ${n} takes; this is the one you kept">⧉ ${n} takes</span>` : ""}
-        ${c.teams && c.teams[c[side]] ? `<span class="team-chip" title="Plays for ${esc(c.teams[c[side]].name)}">${esc(c.teams[c[side]].emoji)} <b>${esc(c.teams[c[side]].letter)}</b> ${esc(c.teams[c[side]].name)}</span>` : ""}
-        <button class="toss" data-toss="${side}" title="Never show this shot again (${side === "a" ? "Q" : "E"})">Toss ✕</button>
+      <div class="slot slot-${side}"><div class="side ${n > 1 ? "stacked pile" : ""}" data-side="${side}" data-photo="${c[side]}" tabindex="0" title="Point here and press X to toss"${team?.id != null ? ` style="--team-hue:${groupHue(team.id)}"` : ""}>
+        <div class="print">${pilePhotos(c[side],photoInfo(c,c[side]).members)}<div class="paper"><div class="window"><img class="pile-cover" src="${P(c[side])}" alt="${side === "a" ? "Left" : "Right"} photo" draggable="false"></div>
+        ${n > 1 ? `<span class="stack" title="A stack of ${n} takes; this is the one you kept">⧉ ${n} takes</span>` : ""}</div></div>
+        ${c.teams && c.teams[c[side]] ? `<span class="team-chip" title="Plays for ${esc(c.teams[c[side]].name)}">${esc(c.teams[c[side]].emoji)} <b>${esc(c.teams[c[side]].letter)}</b> ${side === "b" && c.teams[c.a]?.letter === c.teams[c.b]?.letter ? "" : esc(c.teams[c[side]].name)}</span>` : ""}
+        <button class="toss" ${c.type === "knockout" ? "hidden" : ""} data-toss="${side}" title="Never show this shot again (${side === "a" ? "Q" : "E"})">Toss ✕</button>
       </div></div>`;
     }).join("");
     $$(".side", stage).forEach((el) => (el.onclick = (ev) => {
@@ -1085,23 +1437,12 @@ function showCard() {
       decide(t ? `toss_${t.dataset.toss}` : el.dataset.side);
     }));
     $("#controls").hidden = false;
-  } else {
-    const n = c.members.length;
-    const layout = n <= 3 ? `c${n}` : n === 4 ? "c2 r2" : "c3 r2";
-    stage.className = "frames";
-    stage.innerHTML = `<div class="question frame-q">Same shot, several takes: click the one to <b>keep</b>.
-      <span>It stands in for this stack from now on. The others aren't deleted; you can swap later from the leaderboard.
-      Keys 1–${n}; Enter keeps the current pick.</span></div>
-      <div class="frame-grid ${layout}">${c.members.map((id, i) => `
-      <div class="side ${id === c.current ? "current" : ""}" data-pick="${id}" data-photo="${id}" title="Keep this take">
-        <span class="hint"><kbd>${i + 1}</kbd></span><img src="${P(id)}" alt="Frame ${i + 1}" draggable="false">
-        <span class="keep">Keep this one</span></div>`).join("")}</div>`;
-    $$(".side", stage).forEach((el) => (el.onclick = () => decide("frame", Number(el.dataset.pick))));
-    $("#controls").hidden = true;
+    $$("#controls [data-o=great],#controls [data-o=meh]").forEach((b)=>b.hidden=c.type==="knockout");
+    setHint(c.type==="knockout"?"Win to advance. Space saves this match for later.":c.group?"Pick the better photo. ↑ both great, ↓ both meh, Space skips.":"Gut call: pick the better photo. Space skips it.");
   }
   layoutStage();
   dressStage(stage);
-  S.shownAt = performance.now();
+  S.shownAt = playTime();
 }
 
 // New pairs pop in; hovering a pane bubbles it up (with a soft "vwhoop" if sound is on).
@@ -1119,67 +1460,96 @@ function dressStage(stage) {
 // ---------------------------------------------------------------- auto-crop
 // Every pane shows the same 4:5 window. Each photo is zoomed and positioned so your face sits in that
 // window the same way (the server's head-and-shoulders box fills it), the photo always covers the
-// window, and whatever spills past the window's edge fades out on a gradient.
-const WINDOW_FILL = 0.92;  // the window's share of the pane
-const WINDOW_ASPECT = 0.8; // 4:5, like a dating-app card
+// window of its polaroid card; the card clips whatever spills past the window.
 const MAX_ZOOM = 1.5;      // never enlarge the preview beyond this (CSS px per preview px)
-const FADE = 0.08;         // gradient width past the window edge, as a share of the window
-const OUTSIDE = "rgba(0,0,0,0.35)";  // how much of the photo still shows beyond the fade
 
 function photoInfo(card, id) {
   return (card && card.photos && card.photos[id]) || { dims: [1, 1], box: null, frames: 1 };
 }
 
-function framePhoto(side, info) {
-  const img = side.querySelector("img");
-  const W = side.clientWidth, H = side.clientHeight;
+// A subject box ([x, y, w, h] as fractions) after turning the picture `deg` clockwise (matcher/touchup.py agrees).
+function rotateBox(b, deg) {
+  const [x, y, w, h] = b, d = ((deg % 360) + 360) % 360;
+  return d === 90 ? [1 - (y + h), x, h, w] : d === 180 ? [1 - (x + w), 1 - (y + h), w, h] : d === 270 ? [y, 1 - (x + w), h, w] : [x, y, w, h];
+}
+// `opts` are one photo's own choices (the Leaderboard's): crop, a clockwise quarter turn, enhancement; the global
+// toggles otherwise.
+function framePhoto(side, info, opts = {}) {
+  // The pane holds one polaroid (`.print > .paper > .window`); the photo is sized inside the window.
+  const win = side.querySelector(".window"), img = win?.querySelector("img");
+  const W = win?.clientWidth, H = win?.clientHeight;
   if (!img || !W || !H) return;
-  const [iw, ih] = info.dims;
-  const b = S.crop ? info.box : null;
+  const rotate = (((opts.rotate || 0) % 360) + 360) % 360, enhance = opts.enhance ?? S.filter, mode = normCrop(opts.crop ?? S.crop);
+  let [iw, ih] = info.dims, b = mode !== "off" ? info.box : null;  // "best" without a subject frames the middle
+  if (rotate % 180) [iw, ih] = [ih, iw];
+  if (b && rotate) b = rotateBox(b, rotate);
   const base = "position:absolute;left:0;top:0;max-width:none;object-fit:fill;";
-  if (!b) {  // whole photo, letterboxed
-    const s = Math.min(W / iw, H / ih);
-    img.style.cssText = base + `width:${iw * s}px;height:${ih * s}px;transform:translate(${(W - iw * s) / 2}px,${(H - ih * s) / 2}px)`;
-    paintFilter(img, Number(side.dataset.photo));
-    return;
-  }
-  const winH = Math.min(WINDOW_FILL * H, (WINDOW_FILL * W) / WINDOW_ASPECT), winW = winH * WINDOW_ASPECT;
-  const winL = (W - winW) / 2, winT = (H - winH) / 2;
-  const cover = Math.max(winW / iw, winH / ih);                 // the photo always fills the window
-  const s = Math.min(Math.max(winH / (b[3] * ih), cover), Math.max(cover, MAX_ZOOM));
-  const dw = iw * s, dh = ih * s;
+  // The element keeps the picture's own width and height and turns about its centre, so the turned box lands
+  // where the framing put it.
+  const place = (x, y, w, h) => {
+    const [ew, eh] = rotate % 180 ? [h, w] : [w, h];
+    img.style.cssText = base + `width:${ew}px;height:${eh}px;transform:translate(${x + w / 2 - ew / 2}px,${y + h / 2 - eh / 2}px)${rotate ? ` rotate(${rotate}deg)` : ""}`;
+    paintFilter(img, Number(side.dataset.photo), enhance, opts.knobs || null);
+  };
+  const { x, y, w, h } = frameRect(W, H, iw, ih, b, mode);
+  place(x, y, w, h);
+}
+// Where a picture of iw×ih goes in a W×H window (CSS px): "off" contains it at the top; "best" fills the window
+// exactly (the least paper showing), the subject or the centre deciding which part; "subject" zooms in past that
+// until the subject fills the window's height (never past MAX_ZOOM), centred on it unless that would leave a gap;
+// "height" and "width" fill one way and let the subject decide the other (the top and centre without one).
+// matcher/touchup.py `crop_box` is the same rule for the export.
+function frameRect(W, H, iw, ih, b, mode) {
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const tx = clamp(W / 2 - (b[0] + b[2] / 2) * dw, winL + winW - dw, winL);  // face centred in the window,
-  const ty = clamp(H / 2 - (b[1] + b[3] / 2) * dh, winT + winH - dh, winT);  // unless that would leave a gap
-  img.style.cssText = base + `width:${dw}px;height:${dh}px;transform:translate(${tx}px,${ty}px)`;
-  const pc = (v) => `${(v * 100).toFixed(2)}%`;
-  const band = (a, z, f, dir) => `linear-gradient(${dir}, ${OUTSIDE} ${pc(a - f)}, #000 ${pc(a)}, #000 ${pc(z)}, ${OUTSIDE} ${pc(z + f)})`;
-  // ...and the photo's own borders feather out, so it never ends in a hard line against the pane.
-  const feather = (e, dir) => `linear-gradient(${dir}, transparent 0%, #000 ${pc(e)}, #000 ${pc(1 - e)}, transparent 100%)`;
-  const mask = [band((winL - tx) / dw, (winL + winW - tx) / dw, (FADE * winW) / dw, "to right"),
-                band((winT - ty) / dh, (winT + winH - ty) / dh, (FADE * winH) / dh, "to bottom"),
-                feather((0.04 * winW) / dw, "to right"), feather((0.04 * winH) / dh, "to bottom")].join(", ");
-  img.style.webkitMaskImage = mask;
-  img.style.maskImage = mask;
-  img.style.webkitMaskComposite = "source-in";
-  img.style.maskComposite = "intersect";
-  paintFilter(img, Number(side.dataset.photo));
+  if (mode === "best") {
+    // The crop that uses the most of the window among focus subject (when there is one), fill height and fill
+    // width; on a tie focus subject wins, then whichever fill covers more (the owner's rule).
+    const used = { height: Math.min(1, iw * (H / ih) / W), width: Math.min(1, ih * (W / iw) / H) };
+    if (b && b[3] > 0) used.subject = 1;
+    const order = ["subject", "height", "width"].filter((m) => m in used);
+    return frameRect(W, H, iw, ih, b, order.reduce((a, m) => (used[m] > used[a] ? m : a), order[0]));
+  }
+  if (mode === "height" || mode === "width") {
+    const s = mode === "height" ? H / ih : W / iw, dw = iw * s, dh = ih * s;
+    const x = dw <= W ? (W - dw) / 2 : clamp(b ? W / 2 - (b[0] + b[2] / 2) * dw : (W - dw) / 2, W - dw, 0);
+    const y = dh <= H ? 0 : clamp(b ? H / 2 - (b[1] + b[3] / 2) * dh : 0, H - dh, 0);
+    return { x, y, w: dw, h: dh };
+  }
+  if (mode === "off" || (mode === "subject" && !b)) {  // whole photo, contained in the window and nested at its top: the dead space below joins the chin
+    const s = Math.min(W / iw, H / ih);
+    return { x: (W - iw * s) / 2, y: 0, w: iw * s, h: ih * s };
+  }
+  const cover = Math.max(W / iw, H / ih);                       // the photo always fills the window
+  const s = mode === "subject" ? Math.min(Math.max(H / (b[3] * ih), cover), Math.max(cover, MAX_ZOOM)) : cover;
+  const dw = iw * s, dh = ih * s, cx = b ? b[0] + b[2] / 2 : 0.5, cy = b ? b[1] + b[3] / 2 : 0.5;
+  return { x: clamp(W / 2 - cx * dw, W - dw, 0),  // the subject (or the middle) centred in the window,
+    y: clamp(H / 2 - cy * dh, H - dh, 0), w: dw, h: dh };  // unless that would leave a gap
 }
 
 // ---------------------------------------------------------------- auto-filter
 // A gentle auto-edit laid over the photo as an SVG filter: levels, a little white balance, midtones toward a
 // natural brightness, a touch of vibrance. Worked out on the fly from a 64-px sample of the photo itself, so
 // nothing is written to your files; F flips it on every judging screen.
-const FILTERS = new Map();  // photo id -> filter id
-let filterCanvas = null;
+const FILTERS = new Map();  // photo id -> filter id, for the current library and analysis
+let filterCanvas = null, filterSource = null, filterSerial = 0;
 
 function filterPref() {
   try { return localStorage.getItem(`matcher-filter-${MODE()}`) === "on"; } catch (_) { return false; }
 }
 
-function autoFilterId(img, pid) {
-  if (FILTERS.has(pid)) return FILTERS.get(pid);
-  if (!img.complete || !img.naturalWidth) return null;
+// The Leaderboard's knobs on the auto look, name: [low, high, default]; matcher/touchup.py KNOBS agrees.
+const KNOBS = { levels: [0, 2, 1], light: [-1, 1, 0], contrast: [-1, 1, 0], colour: [0, 2, 1], warmth: [-1, 1, 0] };
+const KNOB_WORD = { levels: "Levels", light: "Light", contrast: "Contrast", colour: "Colour", warmth: "Warmth" };
+function knobsOf(look) {
+  const out = {};
+  for (const [k, [lo, hi, d]] of Object.entries(KNOBS)) { const v = Number(look?.[k]); out[k] = Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; }
+  return out;
+}
+const LOOKS = new Map();  // photo id -> its measured auto look (levels, gamma, saturation)
+// The look of one photo from a 64-px proof of it: black and white points at 0.5% / 99.5% (per channel only 40% of
+// the way, three quarters of a full auto-levels), a gamma that brings the mean towards mid-grey, saturation
+// unless it is black and white. matcher/touchup.py measures the same.
+function measureLook(img) {
   const w = 64, h = Math.max(1, Math.round((64 * img.naturalHeight) / img.naturalWidth));
   filterCanvas = filterCanvas || document.createElement("canvas");
   filterCanvas.width = w;
@@ -1211,27 +1581,60 @@ function autoFilterId(img, pid) {
   const g0 = Math.log(0.46) / Math.log(Math.min(0.95, Math.max(0.05, mean)));
   const gamma = 1 + (Math.min(1.35, Math.max(0.65, g0)) - 1) * 0.6;
   const sat = chroma / n < 10 ? 1 : 1.12;  // nothing to boost in black & white
+  return { lin, gamma, sat };
+}
+// The auto look turned by the knobs: levels scaled, mid-tones lifted or lowered, a contrast slope about mid-grey,
+// colour scaled, a warm or cool cast (matcher/touchup.py `tuned` is the same chain).
+function tunedLook(look, knobs) {
+  const k = knobsOf(knobs), slope = 1 + 0.6 * k.contrast;
+  return { lin: look.lin.map(([a, b]) => [1 + (a - 1) * k.levels, b * k.levels]), gamma: Math.min(2.2, Math.max(0.4, look.gamma * (1 - 0.45 * k.light))),
+    contrast: [slope, (1 - slope) / 2], sat: Math.max(0, look.sat * k.colour), warmth: k.warmth };
+}
+function filterMarkup(t) {
+  const fn = (attrs) => ["R", "G", "B"].map((c, k) => `<feFunc${c} ${attrs(k)}/>`).join("");
+  const r = 1 + 0.12 * t.warmth, b = 1 - 0.12 * t.warmth;
+  return `<feComponentTransfer>${fn((k) => `type="linear" slope="${t.lin[k][0].toFixed(4)}" intercept="${t.lin[k][1].toFixed(4)}"`)}</feComponentTransfer>
+    <feComponentTransfer>${fn(() => `type="gamma" amplitude="1" exponent="${t.gamma.toFixed(4)}" offset="0"`)}</feComponentTransfer>
+    ${t.contrast[0] !== 1 ? `<feComponentTransfer>${fn(() => `type="linear" slope="${t.contrast[0].toFixed(4)}" intercept="${t.contrast[1].toFixed(4)}"`)}</feComponentTransfer>` : ""}
+    <feColorMatrix type="saturate" values="${t.sat.toFixed(4)}"/>
+    ${t.warmth ? `<feColorMatrix type="matrix" values="${r.toFixed(4)} 0 0 0 0  0 1 0 0 0  0 0 ${b.toFixed(4)} 0 0  0 0 0 1 0"/>` : ""}`;
+}
+// One SVG filter per photo (and, with knobs, one live filter per photo rebuilt in place as the knobs move).
+function autoFilterId(img, pid, knobs = null) {
+  const source = imageKey();
+  if (filterSource !== source) {
+    FILTERS.clear(); LOOKS.clear(); $("#af-defs")?.replaceChildren(); filterSource = source;
+    $$("img[style*='filter']").forEach((shown) => { shown.style.filter = ""; });
+  }
+  const key = knobs ? `${pid}|knobs` : String(pid);
+  if (FILTERS.has(key) && !knobs) return FILTERS.get(key);
+  if (!img.complete || !img.naturalWidth) return null;
+  if (FILTERS.size >= 1200) {
+    const used = new Set($$("img[style*='filter']").map((shown) => /#(af-[\w-]+)/.exec(shown.style.filter)?.[1]));
+    for (const [photo, id] of FILTERS) if (!used.has(id)) { $(`#${id}`)?.remove(); FILTERS.delete(photo); }
+    if (FILTERS.size >= 1200) return null;
+  }
+  let look = LOOKS.get(pid);
+  if (!look) { look = measureLook(img); LOOKS.set(pid, look); }
   let defs = $("#af-defs");
   if (!defs) {
     document.body.insertAdjacentHTML("beforeend", `<svg id="af-defs" width="0" height="0" style="position:absolute" aria-hidden="true"></svg>`);
     defs = $("#af-defs");
   }
-  const fn = (attrs) => ["R", "G", "B"].map((c, k) => `<feFunc${c} ${attrs(k)}/>`).join("");
-  const id = `af-${pid}`;
-  defs.insertAdjacentHTML("beforeend", `<filter id="${id}" color-interpolation-filters="sRGB">
-    <feComponentTransfer>${fn((k) => `type="linear" slope="${lin[k][0].toFixed(4)}" intercept="${lin[k][1].toFixed(4)}"`)}</feComponentTransfer>
-    <feComponentTransfer>${fn(() => `type="gamma" amplitude="1" exponent="${gamma.toFixed(4)}" offset="0"`)}</feComponentTransfer>
-    <feColorMatrix type="saturate" values="${sat}"/></filter>`);
-  FILTERS.set(pid, id);
+  const id = FILTERS.get(key) || (knobs ? `af-k${pid}` : `af-${++filterSerial}`);
+  let filter = $(`#${id}`, defs);
+  if (!filter) { defs.insertAdjacentHTML("beforeend", `<filter id="${id}" color-interpolation-filters="sRGB"></filter>`); filter = $(`#${id}`, defs); }
+  filter.innerHTML = filterMarkup(tunedLook(look, knobs));
+  FILTERS.set(key, id);
   return id;
 }
 
-function paintFilter(img, pid) {
+function paintFilter(img, pid, on = S.filter, knobs = null) {
   if (!img || !pid) return;
-  if (!S.filter) { img.style.filter = ""; return; }
-  const id = autoFilterId(img, pid);
-  if (id) img.style.filter = `url(#${id})`;
-  else img.addEventListener("load", () => paintFilter(img, pid), { once: true });
+  if (!on) { img.style.filter = ""; return; }
+  const id = autoFilterId(img, pid, knobs);
+  if (id) { img.style.filter = ""; void img.offsetWidth; img.style.filter = `url(#${id})`; }  // a rebuilt live filter repaints
+  else if (!img.complete) img.addEventListener("load", () => paintFilter(img, pid, on, knobs), { once: true });
 }
 
 function paintFilters() {
@@ -1245,11 +1648,13 @@ const THUMB_FILTER_MAX = 800;
 function paintThumbFilters() {
   const main = $("#main");
   if (!main) return;
-  if (!S.filter) { $$("img[style*='filter']", main).forEach((img) => (img.style.filter = "")); return; }
+  // The Leaderboard's card follows its own photo's choice, not the global toggle.
+  if (!S.filter) { $$("img[style*='filter']", main).forEach((img) => { if (!img.closest("[data-frame]")) img.style.filter = ""; }); return; }
   let n = 0;
   for (const img of $$("img[src^='/img/t/'], img[src^='/img/p/']", main)) {
-    if (img.style.filter) continue;
+    if (img.closest("[data-frame]")) continue;
     if (++n > THUMB_FILTER_MAX) break;
+    if (img.style.filter) continue;
     const m = /\/img\/[tp]\/(\d+)\.jpg/.exec(img.getAttribute("src"));
     if (m) paintFilter(img, Number(m[1]));
   }
@@ -1261,13 +1666,34 @@ new MutationObserver(() => {
   requestAnimationFrame(() => { thumbQueued = false; paintThumbFilters(); });
 }).observe($("#main"), { childList: true, subtree: true });
 // Auto-crop beyond the duel: a big photo card with a known subject fills its frame, centred on the subject.
+// A bare card picture (a stack tile, a take in a fan) framed by the crop mode: the picture's window-mapped
+// region through object-view-box where the browser has it (Chromium), else cover with the subject's position.
+// "off" leaves the tile's own look (the picture covering its window).
+const VIEW_BOX = typeof CSS !== "undefined" && !!CSS.supports?.("object-view-box", "xywh(0px 0px 1px 1px)");
+function frameTileImage(img) {
+  if (img.closest("[data-frame], .swipe-card, #f-arena, .world-fly, .ps-item")) return;
+  const apply = () => {
+    const iw = img.naturalWidth, ih = img.naturalHeight, mode = normCrop(S.crop);
+    if (!iw || !ih || !img.isConnected) return;
+    if (mode === "off") { img.style.objectFit = ""; img.style.objectPosition = ""; img.style.objectViewBox = ""; return; }
+    let box = null; try { box = JSON.parse(img.dataset.box || "null"); } catch (_) { /* no subject */ }
+    const W = img.clientWidth || 3, H = img.clientHeight || 4, { x, y, w, h } = frameRect(W, H, iw, ih, box, mode);
+    if (VIEW_BOX) { img.style.objectFit = "fill"; img.style.objectPosition = ""; img.style.objectViewBox = `xywh(${(-x / w * iw).toFixed(1)}px ${(-y / h * ih).toFixed(1)}px ${(W / w * iw).toFixed(1)}px ${(H / h * ih).toFixed(1)}px)`; }
+    else { const cover = w >= W - .5 && h >= H - .5; img.style.objectFit = cover ? "cover" : "contain"; img.style.objectPosition = cover && box ? `${((box[0] + box[2] / 2) * 100).toFixed(1)}% ${((box[1] + box[3] / 2) * 100).toFixed(1)}%` : "center top"; }
+  };
+  if (img.complete && img.naturalWidth) apply(); else img.addEventListener("load", apply, { once: true });
+}
+// Every such picture frames itself as it loads, wherever it was inserted; C frames them all again.
+document.addEventListener("load", (e) => { if (e.target instanceof HTMLImageElement && e.target.dataset.box !== undefined) frameTileImage(e.target); }, true);
 function paintCrops() {
-  $$(".swipe-card[data-photo], .twin-arena .side[data-photo], #f-arena .side[data-photo]").forEach((el) => {
+  $$("img[data-box]").forEach(frameTileImage);
+  // Twin check compares the complete takes: cropping can hide the difference that decides whether they match.
+  $$(".swipe-card[data-photo]").forEach((el) => {
     const img = el.querySelector("img");
     if (!img) return;
     let box = null;
     try { box = JSON.parse(el.dataset.box || "null"); } catch (_) { /* no subject */ }
-    if (S.crop && box) {
+    if (normCrop(S.crop) !== "off" && box) {
       img.style.objectFit = "cover";
       img.style.objectPosition = facePos(box).replace("object-position:", "");
     } else {
@@ -1275,30 +1701,48 @@ function paintCrops() {
       img.style.objectPosition = "";
     }
   });
+  // Finals panes frame their picture inside the card's window exactly like a duel: contained whole, or zoomed to
+  // the subject when auto-crop is on.
+  $$("#f-arena .side[data-photo]").forEach((side) => {
+    const img = side.querySelector(".window > img");
+    if (!img) return;
+    let box = null;
+    try { box = JSON.parse(side.dataset.box || "null"); } catch (_) { /* no subject */ }
+    const frame = () => framePhoto(side, { dims: [img.naturalWidth || 1, img.naturalHeight || 1], box });
+    if (img.naturalWidth) frame(); else img.addEventListener("load", frame, { once: true });
+  });
+  $$("[data-frame=own]").forEach(frameBoardCard);
 }
 
 function toggleFilter() {
   S.filter = !S.filter;
   try { localStorage.setItem(`matcher-filter-${MODE()}`, S.filter ? "on" : "off"); } catch (_) { /* private mode */ }
-  $$(".filter-btn span").forEach((l) => (l.textContent = S.filter ? "Filter on" : "Filter off"));
+  $$(".filter-btn span").forEach((l) => (l.textContent = S.filter ? "Enhance on" : "Enhance off"));
   paintFilters();
-  toast(S.filter ? "Auto-filter on: a gentle auto-edit (levels, colour, brightness) over each photo. Your files aren't touched."
-    : "Auto-filter off: photos as shot.");
+  toast(S.filter ? "Enhance on" : "Enhance off", 1000);
 }
 
 function layoutStage() {
   $$("#stage .side[data-photo]").forEach((side) => framePhoto(side, photoInfo(S.current, Number(side.dataset.photo))));
+  $$("[data-frame=own]").forEach(frameBoardCard);
 }
 
+// C cycles the ways to frame a photo: best (the least paper showing in the window), focus subject (zoomed in on
+// its subject), fill height, fill width, off.
+const CROP_MODES = ["best", "subject", "height", "width", "off"];
+const CROP_WORD = { best: "Crop: best", subject: "Crop: focus subject", height: "Crop: fill height", width: "Crop: fill width", off: "Crop off" };
+const CROP_MENU = { best: "best", subject: "focus subject", height: "fill height", width: "fill width", off: "off" };
+const normCrop = (v) => v === true || v === "auto" ? "subject" : CROP_MODES.includes(v) ? v : "off";
+window.addEventListener("photo-render-change", () => S.refitGrab?.());  // the analysis show reframes the photo in hand
 function toggleCrop() {
-  S.crop = !S.crop;
-  try { localStorage.setItem(`matcher-crop-${MODE()}`, S.crop ? "on" : "off"); } catch (_) { /* private mode */ }
+  S.crop = CROP_MODES[(CROP_MODES.indexOf(normCrop(S.crop)) + 1) % CROP_MODES.length];
+  try { localStorage.setItem(`matcher-crop-${MODE()}`, S.crop); } catch (_) { /* private mode */ }
   const label = $("#crop-btn span");
-  if (label) label.textContent = S.crop ? "Crop on" : "Crop off";
+  if (label) label.textContent = CROP_WORD[S.crop];
   layoutStage();
   paintCrops();
-  toast(S.crop ? (MODE() === "me" ? "Auto-crop on: every photo framed the same way around you."
-    : "Auto-crop on: photos with a face are framed around it; the rest stay whole.") : "Auto-crop off: whole photos.");
+  window.dispatchEvent(new Event("photo-render-change"));
+  toast(S.crop === "off" ? "Whole photo" : `Auto-crop: ${CROP_MENU[S.crop]}`, 1000);
 }
 
 let resizeQueued = false;
@@ -1310,7 +1754,7 @@ window.addEventListener("resize", () => {
 
 function animate(outcome) {
   const sides = $$("#stage .side");
-  if (!["duel", "mini"].includes(S.current?.type) || sides.length < 2) return;
+  if (!["duel", "mini", "knockout"].includes(S.current?.type) || sides.length < 2) return;
   const [a, b] = sides;
   if (outcome === "a") { a.classList.add("won"); b.classList.add("lost"); }
   else if (outcome === "b") { b.classList.add("won"); a.classList.add("lost"); }
@@ -1327,56 +1771,76 @@ async function decide(outcome, choice) {
     return;
   }
   S.busy = true;
+  if(S.stage==='stacks')paintTrack();
+  const view = S.view;
   const card = S.current;
-  const ms = Math.round(performance.now() - S.shownAt);
+  if (card.type === "knockout" && !["a","b","skip"].includes(outcome)) { S.busy=false; return; }
+  if (card.type === "knockout" && outcome === "skip") {
+    try {const r=await api("/api/vote",{card:card.id,outcome:"skip",stage:S.stage});if(left(view))return;
+      Sound.play("skip");S.cards=r.cards||[];updateMeter(r.progress);
+      if(S.cards[0]?.match===card.match){location.hash="tournament";return;}
+      showNext();
+    }catch(error){if(!left(view))toast(error.message);}finally{if(!left(view))settle();}return;
+  }
+  const ms = Math.round(playTime() - S.shownAt);
   animate(outcome);
-  if (card.type === "duel") Sound.play({ a: "pick", b: "pick", great: "great", meh: "meh", skip: "skip" }[outcome] || "toss");
+  if (card.type === "duel" || card.type === "knockout") Sound.play({ a: "pick", b: "pick", great: "great", meh: "meh", skip: "skip" }[outcome] || "toss");
   const lr = S.lr && performance.now() < S.lr.ends ? S.lr.id : null;
   if (lr && ["a", "b", "great", "meh", "skip"].includes(outcome)) lightningTick();
-  const req = api("/api/vote", { card: card.id, outcome, ms, choice: choice ?? null, pending: S.cards.map((c) => c.id),
-    lr, stage: S.stage });
-  if (card.type === "frame" || card.type === "mini") {
+  const sides=DuelSides.pick(card,outcome);
+  const req = api("/api/vote", { card: card.id, outcome:DuelSides.outcome(card,outcome), ms, choice: choice ?? null, pending: S.cards.map((c) => c.id),
+    lr, stage: S.stage }).catch(e=>{DuelSides.reject(sides);throw e;});
+  req.catch(() => {});  // the entrance animation may outlast an immediate network failure
+  if (card.type === "mini") {
     // Wait for the reply: the next round, or (after the last one) the duel this stack was holding up.
     try {
       const r = await req;
+      if (left(view)) return;
       if (r.swap) applySwap(r.swap);
       S.cards.unshift(...r.cards);
       preload(r.cards);
       if (card.type === "mini") {
-        Sound.play(r.mini && r.mini.defended ? "defend" : "pick");
+        Sound.play(r.skipped ? "skip" : r.mini && r.mini.defended ? "defend" : "pick");
+        if(r.skipped&&r.cards?.[0]&&[r.cards[0].a,r.cards[0].b].every(id=>[card.a,card.b].includes(id))){location.hash="stacks";return;}
         if (r.crowned) {
-          await crowning(r.crowned.photo);
-          if (S.stage) S.stacksLeft = Math.max(0, (S.stacksLeft || 1) - 1);
+          S.stagePhotos = [...new Set([...(S.stagePhotos||[]),r.crowned.photo])].slice(-6);
+          await crowning(r.crowned.photo, r.crowned.overruled);
+          if (left(view)) return;
         }
       }
       updateMeter(r.progress, outcome);
       showNext();
-      if (card.type === "frame") toast(r.swap ? "Kept that frame; it's the one you'll see from now on." : "Kept the current frame.");
     } catch (e) {
-      if (e.status === 409) { toast("Refreshing pairs…"); await loadCards(); } else toast(e.message);
+      if (left(view)) return;
+      toast(e.status === 409 ? "Refreshing pairs…" : e.message);
+      await loadCards();
     } finally {
-      settle();
+      if (!left(view)) settle();
     }
     return;
   }
   await sleep(130);
+  if (left(view)) { await req.catch(()=>{}); return; }
   if (S.cards.length) showNext();
   else { S.current = null; $("#stage").innerHTML = `<div class="empty">Thinking…</div>`; }
   try {
     const r = await req;
+    if (left(view)) return;
     if (r.swap) applySwap(r.swap);
     S.cards.push(...r.cards);
     preload(r.cards);
     updateMeter(r.progress, outcome);
-    if (r.ranks) rankPop(r.ranks, outcome, card, r.story);
+    if (r.ranks) rankPop(r.ranks, outcome, card, r.story, r.group);
     if (r.group) { renderTable(r.group); if (r.group.just_settled) groupDecided(r.group); }
+    if(r.knockouts?.qualified?.length){S.stagePhotos=r.knockouts.qualified.slice(0,6);S.finalists=r.knockouts.qualified.length;}
     if (!S.current) showNext();
-    if (outcome.startsWith("toss")) toast("Tossed. It won't come back (Z to undo).");
+
   } catch (e) {
-    if (e.status === 409) { toast("Refreshing pairs…"); await loadCards(); }
-    else toast(e.message);
+    if (left(view)) return;
+    toast(e.status === 409 ? "Refreshing pairs…" : e.message);
+    await loadCards();
   } finally {
-    settle();
+    if (!left(view)) settle();
   }
 }
 
@@ -1396,20 +1860,21 @@ function applySwap({ from, to, photo }) {
 const UNDONE = {
   duel: "Undone. That pair is back.", great: "Undone. That pair is back.", meh: "Undone. That pair is back.",
   skip: "Undone. That pair is back.", toss: "Toss undone. The photo's back, and so is the pair.",
-  frame: "Take pick undone. Choose again.", mini: "Round undone. Call it again.",
+  mini: "Round undone. Call it again.", knockout:"Elimination match undone. Call it again.",
   sweep: "Sweep call undone.", final: "Finals pick undone. It's on the finals page.",
+  qualification: "Qualification undone. Group comparisons are open again.",
 };
 
 function cropPref() {
   try {
     const v = localStorage.getItem(`matcher-crop-${MODE()}`) || (MODE() === "me" ? localStorage.getItem("matcher-crop") : null);
-    if (v) return v === "on";
+    if (v) return v === "on" ? "best" : normCrop(v);
   } catch (_) { /* private mode */ }
-  return MODE() === "me";  // profile pics frame around you; a gallery shows whole photos
+  return MODE() === "me" ? "best" : "off";  // profile pics frame around you; a gallery shows whole photos
 }
 
 // Where your pick landed on the leaderboard, for a moment.
-function rankPop(ranks, outcome, card, story) {
+function rankPop(ranks, outcome, card, story, group) {
   const pid = outcome === "a" ? card.a : outcome === "b" ? card.b : null;
   const r = ranks.find((x) => x.photo === pid);
   if (!r) return;
@@ -1418,18 +1883,21 @@ function rankPop(ranks, outcome, card, story) {
   const el = document.createElement("div");
   el.className = `rank-pop ${reduceMotion ? "still" : ""}`;
   el.setAttribute("role", "status");
-  el.innerHTML = `${story ? `<em class="story ${story}">${story === "upset" ? "Upset!" : "Rematch"}</em>` : ""}<img src="${T(pid)}" alt="">
+  const place = group?.rows.findIndex((x)=>x.photo===pid), labels = {upset:"Upset!",rematch:"Rematch",revenge:"Revenge!","giant-killer":"Giant-killer!","into-finals":"Into the finals!"};
+  el.innerHTML = `${story ? `<em class="story ${story}">${labels[story]||esc(story)}</em>` : ""}<img src="${T(pid)}" alt="">
     <span>#${r.rank}</span>${d > 0 ? `<b class="up">▲${d}</b>` : d < 0 ? `<b class="down">▼${-d}</b>` : `<b class="flat">=</b>`}`;
-  const stage = $("#view-duel");
-  if (!stage) return;
-  stage.append(el);
+  if (place>=0) el.insertAdjacentHTML("beforeend",`<small>${place+1}${place===0?"st":place===1?"nd":place===2?"rd":"th"} in Group ${esc(group.letter)} ${group.rows[place].through?"✓":""}</small>`);
+  const host=innerWidth<=760?$("#duel-feedback"):$("#duel-learnt");
+  if (!host) return;
+  host.replaceChildren(el);
   setTimeout(() => el.classList.add("out"), 1100);
-  setTimeout(() => el.remove(), 1500);
+  setTimeout(() => {if(host.contains(el))host.textContent=host.dataset.learning||"";}, 1500);
 }
 
 // ---- lightning round: 60 seconds, as many calls as you can
 const LR_SECONDS = 60;
 function startLightning() {
+  if (!$("#lr-slot") || !S.current || S.lr) return;
   if (S.stage === "stacks") { toast("Lightning rounds are for duels: crown the stacks first."); return; }
   S.lr = { id: Math.random().toString(36).slice(2, 10), ends: performance.now() + LR_SECONDS * 1000, calls: 0,
            xp0: (S.game && S.game.xp) || 0, best0: (S.game && S.game.lightning_best) || 0 };
@@ -1438,7 +1906,7 @@ function startLightning() {
   Sound.play("level");
   banner(`<small>Lightning round</small><b>⚡ 60 seconds. Go!</b>`, 900);
   const tick = () => {
-    if (!S.lr || !$("#lr-slot")) return;
+    if (!S.lr || S.lr.pausedAt!=null || !$("#lr-slot")) return;
     const left = Math.max(0, S.lr.ends - performance.now());
     const bar = $(".lr-bar i");
     if (bar) bar.style.width = `${(left / (LR_SECONDS * 1000)) * 100}%`;
@@ -1448,7 +1916,8 @@ function startLightning() {
     if (left <= 0) { endLightning(); return; }
     S.lr.raf = requestAnimationFrame(tick);
   };
-  tick();
+  S.lr.tick=tick;
+  if(S.pause?.view===S.view)S.lr.pausedAt=performance.now();else tick();
 }
 
 function lightningTick() {
@@ -1458,22 +1927,26 @@ function lightningTick() {
 }
 
 async function endLightning() {
-  const lr = S.lr;
+  const lr = S.lr, view = S.view;
   if (!lr) return;
+  const elapsed=Math.max(1,Math.min(LR_SECONDS,Math.round(((lr.pausedAt??performance.now())-(lr.ends-LR_SECONDS*1000))/1000)));
   S.lr = null;
   cancelAnimationFrame(lr.raf);
   $("#hud-bolt")?.classList.remove("on");
   $("#lr-slot") && ($("#lr-slot").innerHTML = "");
   await sleep(450);  // let the last answer land
   let g = S.game;
+  if (left(view)) return;
   try { g = (await api("/api/game")).stats; } catch (_) { /* keep what we have */ }
+  if (left(view)) return;
   const record = lr.calls > lr.best0 && lr.calls > 0;
   if (record) { Sound.play("achieve"); confetti(window.innerWidth / 2, window.innerHeight / 3, 60); }
   const m = $("#modal");
   m.className = "";
+  m.onclick = null;
   m.innerHTML = `<div class="lr-result">
       <div class="lr-big">⚡ ${fmt(lr.calls)}</div>
-      <div class="muted">calls in ${LR_SECONDS} seconds</div>
+      <div class="muted">calls in ${elapsed} seconds${elapsed<LR_SECONDS?" · stopped early":""}</div>
       ${record ? `<div class="lr-record">New record!</div>` : lr.best0 ? `<div class="muted small">Your record: ${fmt(lr.best0)}</div>` : ""}
       <div class="lr-xp">+${fmt(Math.max(0, ((g && g.xp) || 0) - lr.xp0))} XP</div>
       ${S.lrLevel ? `<div class="lr-record">Level up: Lv ${S.lrLevel.level} · ${esc(S.lrLevel.level_name)}</div>` : ""}
@@ -1487,35 +1960,75 @@ async function endLightning() {
 }
 
 // A stage's finish: the message where the photos were, the way on in the bar (the next stage bottom-right, on Enter).
-function finishStage({ icon, title, text, next, undo: canUndo = true }) {
+// Every stage ends on the same card: the stamp, the stage's icon, a title, one line, the bonus and what came through.
+// `clear` false is a plain ending (nothing to play, or a stage that was skipped), which earns no stamp.
+function stageClearHtml({ icon, title, text = "", xp = 0, photos = [], summary = "", clear = true, bonusKey = null }) {
+  return `<div class="empty stage-done" data-solid>${clear ? `<div class="clear-stamp">Stage clear</div>` : ""}<div class="big-emoji">${icon}</div><h2>${title}</h2>${text ? `<p class="muted">${text}</p>` : ""}
+    ${clear ? `<div class="stage-results">${xp ? `<b>+${fmt(xp)} XP · stage bonus</b>` : bonusKey ? `<b data-stage-bonus="${bonusKey}" hidden></b>` : ""}${photos.length ? `<div class="result-strip">${photos.map((p) => `<img src="${T(p)}" alt="Stage result">`).join("")}</div>` : ""}${summary ? `<span>${summary}</span>` : ""}</div>` : ""}</div>`;
+}
+// The actions under it: back on the left, Undo in the middle (the history HUD shows it). The way on is the HUD's
+// next slot (`setForward`), never a second button down here.
+function clearActionsHtml({ back = ["#home", "The map"], undo = null, undoAttr = 'data-fin="undo"' } = {}) {
+  return `<div class="bar-left"><a class="btn big" href="${back[0]}">${back[1]}</a></div>
+    <div class="bar-mid">${undo ? `<button class="btn ghost" ${undoAttr}><kbd>Z</kbd> ${undo}</button>` : ""}</div>
+    <div class="bar-right"></div>`;
+}
+// A bonus the page didn't know yet (the stage closed in this very call) is filled in once the journey reports it.
+async function fillStageBonus(key, root) {
+  const view = S.view;
+  try { const j = await api("/api/journey"); if (left(view)) return; S.game = j.progress?.game || S.game; S.journey = j; paintSaveChip(); paintTrack(); }
+  catch (_) { return; }
+  const xp = S.game?.stage_xp?.[key], el = $(`[data-stage-bonus="${key}"]`, root);
+  if (el && xp) { el.textContent = `+${fmt(xp)} XP · stage bonus`; el.hidden = false; }
+}
+function finishStage({ icon, title, text, next, undo: canUndo = true, clear = canUndo && !!next, summary, photos }) {
   const stage = $("#stage");
   World.release();
   stage.className = "arena finished";
   $("#controls").hidden = true;
-  const clear = canUndo && next;  // a stage won, not just an empty one
-  stage.innerHTML = `<div class="empty stage-done">${clear ? `<div class="clear-stamp">Stage clear</div>` : ""}<div class="big-emoji">${icon}</div><h2>${title}</h2><p class="muted">${text}</p></div>`;
+  const key=S.stage==="stacks"?"crown":S.stage, xp=clear?(S.game?.stage_xp?.[key]||0):0;
+  stage.innerHTML = stageClearHtml({ icon, title, text, xp, clear, photos: photos || S.stagePhotos || [],
+    summary: summary ?? (key==="crown"?`${plural(S.game?.crowned||0,"stack")} crowned · ${fmt(S.game?.overrules||0)} machine guesses overruled`:key==="groups"?"Your group winners advance together.":key==="knockouts"?`${plural(S.finalists||8,"place")} won for the finals.`:"") });
   if (clear) { Sound.play("crown"); confetti(window.innerWidth / 2, window.innerHeight / 3, 70); }
+  World.calm(true);  // a reading moment: the sea stays, dimmed, instead of drawing over the words
   const bar = $("#finish-bar");
-  bar.innerHTML = `<div class="bar-left"><a class="btn big" href="#home">The map</a></div>
-    <div class="bar-mid">${canUndo ? `<button class="btn ghost" data-fin="undo"><kbd>Z</kbd> Undo the last call</button>` : ""}</div>
-    <div class="bar-right">${next ? `<a class="btn primary big" href="${next[0]}" id="fin-next">${next[1]} <kbd>Enter</kbd></a>` : ""}</div>`;
+  bar.innerHTML = clearActionsHtml({ undo: canUndo ? "Undo the last call" : null });
+  setForward(next ? { label: next[1], href: next[0] } : null);
   bar.hidden = false;
   const u = $("[data-fin=undo]", bar);
   if (u) u.onclick = () => undo();
+  setHint(next ? `Enter continues to the next stage.${canUndo ? " Z undoes the last call." : ""}` : "Nothing to play here yet. The map is bottom-left.");
 }
 
 function stagesDone() {
   $("#duel-q").innerHTML = `👑 <b>Stacks crowned</b> <span>Every burst has its best take.</span>`;
-  finishStage({ icon: "👑", title: "All crowned!", next: ["#duel?stage=groups", "Next: the group stage →"],
-    text: "Every stack now plays as its best take. Next, each group plays its own mini-tournament." });
+  finishStage({ icon: "👑", title: "All crowned!", next: ["#draw", "Next: Groups →"],
+    text: "Every stack now plays as its best take. Next, every shot goes into a themed group." });
   refreshHud(true);
 }
 
 // The group stage: each group's standings under the photos, ranked by rating (who you beat counts, not just how
 // often), with a line under the places that go through.
 async function loadTable(id) {
-  S.table = { id };
-  try { renderTable((await api(`/api/draw/table/${id}`)).table); } catch (_) { /* the next vote brings it */ }
+  const view = S.view, loading = { id };
+  S.table = loading;
+  try {
+    const r = await api(`/api/draw/table/${id}`);
+    if (!left(view) && S.table === loading && S.current?.group?.id === id) renderTable(r.table);
+  } catch (_) { /* the next vote brings it */ }
+}
+function renderDuelTable(title, status, content, qualify=false) {
+  const box=$("#group-table");if(!box)return;
+  box.classList.toggle("expanded",!!S.tableExpanded);
+  box.innerHTML=`<div class="gt-head"><b class="gt-title">${title}</b>
+    <button class="gt-toggle" aria-expanded="${!!S.tableExpanded}" aria-controls="gt-body"><b>${title}</b><span>${status}</span><i aria-hidden="true">⌄</i></button>
+    ${qualify?'<button class="btn ghost gt-qualify" id="group-qualify">Qualify leaders</button>':''}</div>
+    <div class="gt-body" id="gt-body">${content}</div>`;
+  $(".gt-toggle",box).onclick=()=>{
+    S.tableExpanded=!S.tableExpanded;box.classList.toggle("expanded",S.tableExpanded);
+    $(".gt-toggle",box).setAttribute("aria-expanded",S.tableExpanded);
+  };
+  const choose=$("#group-qualify",box);if(choose)choose.onclick=qualifyGroups;
 }
 function renderTable(t) {
   const box = $("#group-table");
@@ -1524,78 +2037,117 @@ function renderTable(t) {
   $("#view-duel")?.classList.toggle("with-table", !!t);
   if (!t) { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = `<div class="gt-head"><b>Group ${esc(t.letter)} standings</b>
-    <span class="muted small">${t.settled ? "Decided" : `${fmt(t.played)} of ~${fmt(t.budget)} matches`} · top ${t.adv} go through · ranked by rating: beating strong photos counts more</span></div>
-    <ol class="gt-rows">${t.rows.map((r, i) => `<li class="${r.through ? "through" : ""} ${i === t.adv ? "cut" : ""}" title="${r.w} won · ${r.l} lost${r.d ? ` · ${r.d} level` : ""}">
+  renderDuelTable(`<span class="team-letter" style="--team-hue:${groupHue(t.id)}">${esc(t.letter)}</span>Group ${esc(t.letter)} standings`,`${t.settled?"Decided":`${fmt(t.played)} played`} · top ${t.adv}`,
+    `<div class="muted small gt-description">${t.settled ? "Decided" : `Top ${t.adv} go through`}${t.played ? ` · ${plural(t.played, "match")} played` : ""}</div>
+    <ol class="gt-rows">${t.rows.map((r, i) => `<li class="${r.through ? "through" : ""} ${i === t.adv ? "cut" : ""}" title="${r.w} won · ${r.l} lost${r.d ? ` · ${r.d} level` : ""}${t.played ? ` · ${Math.round(r.odds * 100)}% to go through` : ""}">
       <span class="gt-pos">${i + 1}</span><img src="${T(r.photo)}" alt=""><span class="gt-wl">${r.w}–${r.l}</span>
-      <span class="gt-odds" title="Chance of going through">${r.through ? "✓ " : ""}${Math.round(r.odds * 100)}%</span></li>`).join("")}</ol>`;
+      <span class="gt-odds" title="Chance of going through">${r.through ? "✓" : ""}${t.played && !r.through ? `${Math.round(r.odds * 100)}%` : ""}</span></li>`).join("")}</ol>`,!t.settled);
+}
+async function qualifyGroups() {
+  if(S.busy)return;
+  const view=S.view,signal=S.events.signal;S.busy=true;
+  try {
+    const d=await api('/api/draw/qualify');if(left(view))return;
+    const m=$('#modal');m.className='qualification';m.onclick=null;
+    m.innerHTML=`<h2>Send the current leaders through?</h2><p>${plural(d.total,'photo')} advance using the current ratings. More comparisons can change these choices. No extra matches are recorded.</p>
+      <div class="qualify-groups">${d.groups.map(g=>`<section><b>${esc(g.emoji)} ${esc(g.name)} <span>${g.adv} of ${g.n}</span></b><div>${g.photos.slice(0,8).map(id=>`<img src="${T(id)}" alt="Current leader">`).join('')}${g.photos.length>8?`<span>+${g.photos.length-8}</span>`:''}</div></section>`).join('')}</div>
+      <div class="row spread"><button class="btn" id="qualify-back">Keep playing</button><button class="btn primary" id="qualify-confirm">Qualify ${d.total} →</button></div>`;
+    const chosen=await new Promise(resolve=>{let yes=false;const cancel=()=>m.close();signal.addEventListener('abort',cancel,{once:true});m.addEventListener('close',()=>{signal.removeEventListener('abort',cancel);resolve(yes);},{once:true});$('#qualify-back',m).onclick=()=>m.close();$('#qualify-confirm',m).onclick=()=>{yes=true;m.close();};m.showModal();});
+    if(!chosen||left(view))return;
+    const r=await api('/api/draw/qualify',{basis:d.basis});if(left(view))return;
+    updateHudQuiet(r.game);S.current=null;S.cards=[];await loadCards();refreshHud(true);
+  }catch(e){if(!left(view))toast(e.status===409?'The leaders changed. Review them again.':e.message);}
+  finally{if(!left(view))settle();}
+}
+function knockoutHtml(st, compact = false) {
+  if (!st) return `<p class="muted">Seeded when the group advancers begin.</p>`;
+  return `<div class="ko-rounds ${compact ? "compact" : ""}">${st.rounds.map((r)=>`<section><h3>Round of ${r.size}</h3>${r.matches.map((m,k)=>`<${m.winner ? "div" : "a"} class="ko-match ${m.winner ? "settled" : ""}" ${m.winner ? "" : `href="#duel?stage=knockouts&match=${k}"`}>
+    ${[m.a,m.b].map((p)=>p ? `<img src="${T(p)}" alt="${m.winner === p ? "Advanced" : "Contender"}" class="${m.winner === p ? "qualified" : ""}">` : `<span class="muted">Bye</span>`).join("<span>vs</span>")}</${m.winner ? "div" : "a"}>`).join("")}</section>`).join("")}
+    ${st.qualified?.length ? `<section><h3>${plural(st.qualified.length,"finalist")}</h3><div class="ko-qualified">${st.qualified.map((p)=>`<img src="${T(p)}" alt="Finalist">`).join("")}</div></section>` : ""}</div>`;
 }
 async function loadSeats(c) {
-  const box = $("#group-table");
+  const view = S.view, box = $("#group-table");
   if (!box) return;
-  S.table = { seats: true };
-  $("#view-duel")?.classList.add("with-table");  // the rail is there from the first paint: the photos never resize for it
-  box.hidden = false;
-  if (!box.children.length) box.innerHTML = `<div class="gt-head"><b>🎟️ Race for the finals</b></div>`;
+  S.table = {seats:true}; $("#view-duel")?.classList.add("with-table"); box.hidden=false;
   let d;
-  try { d = await api("/api/seats"); } catch (_) { return; }
-  if (!$("#group-table") || !S.current || S.current.id !== c.id) return;
-  const here = new Set([c.a, c.b]);
-  const row = (x, i, bubble) => `<li class="${here.has(x.photo) ? "on-line" : ""} ${bubble ? "bubble" : ""}"><span class="gt-pos">${bubble ? i + 9 : i + 1}</span>
-    <img src="${T(x.photo)}" alt="">${x.team ? `<span class="gt-wl">${esc(x.team.emoji)} ${esc(x.team.letter)}</span>` : "<span></span>"}
-    <span class="gt-odds">${here.has(x.photo) ? "on the line" : ""}</span></li>`;
-  box.innerHTML = `<div class="gt-head"><b>🎟️ Race for the finals</b><span class="muted small">eight seats in the bracket, as it stands; a duel here can
-    change who's in</span></div><ol class="gt-rows seats">${d.seats.map((x, i) => row(x, i)).join("")}
-    ${d.bubble.length ? `<li class="gt-sep muted small">on the bubble</li>${d.bubble.map((x, i) => row(x, i, true)).join("")}` : ""}</ol>`;
+  try { d=await api("/api/knockouts"); } catch (e) { if (!left(view)) toast(e.message); return; }
+  if (left(view) || S.current?.id !== c.id) return;
+  renderDuelTable("🎟️ Road to the finals","Bracket",`<div class="gt-description"><a href="#tournament">Full bracket →</a></div>${knockoutHtml(d.knockouts,true)}`);
 }
 function groupDecided(t) {
   Sound.play("crown");
   const through = t.rows.filter((r) => r.through).slice(0, 5);
-  banner(`<small>Group ${esc(t.letter)} decided</small><b>${esc(t.emoji)} ${esc(t.name)}</b>
-    <span class="banner-row">${through.map((r) => `<img src="${T(r.photo)}" alt="">`).join("")}</span>
-    <span>${plural(t.adv, "photo")} through to the knockouts</span>`, 2600);
-  confetti(window.innerWidth / 2, window.innerHeight / 3, 60);
+  S.stagePhotos=through.map((r)=>r.photo);
+  rewardNotice(t.emoji, `${t.name} · ${t.adv} through`, `Group ${t.letter} decided. ${plural(t.adv, "photo")} through to the knockouts.`,()=>{location.hash="tournament";});
 }
 async function groupStageDone() {
+  const view = S.view;
   $("#controls").hidden = true;
   renderTable(null);
-  $("#duel-q").innerHTML = `⚽ <b>Group stage</b>`;
-  let g = S.drawInfo || {};
-  try { g = (await api("/api/journey")).stages.groups; } catch (_) { /* use what we had */ }
-  if (!$("#stage") || S.current) return;
+  $("#duel-q").innerHTML = `⚽ <b>Every group decided</b>`;
+  let g = S.drawInfo || {}, direct = false;
+  try {
+    const j = await api("/api/journey"); g = j.stages.groups; direct = !!j.stages.duels?.direct;
+    // Nothing to eliminate: seed the advancers now, so the bracket is theirs and the rail shows the stage skipped.
+    if (direct && g.done && !j.stages.duels?.done) await api("/api/knockouts/start", {});
+  } catch (_) { /* use what we had */ }
+  if (left(view) || S.stage !== "groups" || !$("#stage") || S.current) return;
+  // Four advancers (or exactly eight) go straight into the bracket: the way on names where you land.
   finishStage(g.groups
-    ? { icon: "⚽", title: "Group stage complete!", next: ["#duel?stage=knockouts", "Next: the knockouts →"],
-      text: `${plural(g.groups, "group")} decided · ${fmt(g.through)} photos go through to the knockouts.` }
-    : { icon: "⚽", title: "No groups to play yet", undo: false, next: ["#draw", "Group them →"],
+    ? { icon: "⚽", title: "Group stage complete!", next: direct ? ["#finals", "Next: Finals →"] : ["#duel?stage=knockouts", "Next: Knockouts →"],
+      text: `${g.chosen?'Current leaders chosen':`${plural(g.groups, "group")} decided`} · ${plural(g.through, "photo")} go through${direct ? " straight to the finals" : " to the knockouts"}.`,
+      summary: direct ? "Your group winners are the finalists." : "Your group winners advance together." }
+    : { icon: "⚽", title: "No groups to play yet", undo: false, next: ["#draw", "Next: Groups →"],
       text: "Make some groups first: every shot goes into one." });
   refreshHud(true);
-  if (g.groups) { Sound.play("crown"); confetti(window.innerWidth / 2, window.innerHeight / 3, 70); }
+
+}
+
+async function knockoutsDone() {
+  const view = S.view;
+  let skipped = false;
+  try { skipped = !!(await api("/api/journey")).stages.duels?.skipped; } catch (_) { /* assume rounds were played */ }
+  if (left(view) || S.stage !== "knockouts" || !$("#stage") || S.current) return;
+  $("#duel-q").innerHTML = skipped ? `⚔️ <b>Nothing to eliminate</b>` : `⚔️ <b>Finalists decided</b>`;
+  finishStage(skipped
+    ? { icon: "🎟️", title: "Straight to the finals", undo: false, clear: false, next: ["#finals", "Next: Finals →"],
+      text: `With ${plural(S.finalists || 4, "finalist")} there are no elimination rounds to play: the bracket is ready.` }
+    : { icon: "🎟️", title: "Finalists qualified!", next: ["#finals", "Next: Finals →"],
+      text: `The elimination rounds are complete. Your ${S.finalists || 8} finalists play for the title.` });
 }
 
 // Z while an answer is still on its way isn't dropped: it runs as soon as that answer lands.
 async function undo() {
   if (S.busy) { S.undoQueued = (S.undoQueued || 0) + 1; return; }
   S.busy = true;
+  if(S.stage==='stacks')paintTrack();
+  const view = S.view;
   try {
     const r = await api("/api/undo", { stage: S.stage });
+    if (left(view)) return;
     if (r.undone) Sound.play("undo");
     S.cards = r.cards;
     preload(S.cards);
     updateMeter(r.progress);
     showNext();
-    toast(UNDONE[r.undone] || "Nothing left to undo.");
-  } catch (e) { toast(e.message); }
-  settle();
+    if (!r.undone) toast("Nothing to undo", 1000);
+    refreshHud(true);
+  } catch (e) { if (!left(view)) toast(e.message); }
+  if (!left(view)) settle();
 }
 
 function settle() {
   S.busy = false;
+  if(S.stage==='stacks')paintTrack();
   if (S.undoQueued) { S.undoQueued -= 1; undo(); return; }
-  const q = S.queued && S.queued.shift();
-  if (q && S.current && S.current.id === q.card) decide(q.outcome, q.choice);  // for the card it was meant for
+  while (S.queued?.length) {
+    const q = S.queued.shift();
+    if (S.current?.id === q.card) { decide(q.outcome, q.choice); break; }
+  }
 }
 
 function updateMeter(p, outcome) {
+  if(p&&Number.isFinite(p.crown_left))S.stacksLeft=p.crown_left;
   if (!p || !p.k) return;
   S.progress = p;
   if (p.game) updateHud(p.game, outcome);
@@ -1604,8 +2156,10 @@ function updateMeter(p, outcome) {
   v.textContent = `${fmt(p.votes)} duels · ${p.minutes} min`;
   $("#m-bar").style.width = pct(p.quality);
   $("#m-conf").textContent = `top ${p.k} at ${pct(p.quality)} of best`;
+  const learning = $("#duel-learnt");
+  if(learning){const f=p.learning?.features?.[0]; learning.textContent=p.learning ? `${f?`Learning: ${tasteLabel(f.feature)||f.feature} ${f.up?"▲":"▼"} · `:""}${plural(p.learning.unseen,"unseen photo")} re-ranked` : "";learning.dataset.learning=learning.textContent;learning.title=learning.textContent;}
   const slot = $("#done-slot");
-  if (p.done && slot && !slot.dataset.shown) {
+  if (p.done && S.stage === "open" && slot && !slot.dataset.shown) {
     slot.dataset.shown = "1";
     slot.innerHTML = `<div class="done-banner"><span>Your top ${p.k} is settled; more duels would mostly reshuffle near-ties.</span>
       <a class="btn primary" href="#finals">Next: the finals →</a></div>`;
@@ -1627,26 +2181,36 @@ function pressed(o) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (!location.hash.startsWith("#duel") || e.target.closest("input, select, textarea, dialog") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.defaultPrevented || !location.hash.startsWith("#duel") || e.target.closest("input, select, textarea, dialog, .vn-catalog, .vn-tag, .vn-lasso-tag, .island-pop, .sea-tag-pop") || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (["Enter", " "].includes(e.key) && e.target.closest("button, a, summary, [role=button]")) return;
   if ($("dialog[open]") || $(".inspect")) return;  // (a photo grabbed out of the sea has the keys)
   const c = S.current;
-  const k = e.key;
+  const k = gameInput(e).key;
+  if (e.target.isContentEditable) return;
   if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); if (!e.repeat) undo(); return; }
-  if (k === "c" || k === "C") { e.preventDefault(); toggleCrop(); return; }
-  if (k === "f" || k === "F") { e.preventDefault(); toggleFilter(); return; }
+  if (k === "c" || k === "C") { e.preventDefault(); if (!e.repeat) toggleCrop(); return; }
+  if (k === "f" || k === "F") { e.preventDefault(); if (!e.repeat) toggleFilter(); return; }
   const fin = $("#finish-bar");
-  if (k === "Enter" && fin && !fin.hidden && $("#fin-next")) { e.preventDefault(); $("#fin-next").click(); return; }
-  if (k === "Escape" && (S.stage === "stacks" || (fin && !fin.hidden))) { e.preventDefault(); location.hash = "home"; return; }
+  if (k === "Enter" && fin && !fin.hidden && S.forward) { e.preventDefault(); forwardGo(); return; }
+  if (k === "Escape") { e.preventDefault(); location.hash = "home"; return; }
   if (!c) return;
+  if (k.toLowerCase() === "x") {
+    e.preventDefault();
+    const target = gamePhotoTarget($("#stage"));
+    if (!e.repeat && target) {
+      if (c.type === "duel") decide(`toss_${target.dataset.side}`);
+      else if (!S.busy) {
+        const view=S.view; S.busy=true;
+        api("/api/sweep",{photo:Number(target.dataset.photo),keep:false,wait:true}).then(async()=>{
+          if(!left(view)){Sound.play("toss");S.cards=[];await loadCards();}
+        }).catch(error=>{if(!left(view))toast(error.message);}).finally(()=>{if(!left(view))S.busy=false;});
+      }
+    }
+    return;
+  }
   if (c.type === "mini") {
     const m = { ArrowLeft: "a", a: "a", A: "a", ArrowRight: "b", d: "b", D: "b", " ": "skip" }[k];
     if (m) { e.preventDefault(); if (!e.repeat) { pressed(m); decide(m); } }
-    return;
-  }
-  if (c.type === "frame") {
-    const n = Number(k);
-    if (n >= 1 && n <= c.members.length) { e.preventDefault(); decide("frame", c.members[n - 1]); }
-    else if (k === "Enter") { e.preventDefault(); decide("frame", c.current); }
     return;
   }
   const map = { ArrowLeft: "a", a: "a", A: "a", ArrowRight: "b", d: "b", D: "b", ArrowUp: "great", w: "great", W: "great",
@@ -1693,6 +2257,7 @@ const Sound = {
         undo: () => this.tone(420, 0, 0.12, "sine", 0.04, -140),
         defend: () => this.tone(440, 0, 0.09, "square", 0.025),
         crown: () => [523, 659, 784, 1047].forEach((n, i) => this.tone(n, i * 0.09, 0.22, "triangle", 0.05)),
+        drumroll: () => { for(let i=0;i<12;i++)this.tone(90+i*9,i*0.065,0.06,"triangle",0.028); },
         level: () => [392, 523, 659, 784, 1047].forEach((n, i) => this.tone(n, i * 0.07, 0.25, "square", 0.03)),
         achieve: () => { this.tone(880, 0, 0.12, "triangle"); this.tone(1320, 0.1, 0.25, "triangle"); },
         whoop: () => this.tone(260, 0, 0.13, "sine", 0.018, 520),
@@ -1773,7 +2338,7 @@ function levelUp(g) {
     floatText(`Lv ${g.level}!`, chip, "bonus");
     const r = chip.getBoundingClientRect();
     confetti(r.left + r.width / 2, r.bottom, 30);
-    if (!S.lr) toast(`Level up: Lv ${g.level} · ${g.level_name}`);
+    if (!S.lr) rewardNotice("✦", `Lv ${g.level} · ${g.level_name}`, "Level up!", openTrophies);
     else S.lrLevel = g;
     return;
   }
@@ -1785,8 +2350,12 @@ function levelUp(g) {
 // ones you've seen, so trophies earned by calls made before the game layer existed get a welcome instead.
 const Ach = {
   seen: null,
+  welcomed: new Set(),
   check(g, catalog) {
     if (!g || !g.unlocked) return;
+    if (!g.welcomed && location.hash.startsWith("#home") && !this.welcomed.has(S.lib?.source)) {
+      this.welcomed.add(S.lib?.source); if(g.judged>0)welcome(g); api("/api/welcome",{}).catch((e)=>toast(e.message));
+    }
     if (!this.seen) {
       let stored = null;
       try { stored = JSON.parse(localStorage.getItem("matcher-ach-seen") || "null"); } catch (_) { /* private mode */ }
@@ -1794,7 +2363,6 @@ const Ach = {
         if (!location.hash.startsWith("#home")) return;  // wait for the home screen to say hello
         this.seen = new Set(g.unlocked);
         this.save();
-        if (g.judged > 0) welcome(g);
         return;
       }
       this.seen = new Set(stored);
@@ -1803,9 +2371,10 @@ const Ach = {
     if (!fresh.length) return;
     fresh.forEach((id) => this.seen.add(id));
     this.save();
+    const source=S.lib?.source;
     const show = (list) => fresh.forEach((id, i) => {
       const a = list.find((x) => x.id === id);
-      if (a) setTimeout(() => achievementPop(a), i * 650);
+      if (a) setTimeout(() => {if(S.lib?.source===source)achievementPop(a);}, i * 650);
     });
     if (catalog) show(catalog);
     else api("/api/game").then((d) => show(d.achievements)).catch(() => {});
@@ -1816,37 +2385,34 @@ const Ach = {
 };
 
 function gameCheck() {
-  api("/api/game").then((d) => Ach.check(d.stats, d.achievements)).catch(() => {});
+  const source=S.lib?.source;
+  api("/api/game").then((d) => {if(S.lib?.source===source)Ach.check(d.stats, d.achievements);}).catch(() => {});
 }
 
-// Unlocks slide in from the corner, clear of the HUD and the controls. Two at most at a time: a burst of unlocks
-// queues up instead of piling over the screen.
-const achQueue = [];
-let achShown = 0;
+// Rewards share one place in the HUD. The next choice keeps all of its space; trophies keep the full detail.
+const rewardQueue=[];
+let rewardTimer=null;
+function rewardNotice(icon,title,detail,action=openTrophies) {
+  rewardQueue.push({icon,title,detail,action,source:S.lib?.source});
+  if(!rewardTimer)pumpRewards();
+}
+function pumpRewards() {
+  const el=$("#hud-reward"),item=rewardQueue.shift();
+  if(!el)return;
+  if(!item){el.hidden=true;el.onclick=null;rewardTimer=null;return;}
+  if(item.source!==S.lib?.source)return pumpRewards();
+  el.innerHTML=`<span aria-hidden="true">${esc(item.icon)}</span><b>${esc(item.title)}</b>`;
+  el.title=item.detail;el.setAttribute("aria-label",`${item.title}. ${item.detail}`);el.onclick=item.action;el.hidden=false;
+  rewardTimer=setTimeout(()=>{rewardTimer=null;pumpRewards();},2600);
+}
 function achievementPop(a) {
-  achQueue.push(a);
-  pumpAchievements();
-}
-function pumpAchievements() {
-  if (achShown >= 2 || !achQueue.length) return;
-  const a = achQueue.shift();
-  let box = $("#achvs");
-  if (!box) {
-    box = document.createElement("div");
-    box.id = "achvs";
-    document.body.append(box);
-  }
-  const el = document.createElement("div");
-  el.className = "achv";
-  el.innerHTML = `<span class="ico">${a.icon}</span><div><small>Achievement unlocked</small><b>${esc(a.title)}</b><span>${esc(a.desc)}</span></div>`;
-  box.append(el);
-  achShown++;
+  rewardNotice(a.icon,a.title,`Achievement unlocked: ${a.desc}`);
   Sound.play("achieve");
-  const r = el.querySelector(".ico").getBoundingClientRect();
-  confetti(r.left + r.width / 2, r.top + r.height / 2, 24);
-  setTimeout(() => el.classList.add("out"), 3000);
-  setTimeout(() => { el.remove(); achShown--; pumpAchievements(); }, 3400);
 }
+window.addEventListener("hashchange",()=>{
+  clearTimeout(rewardTimer);rewardTimer=null;rewardQueue.length=0;
+  const el=$("#hud-reward");if(el){el.hidden=true;el.onclick=null;}
+});
 
 function welcome(g) {
   const n = g.unlocked.length;
@@ -1897,14 +2463,17 @@ function goalCheck(g) {
     localStorage.setItem("matcher-goal", day);
   } catch (_) { return; }
   Sound.play("achieve");
-  toast(`🎯 Daily goal: ${g.daily_goal} calls today${g.days > 1 ? ` · ${g.days}-day streak` : ""}`, 3200);
+  rewardNotice("🎯", `Daily goal · ${g.daily_goal} calls`, `${g.days > 1 ? `${g.days}-day streak. ` : ""}Your calls are saved.`, openTrophies);
 }
 
+let trophyRequest=0;
 async function openTrophies() {
+  const request=++trophyRequest,view=S.view,source=S.lib?.source,signal=S.events?.signal;
+  const m=$("#modal"),contents=m.firstChild,wasOpen=m.open;
   let d;
-  try { d = await api("/api/game"); } catch (e) { toast(e.message); return; }
+  try { d = await api("/api/game"); } catch (e) { if(!left(view)&&request===trophyRequest)toast(e.message); return; }
+  if(left(view)||request!==trophyRequest||S.lib?.source!==source||m.firstChild!==contents||m.open!==wasOpen)return;
   const g = d.stats;
-  const m = $("#modal");
   m.className = "wide";
   const pctLevel = g.level_next ? Math.round(((g.xp - g.level_floor) / (g.level_next - g.level_floor)) * 100) : 100;
   const next = g.level_next ? `${fmt(g.level_next - g.xp)} XP to Lv ${g.level + 1}` : "Max level. Legendary.";
@@ -1918,56 +2487,63 @@ async function openTrophies() {
         <div><b>${fmt(g.judged)}</b><span>calls</span></div>
         <div><b>${fmt(g.best_streak)}</b><span>best streak</span></div>
         <div><b>${fmt(g.crowned)}</b><span>stacks crowned</span></div>
+        <div><b>${fmt(g.today||0)} / ${fmt(g.daily_goal||30)}</b><span>calls today</span></div>
+        <div><b>${fmt(g.days||0)}</b><span>day streak</span></div>
       </div>
     </div>
-    <div class="trophies">${d.achievements.map((a) => `
+    ${[...new Set(d.achievements.map((a)=>a.stage))].map((stage)=>`<h3>${esc(stage)}</h3><div class="trophies">${d.achievements.filter((a)=>a.stage===stage).map((a) => `
       <div class="trophy ${a.unlocked ? "got" : ""}"><span class="ico">${a.unlocked ? a.icon : "🔒"}</span>
-        <b>${esc(a.title)}</b><span class="muted small">${esc(a.desc)}</span></div>`).join("")}</div>`;
+        <b>${esc(a.title)}</b><span class="muted small">${esc(a.desc)}</span></div>`).join("")}</div>`).join("")}`;
   $("#close-modal").onclick = () => m.close();
   m.onclick = (e) => { if (e.target === m) m.close(); };
+  const cancel=()=>m.close();signal?.addEventListener('abort',cancel,{once:true});
+  m.addEventListener('close',()=>signal?.removeEventListener('abort',cancel),{once:true});
   m.showModal();
 }
 
-// A stack's mini-tournament: its champion frame defends the title against each challenger in turn.
+async function crownBestGuesses() {
+  if(S.busy)return;const view=S.view;
+  if (!await askInGame(`Keep the machine's best guess for the other ${fmt(S.stacksLeft)} stacks? You can still change any of them later.`, "Keep best guesses")) return;
+  if(left(view)||S.busy)return;
+  S.busy=true;paintTrack();
+  try {
+    const r=await api('/api/stacks/auto',{});if(left(view))return;
+    updateMeter(r.progress);S.cards=[];S.current=null;stagesDone();
+  }catch(e){if(!left(view))toast(e.message);}
+  finally{if(!left(view))settle();}
+}
+
+// A stack's favourite defends its place. The little roster leaves the two takes the screen.
 function renderMini(stage, c) {
   stage.className = "mini-stage";
   $("#controls").hidden = false;
   $("#controls").classList.add("mini-mode");
-  $("#duel-q").innerHTML = S.stage === "stacks"
-    ? `👑 <b>Crown the stacks</b> <span>${S.stacksLeft ? `${fmt(S.stacksLeft)} to go · ` : ""}which take is better?</span>
-       ${S.stacksLeft > 1 ? `<button class="linkish" id="crown-rest" title="Each remaining stack keeps the take it shows now (Z on the Stacks page undoes it)">⏩ Keep the best guess for the rest</button>` : ""}`
-    : `👑 <b>Mini-tournament</b> <span>Same shot, several takes: which one is better?</span>`;
-  if ($("#crown-rest")) $("#crown-rest").onclick = async () => {
-    if (!confirm(`Keep the machine's best guess for the other ${fmt(S.stacksLeft)} stacks? You can still change any of them later.`)) return;
-    try { const r = await api("/api/stacks/auto", {}); toast(`Kept the best guess for ${plural(r.crowned, "stack")}.`); } catch (e) { toast(e.message); return; }
-    S.cards = [];
-    S.current = null;
-    stagesDone($("#stage"));
-  };
+  $("#duel-q").textContent = S.stage === "stacks" ? "Crown" : "Which take is better?";
+  setHint("Pick the better take. Space saves this round for later.");
   const challenger = c.a === c.champ ? c.b : c.a;
   const label = { champ: "Champion", now: "Challenger", out: "Beaten", next: "Up next" };
-  const strip = c.frames.map((f) => {
+  const shown=[c.champ,challenger,...c.frames.filter(f=>f!==c.champ&&f!==challenger)].slice(0,5);
+  const strip = shown.map((f) => {
     const st = f === c.champ ? "champ" : f === challenger ? "now" : c.beaten.includes(f) ? "out" : "next";
-    return `<span class="mf ${st}" title="${label[st]}"><img src="${T(f)}" alt="">${st === "champ" ? "<i>👑</i>" : ""}</span>`;
+    return `<span class="mf ${st}" title="${label[st]}"><img src="${T(f)}" alt="${label[st]}">${st === "champ" ? "<i>👑</i>" : ""}</span>`;
   }).join("");
   stage.innerHTML = `
-    <div class="mini-bar"><span class="mini-round">Round ${c.round} of ${c.total}</span><span class="mini-strip">${strip}</span>
-      <span class="muted small">Space: can't tell (the champion keeps its crown)</span></div>
+    <div class="mini-bar" aria-label="Round ${c.round} of ${c.total}"><span class="mini-round">${c.round} / ${c.total}</span><span class="mini-strip">${strip}${c.frames.length>shown.length?`<span class="mini-more">+${c.frames.length-shown.length}</span>`:''}</span></div>
     <div class="arena">${["a", "b"].map((side) => `
-      <div class="slot slot-${side}"><div class="side ${c[side] === c.champ ? "is-champ" : ""}" data-side="${side}" data-photo="${c[side]}">
-        <img src="${P(c[side])}" alt="${side === "a" ? "Left" : "Right"} take" draggable="false">
-        <span class="role">${c[side] === c.champ ? "👑 Champion" : "⚔️ Challenger"}</span>
+      <div class="slot slot-${side}"><div class="side ${c[side] === c.champ ? "is-champ" : ""}" data-side="${side}" data-photo="${c[side]}" tabindex="0" title="Point here and press X to toss">
+        <div class="print"><div class="paper"><div class="window"><img src="${P(c[side])}" alt="${side === "a" ? "Left" : "Right"} take" draggable="false"></div>
+        <span class="role" aria-label="${c[side]===c.champ?'Champion':'Challenger'}">${c[side]===c.champ?'👑':'⚔️'} <span data-help-hint>${c[side]===c.champ?'Champion':'Challenger'}</span></span></div></div>
       </div></div>`).join("")}</div>`;
   $$(".side", stage).forEach((el) => (el.onclick = () => decide(el.dataset.side)));
 }
 
-function crowning(photo) {
+function crowning(photo, overruled) {
   return new Promise((resolve) => {
     Sound.play("crown");
     const stage = $("#stage");
     const r = stage.getBoundingClientRect();
     stage.insertAdjacentHTML("beforeend", `<div class="crowning"><div class="crown-card"><img src="${P(photo)}" alt="">
-      <span class="crown">👑</span></div><div class="crown-text">Crowned!</div></div>`);
+      <span class="crown">👑</span></div><div class="crown-text">${overruled?"Your pick beat the machine's!":"Crowned!"}</div></div>`);
     confetti(r.left + r.width / 2, r.top + r.height / 2, 60);
     setTimeout(resolve, reduceMotion ? 300 : 1100);
   });
@@ -1987,8 +2563,7 @@ async function viewSweep(main) {
   if (!cards.length) {
     main.innerHTML = `<div class="screen sweep no-rail">
       <div class="screen-head"><h1>🧹 Clean-up sweep</h1><span class="stat-chip good"><b>0</b> to check</span></div>
-      <div class="screen-body fill"><div class="empty"><div class="big-emoji">🧹</div><h2>Nothing to sweep</h2>
-        <p class="muted">The sorter is sure about everything here. Anything it set aside is still under Set aside.</p></div></div>
+      <div class="screen-body fill"><div class="empty quest-clear" data-solid><span class="clear-stamp">All clear</span><div class="big-emoji">🧹</div><h2>Nothing to sweep</h2></div></div>
       <div class="screen-bar action-bar"><div class="bar-left"><a class="btn big" href="#cuts">Set aside</a></div><div class="bar-mid"></div>
         <div class="bar-right"><a class="btn primary big" href="#home">The map → <kbd>Enter</kbd></a></div></div></div>`;
     S.onKey = (e) => { if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); location.hash = "home"; } };
@@ -2011,8 +2586,8 @@ async function viewSweep(main) {
       </aside>
       <div class="screen-bar action-bar sweep-controls">
         <div class="bar-left"><button class="btn big toss-btn" data-s="toss"><kbd>←</kbd> Toss</button></div>
-        <div class="bar-mid"><button class="btn ghost" data-s="undo"><kbd>Z</kbd> Undo</button>
-          <button class="btn ghost filter-btn" data-s="filter"><kbd>F</kbd> <span>${S.filter ? "Filter on" : "Filter off"}</span></button></div>
+        <div class="bar-mid"><button class="btn ghost" data-s="skip"><kbd>Space</kbd> Skip</button><button class="btn ghost" data-s="undo"><kbd>Z</kbd> Undo</button>
+          <button class="btn ghost filter-btn" data-s="filter"><kbd>F</kbd> <span>${S.filter ? "Enhance on" : "Enhance off"}</span></button></div>
         <div class="bar-right"><button class="btn big keep-btn" data-s="keep">Keep <kbd>→</kbd></button></div>
       </div>
       <div class="screen-bar action-bar" id="sw-finish" hidden>
@@ -2032,17 +2607,15 @@ async function viewSweep(main) {
     if (i >= cards.length) { finish(); return; }
     const c = cards[i], nx = cards[i + 1];
     const gone = World.grab($("#deck"));
-    $("#deck").innerHTML = `${nx ? `<div class="swipe-card under" data-photo="${nx.photo}"><img src="${P(nx.photo)}" alt="" draggable="false"></div>` : ""}
-      <div class="swipe-card top" id="top" data-photo="${c.photo}" data-box='${JSON.stringify((c.view || {}).box || null)}'><img src="${P(c.photo)}" alt="Photo to keep or toss" draggable="false">
+    $("#deck").innerHTML = `${nx ? `<div class="swipe-card under" data-photo="${nx.photo}"><div class="print"><img src="${P(nx.photo)}" alt="" draggable="false"></div></div>` : ""}
+      <div class="swipe-card top" id="top" data-photo="${c.photo}" data-box='${JSON.stringify((c.view || {}).box || null)}'><div class="print"><img src="${P(c.photo)}" alt="Photo to keep or toss" draggable="false"></div>
         <span class="why ${c.kind}">${esc(why(c))}</span><span class="stamp keep">KEEP</span><span class="stamp toss">TOSS</span></div>`;
     drag($("#top"));
     World.swap($("#deck"), gone);
     paintFilters();
   }
-  const pending = [];  // calls made while the last one was still saving
   async function decide(keep) {
-    if (i >= cards.length) return;
-    if (busy) { if (pending.length < 3) pending.push(keep); return; }
+    if (busy || i >= cards.length) return;  // A call always belongs to the take currently visible.
     busy = true;
     const el = $("#top");
     el.style.transform = "";
@@ -2051,21 +2624,23 @@ async function viewSweep(main) {
     floatText("+3 XP", el);
     try {
       const r = await api("/api/sweep", { photo: cards[i].photo, keep });
+      if (left(view)) return;
       done.push(keep);
       keep ? kept++ : tossed++;
       if (r.progress && r.progress.game) { Ach.check(r.progress.game); S.game = r.progress.game; }
-    } catch (e) { toast(e.message); el.classList.remove("fly-right", "fly-left"); busy = false; return; }
+    } catch (e) { if(!left(view)){toast(e.message);el.classList.remove("fly-right", "fly-left");}busy = false;return; }
     await sleep(200);
+    if (left(view)) return;
     i++;
     busy = false;
     paint();
-    if (pending.length) decide(pending.shift());
   }
   async function undoOne() {
     if (busy || !done.length) return;
     busy = true;
     try {
       const r = await api("/api/undo", {});
+      if (left(view)) return;
       if (r.undone === "sweep") {
         done.pop() ? kept-- : tossed--;
         i = Math.max(0, i - 1);
@@ -2075,6 +2650,7 @@ async function viewSweep(main) {
       }
       else toast(UNDONE[r.undone] || "Nothing to undo here.");
     } catch (e) { toast(e.message); }
+    if (left(view)) return;
     busy = false;
     paint();
   }
@@ -2088,11 +2664,11 @@ async function viewSweep(main) {
       el.style.setProperty("--keep", Math.max(0, Math.min(1, dx / 120)));
       el.style.setProperty("--toss", Math.max(0, Math.min(1, -dx / 120)));
     });
-    const up = () => {
+    const up = (e) => {
       if (x0 == null) return;
       x0 = null;
       el.classList.remove("held");
-      if (Math.abs(dx) > Math.min(140, el.clientWidth / 3)) decide(dx > 0);
+      if (e.type !== "pointercancel" && Math.abs(dx) > Math.min(140, el.clientWidth / 3)) decide(dx > 0);
       else { el.style.transform = ""; el.style.setProperty("--keep", 0); el.style.setProperty("--toss", 0); }
     };
     el.addEventListener("pointerup", up);
@@ -2108,14 +2684,20 @@ async function viewSweep(main) {
     Sound.play("crown");
     confetti(window.innerWidth / 2, window.innerHeight / 3, 50);
   }
-  $$("[data-s]").forEach((b) => (b.onclick = () => (b.dataset.s === "undo" ? undoOne() : b.dataset.s === "filter" ? toggleFilter()
+  const skip = () => {
+    if (busy || i >= cards.length) return;
+    if (cards.length-i < 2) { location.hash="filter"; return; }
+    cards.push(cards.splice(i,1)[0]); Sound.play("skip"); paint();
+  };
+  $$("[data-s]").forEach((b) => (b.onclick = () => (b.dataset.s === "undo" ? undoOne() : b.dataset.s === "skip" ? skip() : b.dataset.s === "filter" ? toggleFilter()
     : decide(b.dataset.s === "keep"))));
   $("#sw-undo").onclick = () => undoOne();
   S.onKey = (e) => {
     const k = e.key;
     if (k === "Escape" || (k === "Enter" && i >= cards.length)) { e.preventDefault(); location.hash = "home"; }
     else if (k === "ArrowRight" || k === "Enter" || k === "d" || k === "D") { e.preventDefault(); if (!e.repeat) decide(true); }
-    else if (k === "ArrowLeft" || k === "a" || k === "A") { e.preventDefault(); if (!e.repeat) decide(false); }
+    else if (k === "ArrowLeft" || k.toLowerCase() === "x") { e.preventDefault(); if (!e.repeat) decide(false); }
+    else if (k === " ") { e.preventDefault(); if (!e.repeat) skip(); }
     else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); if (!e.repeat) undoOne(); }
     else if (k === "f" || k === "F") { e.preventDefault(); toggleFilter(); }
   };
@@ -2148,10 +2730,10 @@ function bracketHtml(f, now) {
     `<div class="bcol champ-col"><h4>Champion</h4><div class="bchamp">${f.champion ? `<img src="${T(f.champion)}" alt=""><span>👑</span>` : `<i>?</i>`}</div></div>`;
 }
 
-function podiumHtml(ids) {
+function podiumHtml(ids, rescued = new Set(), members = {}, byPhoto = {}) {
   const [gold, silver, bronze] = ids;
-  const pod = (pid, cls, medal, place) => pid ? `<div class="pod ${cls}"><div class="pod-photo"><img src="${P(pid)}" alt="">
-    ${place === 1 ? `<span class="pod-crown">👑</span>` : ""}<span class="medal">${medal}</span></div><div class="pod-step">${place}</div></div>` : "";
+  const pod = (pid, cls, medal, place) => pid ? `<div class="pod ${cls}"><div class="pod-photo print tile-pile" ${cardData(byPhoto[pid] || { photo: pid }, true)}>${pilePhotos(pid, members[pid] || [])}<div class="paper"><div class="window"><img src="${P(pid)}" alt="" data-view="${pid}"></div></div>
+    ${place === 1 ? `<span class="pod-crown">👑</span>` : ""}<span class="medal">${medal}</span>${rescued.has(pid)?`<span class="rescue-mark" title="Rescued in the Sweep">🧹</span>`:""}</div><div class="pod-step">${place}</div></div>` : "";
   return `<div class="podium">${pod(silver, "silver", "🥈", 2)}${pod(gold, "gold", "🥇", 1)}${pod(bronze, "bronze", "🥉", 3)}</div>`;
 }
 
@@ -2166,9 +2748,9 @@ function previewBracket(seeds) {
   return { size, seeds, matches, champion: null };
 }
 
-const FINALS_HELP = `Your leaderboard's top 8 go into a bracket: quarterfinals, semifinals, a bronze match and the final. Eight calls
-  crown your champion, and every match also counts as a duel. The bracket is fairest once the leaderboard is at 80% of its best:
-  a few more duels first get the right 8 into it. <b>←</b>/<b>→</b> pick, <b>Z</b> undoes, <b>F</b> toggles the filter.`;
+const FINALS_HELP = `The knockout survivors go into a bracket: quarterfinals, semifinals, a bronze match and the final. A small cup
+  has four finalists and starts at the semifinals. Every match also teaches your taste. You can seed early from the leaderboard;
+  the fairest early bracket starts once it's at 80% of its best. <b>←</b>/<b>→</b> or <b>A</b>/<b>D</b> pick. <b>Space</b> skips, <b>X</b> tosses the photo you point at, <b>Z</b> undoes. <b>C</b> crops; <b>F</b> enhances.`;
 
 function renderFinals(main, d) {
   const gone = World.grab(main);
@@ -2176,42 +2758,59 @@ function renderFinals(main, d) {
   World.swap(main, gone);
 }
 function renderBracket(main, d) {
+  const view = S.view;
+  World.calm(false);
+  const bracketOpen=main.dataset.finalsView===String(view)&&main.dataset.finalsOpen==='true';
+  main.dataset.finalsView=String(view);
+  main.dataset.finalsOpen=String(bracketOpen);
   const f = d.finals;
   const q = (d.progress && d.progress.quality) || 0;
   if (!f) {
+    main.dataset.finalsOpen='false';
     const seeds = d.preview || [];
+    const qualified=d.seed_source==='knockouts';
     main.innerHTML = `
       <div class="screen finals no-rail">
         <div class="screen-head">
           <h1>🏆 Finals</h1>
-          ${seeds.length ? `<span class="stat-chip"><b>${seeds.length}</b> seeds</span>` : ""}
-          <span class="stat-chip ${q < 0.8 ? "warn" : "good"}"><b>${pct(q)}</b> of its best${q < 0.8 ? " · fairest from 80%" : ""}</span>
+          ${seeds.length ? `<span class="stat-chip ${qualified?'good':''}"><b>${seeds.length}</b> ${qualified?'finalists qualified':'seeds'}</span>` : ""}
+          ${qualified?'':`<span class="stat-chip ${q < 0.8 ? "warn" : "good"}"><b>${pct(q)}</b> of its best${q < 0.8 ? " · fairest from 80%" : ""}</span>`}
           <span class="grow"></span>
           ${helpBtn(FINALS_HELP)}
         </div>
         <div class="screen-body fill finals-body">${d.eligible && seeds.length ? `
-          <div class="finals-caption">If you seed it now, these ${seeds.length} go in</div>
+          <div class="finals-caption">${qualified?`Your bracket is set. Time for the title.`:`If you seed it now, these ${seeds.length} go in`}</div>
           <div class="bracket preview" id="bracket">${bracketHtml(previewBracket(seeds), -1)}</div>`
           : `<div class="empty"><div class="big-emoji">🏆</div><h2>Not enough for a bracket</h2>
             <p class="muted">This cup needs at least 4 shots in the running. Bring some back from <a href="#cuts">Set aside</a>.</p></div>`}
         </div>
         <div class="screen-bar action-bar">
-          <div class="bar-left"><a class="btn big" href="#duel">More duels first</a></div>
-          <div class="bar-mid">${d.eligible && q < 0.8 ? `<span class="muted small">The leaderboard is at ${pct(q)} of its best; seeding now is fine, just less fair.</span>` : ""}</div>
-          <div class="bar-right">${d.eligible ? `<button class="btn primary big" id="f-start">Seed the bracket <kbd>Enter</kbd></button>`
-            : `<a class="btn primary big" href="#home">The map →</a>`}</div>
+          <div class="bar-left"><a class="btn big" href="${qualified?'#tournament':'#duel'}">${qualified?'Board':'More duels first'}</a></div>
+          <div class="bar-mid">${d.eligible && !qualified && q < 0.8 ? `<span class="muted small">The leaderboard is at ${pct(q)} of its best; seeding now is fine, just less fair.</span>` : ""}</div>
+          <div class="bar-right"></div>
         </div>
       </div>`;
+    let starting = false;
     const start = async () => {
-      try { const r = await api("/api/finals/start", {}); Sound.play("level"); renderFinals(main, { ...r, progress: d.progress }); }
-      catch (e) { toast(e.message); }
+      if (starting || left(view)) return;
+      starting = true;
+      try { const r = await api("/api/finals/start", {}); if (left(view)) return; Sound.play("level"); renderFinals(main, { ...r, progress: d.progress }); }
+      catch (e) { if (!left(view)) toast(e.message); }
+      finally { starting = false; }
     };
-    const b = $("#f-start");
-    if (b) b.onclick = start;
-    S.onKey = (e) => { if (e.key === "Enter" && b) { e.preventDefault(); start(); } };
+    setForward(d.eligible ? { label: qualified ? "Start Finals →" : "Seed the bracket →", name: "Finals", run: start } : null);
+    setHint(d.eligible && seeds.length ? (qualified ? "Enter starts the finals." : "Enter seeds the bracket from the leaderboard.") : "Bring photos back from Set aside to fill a bracket.");
+    S.onKey = (e) => {
+      if (e.key === "Enter" && d.eligible) { e.preventDefault(); start(); }
+      else if (e.key.toLowerCase() === "z") {
+        e.preventDefault();if(starting)return;starting=true;
+        api("/api/undo",{}).then(async r=>{if(!left(view)){if(r.undone)Sound.play("undo");await viewFinals(main);}})
+          .catch(error=>{if(!left(view))toast(error.message);}).finally(()=>{starting=false;});
+      }
+    };
     return;
   }
-  const card = d.card;
+  const card = DuelSides.present(d.card);
   const seed = (pid) => f.seeds.indexOf(pid) + 1;
   const sameRound = card ? f.matches.map((m, k) => [m, k]).filter(([m]) => m.round === card.round) : [];
   const nth = card ? sameRound.findIndex(([, k]) => k === card.match) + 1 : 0;
@@ -2220,35 +2819,51 @@ function renderBracket(main, d) {
     <div class="screen finals">
       <div class="screen-head">
         <h1>🏆 Finals</h1>
-        ${card ? `<span class="stat-chip match-title"><b>${esc(card.label)}</b>${sameRound.length > 1 ? ` ${nth} of ${sameRound.length}` : ""}</span>
-          <span class="stat-chip">Seed <b>${seed(card.a)}</b> vs seed <b>${seed(card.b)}</b></span>`
+        ${card ? `<span class="stat-chip match-title"><b>${esc(card.label)}</b>${sameRound.length > 1 ? ` ${nth} of ${sameRound.length}` : ""}</span>`
           : f.champion ? `<span class="stat-chip good">👑 <b>Champion crowned</b></span>` : ""}
         <span class="stat-chip"><b>${played}</b> of ${f.matches.length} matches</span>
         <span class="grow"></span>
-        <button class="btn ghost" id="f-reset" title="Throw this bracket away and seed a new one">Replay</button>
         ${helpBtn(FINALS_HELP)}
       </div>
       <div class="screen-body fill" id="f-match">${card ? `
-        <div class="arena finals-arena enter" id="f-arena">${["a", "b"].map((side) => `
-          <div class="slot slot-${side}"><div class="side" data-side="${side}" data-photo="${card[side]}"
-            data-box='${JSON.stringify(((d.photos || {})[card[side]] || {}).box || null)}'>
-            <img class="whole" src="${P(card[side])}" alt="${side === "a" ? "Left" : "Right"}" draggable="false">
-            <span class="role">Seed ${seed(card[side])}</span></div></div>`).join("")}</div>`
-        : f.champion ? `<div class="finals-done">${podiumHtml([f.champion, f.runner_up, f.bronze])}</div>` : ""}
+        <div class="arena finals-arena enter ${card.round === "final" ? "is-final" : ""}" id="f-arena">${["a", "b"].map((side) => `
+          <div class="slot slot-${side}"><div class="side" data-side="${side}" data-photo="${card[side]}" tabindex="0" title="Point here and press X to toss"
+            data-box='${JSON.stringify(((d.photos || {})[card[side]] || {}).box || null)}'${card.teams?.[card[side]]?.id != null ? ` style="--team-hue:${groupHue(card.teams[card[side]].id)}"` : ""}>
+            <div class="print"><div class="paper"><div class="window"><img class="whole" src="${P(card[side])}" alt="${side === "a" ? "Left" : "Right"}" draggable="false"></div>
+            <span class="role">Seed ${seed(card[side])}</span></div></div>
+            ${card.teams?.[card[side]]?`<span class="team-chip">${esc(card.teams[card[side]].emoji)} <b>${esc(card.teams[card[side]].letter)}</b> ${side==="b"&&card.teams[card.a]?.letter===card.teams[card.b]?.letter?"":esc(card.teams[card[side]].name)}</span>`:""}</div></div>`).join("")}</div>`
+        : f.champion ? `<div class="finals-done">${stageClearHtml({ icon: "🏆", title: "Champion!", bonusKey: "finals", xp: S.game?.stage_xp?.finals || 0,
+            summary: `Seed ${seed(f.champion)} takes the title${f.runner_up ? ` over seed ${seed(f.runner_up)}` : ""}.` })}${podiumHtml([f.champion, f.runner_up, f.bronze])}</div>` : ""}
       </div>
-      <aside class="screen-rail"><div class="rail-card grow"><h3>Bracket</h3>
+      <aside class="screen-rail"><div class="rail-card grow finals-bracket ${bracketOpen?'expanded':''}"><div class="finals-bracket-head"><h3>Bracket</h3>
+        <button id="f-bracket-toggle" class="finals-bracket-toggle" aria-expanded="${bracketOpen}" aria-controls="bracket"><b>Bracket</b><span>${played}/${f.matches.length} played</span><i aria-hidden="true">⌄</i></button>
+        <button class="btn ghost" id="f-reset" title="Throw this bracket away and seed a new one">Replay</button></div>
         <div class="bracket" id="bracket">${bracketHtml(f, card ? card.match : -1)}</div></div></aside>
       <div class="screen-bar action-bar">${card ? `
-        <div class="bar-left"><button class="btn big" data-f="a"><kbd>←</kbd> Left</button></div>
-        <div class="bar-mid"><button class="btn ghost" data-f="undo"><kbd>Z</kbd> Undo</button>
-          <button class="btn ghost filter-btn" data-f="filter"><kbd>F</kbd> <span>${S.filter ? "Filter on" : "Filter off"}</span></button></div>
-        <div class="bar-right"><button class="btn big" data-f="b">Right <kbd>→</kbd></button></div>` : `
-        <div class="bar-left"><a class="btn big" href="#home">The map</a></div>
-        <div class="bar-mid"><button class="btn ghost" data-f="undo"><kbd>Z</kbd> Undo the final</button></div>
-        <div class="bar-right"><a class="btn primary big" href="#reveal" id="f-next">Next: the reveal 🎉 <kbd>Enter</kbd></a></div>`}
+        <div class="bar-left"><button class="btn big" data-f="a"><kbd>←</kbd> <span class="lbl-wide">Left wins</span><span class="lbl-narrow">Top wins</span></button></div>
+        <div class="bar-mid"><div class="dpad"><button class="btn" data-f="skip"><kbd>Space</kbd> Skip</button></div>
+          <div class="tools"><button class="btn ghost" data-f="undo"><kbd>Z</kbd> Undo</button>
+          <button class="btn ghost" data-f="crop" id="crop-btn"><kbd>C</kbd> <span>${CROP_WORD[normCrop(S.crop)]}</span></button>
+          <button class="btn ghost filter-btn" data-f="filter"><kbd>F</kbd> <span>${S.filter ? "Enhance on" : "Enhance off"}</span></button></div></div>
+        <div class="bar-right"><button class="btn big" data-f="b"><span class="lbl-wide">Right wins</span><span class="lbl-narrow">Bottom wins</span> <kbd>→</kbd></button></div>` :
+        clearActionsHtml({ undo: "Undo the final", undoAttr: 'data-f="undo"' })}
       </div>
     </div>`;
-  const shownAt = performance.now();
+  const shownAt = playTime();
+  if (card) { setForward(null); setHint(`Pick the winner${card.round === "final" ? " of the final" : ""}. Space saves this match for later.`); }
+  else if (f.champion) {
+    setForward({ label: "Next: Reveal →", name: "Reveal", href: "#reveal" });
+    // The champion's moment lives on the page itself: one podium, one way forward, the sea calmed behind it.
+    World.calm(true); setHint("Enter continues to the reveal."); fillStageBonus("finals", main);
+    if (d.crowned) { Sound.play("crown"); setTimeout(() => { if (!left(view)) Sound.play("level"); }, 500);
+      for (let k = 0; k < 4; k++) setTimeout(() => { if (!left(view)) confetti(window.innerWidth * (0.2 + 0.2 * k), window.innerHeight * 0.3, 50); }, k * 250); }
+    $("#journey-next")?.focus({ preventScroll: true });
+  }
+  $('#f-bracket-toggle').onclick=()=>{
+    const open=main.dataset.finalsOpen!=='true';main.dataset.finalsOpen=String(open);
+    $('.finals-bracket',main).classList.toggle('expanded',open);$('#f-bracket-toggle').setAttribute('aria-expanded',String(open));World.fence();
+  };
+  if(card?.round==="final")Sound.play("drumroll");
   let busy = false;
   const pick = async (outcome) => {
     if (busy || !card) return;
@@ -2256,39 +2871,63 @@ function renderBracket(main, d) {
     const sides = $$("#f-arena .side");
     sides[outcome === "a" ? 0 : 1].classList.add("won");
     sides[outcome === "a" ? 1 : 0].classList.add("lost");
-    Sound.play("pick");
+    Sound.play(card.round === "final" ? "crown" : card.round === "sf" ? "level" : "pick");
     const ws = seed(outcome === "a" ? card.a : card.b), ls = seed(outcome === "a" ? card.b : card.a);  // the moment: who goes on
     floatText(card.round === "final" ? `👑 Seed ${ws} takes the title!` : ws > ls ? `Upset! Seed ${ws} advances` : `Seed ${ws} advances`,
       sides[outcome === "a" ? 0 : 1], ws > ls || card.round === "final" ? "bonus" : "");
+    const orientation=DuelSides.pick(card,outcome);
     try {
-      const r = await api("/api/vote", { card: card.id, outcome, ms: Math.round(performance.now() - shownAt) });
+      const r = await api("/api/vote", { card: card.id, outcome:DuelSides.outcome(card,outcome), ms: Math.round(playTime() - shownAt) })
+        .catch(e=>{DuelSides.reject(orientation);throw e;});
+      if (left(view)) return;
       if (r.progress && r.progress.game) updateHudQuiet(r.progress.game);
       await sleep(260);
-      if (r.result && r.result.round === "final") { renderFinals(main, { ...r, progress: r.progress }); championCeremony(r.finals); refreshHud(true); return; }
+      if (left(view)) return;
+      if (r.result && r.result.round === "final") { renderFinals(main, { ...r, progress: r.progress, crowned: true }); refreshHud(true); return; }
       renderFinals(main, r);
     } catch (e) {
+      if (left(view)) return;
       toast(e.message);
-      if (e.status === 409) viewFinals(main);
+      sides.forEach((el) => el.classList.remove("won", "lost"));
+      if (e.status === 409 && !left(view)) viewFinals(main);
       busy = false;
     }
+  };
+  const skip = async () => {
+    if(busy||!card)return;busy=true;
+    try{const r=await api("/api/vote",{card:card.id,outcome:"skip"});if(left(view))return;Sound.play("skip");
+      if(r.card?.match===card.match){location.hash="tournament";return;}renderFinals(main,r);
+    }catch(error){if(!left(view))toast(error.message);busy=false;}
+  };
+  const toss = async () => {
+    const target=gamePhotoTarget($("#f-arena"));if(busy||!target)return;busy=true;
+    try{await api("/api/sweep",{photo:Number(target.dataset.photo),keep:false,wait:true});if(!left(view)){Sound.play("toss");await viewFinals(main);}}
+    catch(error){if(!left(view))toast(error.message);busy=false;}
   };
   const undoPick = async () => {
     if (busy) return;
     busy = true;
     try {
       const r = await api("/api/undo", {});
+      if (left(view)) return;
       if (r.undone === "final") { Sound.play("undo"); renderFinals(main, r); refreshHud(true); return; }
+      if (r.undone === "sweep") { Sound.play("undo"); await viewFinals(main); refreshHud(true); return; }
       toast(UNDONE[r.undone] || "Nothing to undo here.");
     } catch (e) { toast(e.message); }
     busy = false;
   };
-  $$("[data-f]").forEach((b) => (b.onclick = () => (b.dataset.f === "undo" ? undoPick() : b.dataset.f === "filter" ? toggleFilter()
-    : pick(b.dataset.f))));
-  paintFilters();
+  $$("[data-f]").forEach((b) => (b.onclick = () => (b.dataset.f === "undo" ? undoPick() : b.dataset.f === "skip" ? skip() : b.dataset.f === "filter" ? toggleFilter()
+    : b.dataset.f === "crop" ? toggleCrop() : pick(b.dataset.f))));
+  paintFilters(); paintCrops();
   $$("#f-arena .side").forEach((el) => (el.onclick = () => pick(el.dataset.side)));
   $("#f-reset").onclick = async () => {
-    if (!confirm("Throw this bracket away and seed a new one from the current leaderboard?")) return;
-    renderFinals(main, { ...(await api("/api/finals/reset", {})), progress: d.progress });
+    if (busy) return;
+    if (!await askInGame("Throw this bracket away and seed a new one from the current leaderboard?", "Replay finals")) return;
+    if (left(view)) return;
+    busy = true;
+    try {const r=await api("/api/finals/reset", {});if(left(view))return;renderFinals(main,{...r,progress:d.progress});}
+    catch(e){if(!left(view))toast(e.message);return;}
+    finally { busy = false; }
     refreshHud(true);
   };
   S.onKey = (e) => {
@@ -2297,6 +2936,9 @@ function renderBracket(main, d) {
     else if (["ArrowRight", "d", "D"].includes(k)) { e.preventDefault(); if (!e.repeat) pick("b"); }
     else if (["z", "Z", "Backspace"].includes(k)) { e.preventDefault(); if (!e.repeat) undoPick(); }
     else if (k === "f" || k === "F") { e.preventDefault(); toggleFilter(); }
+    else if ((k === "c" || k === "C") && card) { e.preventDefault(); toggleCrop(); }
+    else if (k === " ") { e.preventDefault(); if (!e.repeat) skip(); }
+    else if (k.toLowerCase() === "x") { e.preventDefault(); if (!e.repeat) toss(); }
     else if (k === "Enter" && !card && f.champion) { e.preventDefault(); location.hash = "reveal"; }
   };
 }
@@ -2310,38 +2952,10 @@ function updateHudQuiet(g) {
   goalCheck(g);
 }
 
-function championCeremony(f) {
-  Sound.play("crown");
-  setTimeout(() => Sound.play("level"), 500);
-  const box = document.createElement("div");
-  box.className = "ceremony";
-  box.setAttribute("role", "dialog");
-  box.setAttribute("aria-modal", "true");
-  box.setAttribute("aria-label", "Champion crowned");
-  box.innerHTML = `<div class="ceremony-inner"><div class="ceremony-title">Champion!</div>${podiumHtml([f.champion, f.runner_up, f.bronze])}
-    <div class="row center"><button class="btn" id="cer-close">Close</button><a class="btn primary big" href="#reveal" id="cer-reveal">Next: the reveal 🎉</a></div></div>`;
-  document.body.append(box);
-  const keys = S.onKey;
-  const close = () => { box.remove(); S.onKey = keys; };
-  S.onKey = (e) => {
-    if (e.key === "Escape") { e.preventDefault(); close(); }
-    if (e.key === "Tab") {  // keep focus inside the dialog
-      const f2 = [$("#cer-reveal", box), $("#cer-close", box)];
-      e.preventDefault();
-      f2[(f2.indexOf(document.activeElement) + 1) % 2].focus();
-    }
-  };
-  $("#cer-close", box).onclick = close;
-  $("#cer-reveal", box).onclick = close;
-  box.onclick = (e) => { if (e.target === box) close(); };
-  $("#cer-reveal", box).focus();
-  for (let k = 0; k < 4; k++) setTimeout(() => confetti(window.innerWidth * (0.2 + 0.2 * k), window.innerHeight * 0.3, 50), k * 250);
-}
-
 // ---------------------------------------------------------------- the tournament board
 // The whole tournament on one board, like a broadcast: every group's roster and standings (who's through, the cut),
 // the race for the finals' eight seats with the next ones in line, and the bracket.
-async function viewTournament(main) {
+async function viewTournament(main, params = new URLSearchParams()) {
   main.innerHTML = LOADING();
   const view = S.view;
   let d;
@@ -2350,16 +2964,20 @@ async function viewTournament(main) {
   const st = S.journey ? journeyStatus(S.journey) : null;
   const next = st && STAGES.find(([k]) => k === st.next);
   const decided = d.groups.filter((g) => g.settled).length;
+  const kickoff=params.get("kickoff")==="1", closeGroups=d.groups.filter((g)=>g.rows.length>g.adv);
+  const death=closeGroups.sort((a,b)=>(a.rows[a.adv-1].odds-a.rows[a.adv].odds)-(b.rows[b.adv-1].odds-b.rows[b.adv].odds))[0]?.id;
   const team = (t) => (t ? `<span class="team-chip mini">${esc(t.emoji)} <b>${esc(t.letter)}</b></span>` : "");
   const group = (g) => `
-    <div class="tb-group ${g.settled ? "settled" : ""}">
+    <div class="tb-group ${g.settled ? "settled" : ""} ${kickoff ? "kickoff-team" : ""}" style="--i:${d.groups.indexOf(g)};--team-hue:${groupHue(g.id)}">
       <div class="tb-ghead"><span class="tb-letter">${esc(g.letter)}</span><span class="tb-gname">${esc(g.emoji)} ${esc(g.name)}</span>
-        <span class="tb-gstate">${g.settled ? "✓ Decided" : `${fmt(g.played)} of ~${fmt(g.budget)}`}</span></div>
+        <span class="tb-gstate">${g.settled ? "✓ Decided · " : g.played ? `${plural(g.played, "match")} played · ` : ""}${g.adv} through</span></div>
+      ${kickoff&&g.id===death?`<span class="death-badge">🔥 Group of death · the closest fight for a place</span>`:""}
       <ol class="tb-roster">${g.rows.map((r, i) => `
         <li class="${r.through ? "through" : ""} ${i === g.adv ? "cut" : ""}" title="${r.w} won · ${r.l} lost${r.d ? ` · ${r.d} level` : ""}">
           <span class="tb-pos">${i + 1}</span><img src="${T(r.photo)}" alt="" data-view="${r.photo}">
           <span class="tb-wl">${r.w}–${r.l}</span>
-          <span class="tb-odds"><i style="width:${pct(r.odds)}"></i></span><span class="tb-pct">${r.through ? "✓" : `${Math.round(r.odds * 100)}%`}</span></li>`).join("")}</ol>
+          <span class="tb-odds"><i style="width:${g.played ? pct(r.odds) : "0"}"></i></span><span class="tb-pct">${r.through ? "✓" : g.played ? `${Math.round(r.odds * 100)}%` : ""}</span></li>`).join("")}</ol>
+      ${!g.settled?`<a class="btn ghost small" href="#duel?stage=groups&group=${g.id}">Play this group →</a>`:""}
     </div>`;
   const seat = (x, i, bubble) => `<div class="tb-seat ${bubble ? "bubble" : ""}" style="--i:${i}">
       <span class="tb-seatno">${bubble ? i + 9 : i + 1}</span><img src="${T(x.photo)}" alt="" data-view="${x.photo}">${team(x.team)}</div>`;
@@ -2367,34 +2985,38 @@ async function viewTournament(main) {
   main.innerHTML = `
     <div class="screen tournament no-rail">
       <div class="screen-head">
-        <h1>🏟️ Tournament</h1>
+        <h1>${kickoff?"⚽ Kick-off draw":"🏟️ Tournament"}</h1>
         <span class="stat-chip"><b>${fmt(d.groups.length)}</b> ${d.groups.length === 1 ? "group" : "groups"} · ${fmt(decided)} decided</span>
-        <span class="stat-chip ${(d.progress.quality || 0) >= 0.8 ? "good" : ""}">leaderboard at <b>${pct(d.progress.quality || 0)}</b></span>
-        <span class="stat-chip ${f && f.champion ? "good" : ""}">${f ? (f.champion ? "👑 champion crowned" : `finals: <b>${f.matches.filter((m) => m.winner).length}</b> of ${f.matches.length}`) : "finals not seeded"}</span>
+        ${f && f.champion ? `<span class="stat-chip good">👑 champion crowned</span>` : ""}
         <span class="grow"></span>
         ${helpBtn(`The whole tournament at a glance. <b>Group stage:</b> each group's photos in standings order (who you beat counts, not just how
-          often); the places above the dashed line go through. <b>Knockouts:</b> the eight seats in the finals as the leaderboard stands now,
-          and the next four, on the bubble. <b>Finals:</b> the bracket. Click a photo to see it big.`)}
+          often); the places above the dashed line go through. <b>Knockouts:</b> elimination rounds decide the finalists; a loss ends that run.
+          <b>Finals:</b> eight finalists, or four in a small cup, play for the podium. Click a photo to see it big.`)}
       </div>
       <div class="screen-body tb-body">
-        <section class="tb-section"><h2>⚽ Group stage</h2>
-          ${d.groups.length ? `<div class="tb-groups">${d.groups.map(group).join("")}</div>` : `<p class="muted">No groups yet: every shot goes into a themed group first.</p>`}</section>
-        <section class="tb-section"><h2>⚔️ Knockouts <span class="muted small">the race for the eight seats in the finals</span></h2>
-          ${d.seats.length ? `<div class="tb-seats">${d.seats.map((x, i) => seat(x, i)).join("")}</div>
+        <section class="tb-section ${kickoff ? "kickoff" : ""}">${kickoff ? "" : "<h2>⚽ Group stage</h2>"}
+          ${d.groups.length ? `<div class="tb-groups ${kickoff ? "kickoff" : ""}">${d.groups.map(group).join("")}</div>` : `<p class="muted">No groups yet: every shot goes into a themed group first.</p>`}</section>
+        <section class="tb-section" ${kickoff?"hidden":""}><h2>⚔️ Knockouts <span class="muted small">elimination rounds into the finals</span></h2>
+          ${d.knockouts?knockoutHtml(d.knockouts):d.seats.length ? `<div class="tb-seats">${d.seats.map((x, i) => seat(x, i)).join("")}</div>
             ${d.bubble.length ? `<div class="tb-bubble"><span class="muted small">On the bubble</span>${d.bubble.map((x, i) => seat(x, i, true)).join("")}</div>` : ""}`
             : `<p class="muted">The seats fill once there are enough shots in the running.</p>`}</section>
-        <section class="tb-section"><h2>🏆 Finals</h2>
+        <section class="tb-section" ${kickoff?"hidden":""}><h2>🏆 Finals</h2>
           ${f ? `<div class="bracket tb-bracket">${bracketHtml(f, d.card ? d.card.match : -1)}</div>`
             : d.preview && d.preview.length ? `<div class="bracket tb-bracket preview">${bracketHtml(previewBracket(d.preview), -1)}</div><p class="muted small">If the bracket were seeded now.</p>`
             : `<p class="muted">Not enough shots for a bracket yet.</p>`}</section>
       </div>
       <div class="screen-bar action-bar">
         <div class="bar-left"><a class="btn big" href="#home">The map</a></div>
-        <div class="bar-mid"><a class="btn ghost" href="#shortlist">Full leaderboard</a></div>
-        <div class="bar-right">${next && st[next[0]] ? `<a class="btn primary big" href="${st[next[0]].go}">Play: ${esc(next[3])} → <kbd>Enter</kbd></a>` : ""}</div>
+        <div class="bar-mid"><a class="btn ghost" href="#shortlist">🏅 Leaderboard</a></div>
+        <div class="bar-right"></div>
       </div>
     </div>`;
   $$("[data-view]", main).forEach((img) => (img.onclick = () => openViewer(Number(img.dataset.view))));
+  setHint(kickoff ? "Meet the teams. Enter kicks off the first group." : "Pick a group to play, or continue bottom-right.");
+  if(kickoff)Sound.play("level");
+  setForward(kickoff ? { label: "Kick off →", name: "Group stage", href: "#duel?stage=groups" }
+    : next && st[next[0]] ? { label: `Next: ${next[2]} →`, name: next[2], href: st[next[0]].go } : { label: "Play knockouts →", name: "Knockouts", href: "#duel?stage=knockouts" });
+  S.onKey=(e)=>{if(e.key==="Enter"){e.preventDefault();forwardGo();}};
 }
 
 // ---------------------------------------------------------------- reveal
@@ -2423,17 +3045,17 @@ async function viewReveal(main) {
           rank; the <b>blind review package</b> is a shuffled, metadata-free set to send to someone for a second opinion.`)}
       </div>
       <div class="screen-body reveal-body">
-        ${podiumHtml(d.podium)}
-        ${d.top.length > 3 ? `<div class="reveal-strip">${d.top.slice(3).map((it) => `<div class="tile"><span class="rank">${it.rank}</span>
-          <img src="${T(it.photo)}" alt="" loading="lazy" data-view="${it.photo}" style="${facePos(it.box)}"></div>`).join("")}</div>` : ""}
+        ${d.from_finals && d.path?.length ? `<div class="title-road" aria-label="Road to the title"><b>Road to the title</b><div>${d.path.map((step,i)=>`<span style="--i:${i}"><img src="${T(step.beaten)}" alt="Take beaten"><small>${esc(step.stage)}</small><b class="defeated" aria-label="Defeated opponent">✕</b></span>`).join("")}</div></div>` : ""}
+        ${podiumHtml(d.podium, new Set(d.top.filter((p)=>p.rescued).map((p)=>p.photo)), Object.fromEntries(d.top.map((p)=>[p.photo,p.members||[]])), Object.fromEntries(d.top.map((p)=>[p.photo,p])))}
+        ${d.top.length > 3 ? `<div class="reveal-strip">${d.top.slice(3).map((it) => `<div class="tile ${it.members?.length > 1 ? "stacked" : ""}"><div class="tile-pile print" ${cardData(it, true)}>${pilePhotos(it.photo, it.members)}<div class="paper"><div class="window"><img src="${T(it.photo)}" alt="" loading="lazy" data-view="${it.photo}"></div></div><span class="rank">${it.rank}</span>${it.rescued?`<span class="rescue-mark" title="Rescued in the Sweep">🧹</span>`:""}</div></div>`).join("")}</div>` : ""}
       </div>
       <aside class="screen-rail">
         <div class="rail-card taste"><h3>Your taste</h3>
           <div class="taste-cols"><div><b>You go for</b><ul>${li(loves)}</ul></div><div><b>Not your thing</b><ul>${li(skips)}</ul></div></div>
           ${(p.votes || 0) < 60 ? `<p class="faint small">Early days: mostly its starting guesses so far.</p>` : ""}</div>
         <div class="rail-card"><h3>Your run</h3><div class="stat-grid">
-          <div><b>${fmt(g.judged)}</b><span>calls</span></div><div><b>${(p.minutes || 0) < 1 ? "<1" : Math.round(p.minutes)}</b><span>minutes</span></div>
-          <div><b>${fmt(g.best_streak)}</b><span>best streak</span></div><div><b>${fmt(g.crowned)}</b><span>stacks crowned</span></div>
+          <div><b>${fmt(g.judged)}</b><span>${g.judged === 1 ? "call" : "calls"}</span></div><div><b>${(p.minutes || 0) < 1 ? "<1" : Math.round(p.minutes)}</b><span>${(p.minutes || 0) < 1.5 ? "minute" : "minutes"}</span></div>
+          <div><b>${fmt(g.best_streak)}</b><span>best streak</span></div><div><b>${fmt(g.crowned)}</b><span>${g.crowned === 1 ? "stack" : "stacks"} crowned</span></div>
           <div><b>${fmt(g.sweep)}</b><span>swept</span></div><div><b>Lv ${g.level || 1}</b><span>${esc(g.level_name || "")}</span></div>
         </div></div>
         ${nextCup ? `<div class="rail-card next-cup"><div><b>Next up: ${nextCup.icon} ${esc(nextCup.name)}</b>
@@ -2441,7 +3063,7 @@ async function viewReveal(main) {
           <button class="btn primary" data-next-cup="${nextCup.key}">Play it</button></div>` : ""}
       </aside>
       <div class="screen-bar action-bar">
-        <div class="bar-left">${d.from_finals ? `<a class="btn big" href="#shortlist">Full leaderboard</a>` : `<a class="btn big" href="#finals">Play the finals</a>`}</div>
+        <div class="bar-left">${d.from_finals ? "" : `<a class="btn big" href="#finals">Play the finals</a>`}<a class="btn big" href="#shortlist" title="One shot at a time: finish them and save your best">🏅 Leaderboard</a></div>
         <div class="bar-mid"><button class="btn ghost" id="x-card">Share card (image)</button>
           <button class="btn ghost" id="x-review">Blind review package</button></div>
         <div class="bar-right"><button class="btn primary big" id="x-best">Save my best <kbd>Enter</kbd></button></div>
@@ -2454,10 +3076,15 @@ async function viewReveal(main) {
   };
   $("#x-card").onclick = () => shareCard(d, cup, loves, skips);
   $$("[data-view]", main).forEach((img) => (img.onclick = () => openViewer(Number(img.dataset.view))));
-  $("#x-best").onclick = (e) => exportFlow("bestof", e.currentTarget);
+  $$("[data-frame=own]", main).forEach(frameBoardCard);  // the podium and the strip frame by each shot's choices, or C and F
+  $("#x-best").onclick = (e) => exportFlow("bestof", e.currentTarget, nextCup, () => $("#x-card").click());
   $("#x-review").onclick = (e) => exportFlow("review", e.currentTarget);
   S.onKey = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#x-best").click(); } };
-  if (d.from_finals && !reduceMotion) setTimeout(() => confetti(window.innerWidth / 2, window.innerHeight * 0.25, 70), 400);
+  if (d.from_finals && !reduceMotion) {
+    const delay=Math.min(2400,(d.path?.length||0)*180);
+    $(".podium",main).style.animationDelay=`${delay}ms`;
+    setTimeout(() => {if(!left(view))confetti(window.innerWidth / 2, window.innerHeight * 0.25, 70);},delay+400);
+  }
 }
 
 // A picture of your result to send people: the podium and your taste, drawn fresh (no photo metadata in it).
@@ -2469,7 +3096,7 @@ async function shareCard(d, cup, loves, skips) {
   bg.addColorStop(0, "#1d1410"); bg.addColorStop(1, "#0d0e10");
   x.fillStyle = bg; x.fillRect(0, 0, W, H);
   x.fillStyle = "#ffd86b"; x.font = "800 64px system-ui, sans-serif"; x.textAlign = "center";
-  x.fillText(`${cup.name}`, W / 2, 120);
+  x.fillText(`${cup.name}`, W / 2, 120, W - 120);
   x.fillStyle = "#9ba1a8"; x.font = "500 32px system-ui, sans-serif";
   x.fillText(d.from_finals ? "crowned in the finals" : "my top three so far", W / 2, 172);
   const load = (id) => new Promise((ok) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = P(id); });
@@ -2488,12 +3115,24 @@ async function shareCard(d, cup, loves, skips) {
   });
   x.textAlign = "left";
   const list = (title, items, left) => {  // two columns of what the model learned you like and don't
-    x.fillStyle = "#f4f1ec"; x.font = "800 36px system-ui, sans-serif"; x.fillText(title, left, 1060);
-    x.fillStyle = "#c9ccd0"; x.font = "500 30px system-ui, sans-serif";
-    items.slice(0, 3).forEach((t, k) => x.fillText(`• ${tasteLabel(t.feature)}`, left, 1110 + k * 44));
+    x.fillStyle = "#f4f1ec"; x.font = "800 36px system-ui, sans-serif"; x.fillText(title, left, 1000, 420);
+    x.fillStyle = "#c9ccd0"; x.font = "500 26px system-ui, sans-serif";
+    items.slice(0, 3).forEach((t,k)=>{
+      const lines=[''];
+      for(const word of `• ${tasteLabel(t.feature)}`.split(/\s+/)){
+        const at=lines.length-1,next=lines[at]?`${lines[at]} ${word}`:word;
+        if(lines[at]&&x.measureText(next).width>420&&lines.length<2)lines.push(word);else lines[at]=next;
+      }
+      lines.forEach((line,i)=>x.fillText(line,left,1047+k*58+i*28,420));
+    });
   };
   if (loves.length) list("I go for", loves, 90);
   if (skips.length) list("Not my thing", skips, loves.length ? 570 : 90);
+  if (d.path?.length) {
+    x.fillStyle = "#ffd86b"; x.font = "600 26px system-ui, sans-serif"; x.textAlign = "center";
+    const rounds=[...new Set(d.path.map((s)=>s.stage))];
+    x.fillText(`${plural(d.path.length,"win")} · ${rounds.join(" → ")}`,W/2,H-100,W-100);
+  }
   x.fillStyle = "#6b7178"; x.font = "600 26px system-ui, sans-serif"; x.textAlign = "center";
   x.fillText("Sorted with MatchER", W / 2, H - 50);
   const a = document.createElement("a");
@@ -2503,8 +3142,11 @@ async function shareCard(d, cup, loves, skips) {
   toast("Saved your share card.");
 }
 
+// A path wraps at its slashes, never mid-word.
+const pathHtml = (path) => esc(path).replace(/\//g, "/<wbr>");
 // The export lands as a reward card over the screen (not pushed into the page, where it would shift everything).
-async function exportFlow(kind, b) {
+// The run ends on the next cup or the share card; the folder is the secondary action.
+async function exportFlow(kind, b, nextCup = null, share = null) {
   const label = b.innerHTML;
   b.disabled = true;
   b.textContent = "Saving…";
@@ -2516,9 +3158,11 @@ async function exportFlow(kind, b) {
     m.innerHTML = kind === "bestof" ? `
       <div class="exported stack">
         <h2>🏆 Saved your top ${r.count}</h2>
-        <div><code class="path">${esc(r.dir)}</code></div>
-        <p class="muted">The original files, untouched (metadata and all), named by rank: 01 is your best.</p>
-        <div class="row spread"><button class="btn" id="close-modal">Close</button><button class="btn primary" id="open-export">Open folder</button></div>
+        <p class="muted">The original files, untouched (metadata and all), named by rank: 01 is your best.${r.touched ? ` <b>touched up/</b> has a copy of each${r.touched < r.count ? ` (${r.touched} of ${r.count})` : ""} the way the Leaderboard shows it: enhanced unless you switched that off, cropped or turned where you chose, full size, EXIF kept.` : ""}</p>
+        <div class="export-where"><code class="path">${pathHtml(r.dir)}</code><button class="btn ghost" id="open-export">Open folder</button></div>
+        <div class="row spread"><button class="btn" id="close-modal">Close</button>
+          ${nextCup ? `<button class="btn primary" id="export-next">Play: ${esc(nextCup.icon)} ${esc(nextCup.name)} →</button>`
+            : share ? `<button class="btn primary" id="export-next">Share card (image) →</button>` : `<a class="btn primary" id="export-next" href="#home">The map →</a>`}</div>
       </div>` : `
       <div class="exported stack">
         <h2>📦 Exported ${plural(r.count, "photo")} for review</h2>
@@ -2530,8 +3174,11 @@ async function exportFlow(kind, b) {
       </div>`;
     $("#open-export", m).onclick = () => api("/api/open", { path: r.dir });
     $("#close-modal", m).onclick = () => m.close();
+    const onwards = $("#export-next", m);
+    if (onwards && nextCup) onwards.onclick = async () => { try { await api("/api/cup", { cup: nextCup.key }); } catch (e) { toast(e.message); return; } m.close(); location.hash = "home"; };
+    else if (onwards && share && onwards.tagName === "BUTTON") onwards.onclick = () => { m.close(); share(); };
     m.showModal();
-    $("#open-export", m).focus();
+    (onwards || $("#open-export", m)).focus();
     Sound.play("achieve");
     gameCheck();
   } catch (e) { toast(e.message); }
@@ -2540,26 +3187,119 @@ async function exportFlow(kind, b) {
 }
 
 // ---------------------------------------------------------------- shortlist (the leaderboard)
+// One card at a time, as big as the stage allows, with everything the sorter knows about it on a square sticky
+// note stuck somewhere on the frame (seeded by the photo, kept away from its subject); ← and → walk the ranks,
+// then the bubble. The rail keeps the taste card and the hand-picked list; the bar keeps the exports.
+const boardPos = { source: null, at: 0 };
+// "1 May 2024 14:32" from the stored "2024-05-01T14:32:10": the way you would write it on a frame.
+function prettyDate(taken) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(String(taken || ""));
+  if (!m) return String(taken || "");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${Number(m[3])} ${months[Number(m[2]) - 1] || m[2]} ${m[1]}${m[4] ? ` ${m[4]}:${m[5]}` : ""}`;
+}
+function seededRandom(id) {
+  let seed = ((Number(id) || 0) * 2654435761) >>> 0;
+  return () => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// Where the note goes and how big, in card widths from the card's top-left. When the stage has room beside the
+// card it is stuck to the card's edge and hangs beside it, on the side away from the subject, so it covers as little
+// of the picture as possible; on a narrow stage it sits on the card in one of the two spots farthest from the
+// subject. Its vertical spot and turn come from the photo's own randoms. The square grows (then its writing
+// shrinks a little) until everything written on it fits: nothing is ever cut off.
+function placeNote(card) {
+  const note = card?.querySelector(".meta.sticky:not(.user-note)"), fit = card?.parentElement;
+  if (!note || !fit) return;
+  const rnd = seededRandom(card.dataset.photo), r1 = rnd(), r2 = rnd(), r3 = rnd(), cw = card.clientWidth || 1;
+  let box = null;
+  try { box = JSON.parse(card.dataset.box || "null"); } catch (_) { /* no subject */ }
+  if (box && (Number(card.dataset.rotate) || 0)) box = rotateBox(box, Number(card.dataset.rotate));
+  const cx = box ? 5.5 + 89 * (box[0] + box[2] / 2) : 47, cy = box ? 5.5 + 110.8 * (box[1] + box[3] / 2) : 61;
+  const room = (fit.clientWidth - cw) / 2;
+  let saved = null;
+  try { saved = JSON.parse(card.dataset.note || "null"); } catch (_) { /* never moved */ }
+  let size = 38, font = 2.3;
+  const place = () => {
+    note.style.setProperty("--note-size", size); note.style.setProperty("--note-font", font);
+    if (Array.isArray(saved) && saved.length === 2) {  // where you put it last time
+      note.style.setProperty("--note-x", saved[0]); note.style.setProperty("--note-y", saved[1]);
+    } else if (room >= (cw * size) / 100 * 0.75) {
+      const right = box ? cx < 47 : r1 < 0.5, overlap = 12;
+      note.style.setProperty("--note-x", right ? 100 - overlap : overlap - size);
+      note.style.setProperty("--note-y", (4 + r2 * Math.max(0, 129 - size)).toFixed(1));
+    } else {
+      const spots = [[3, 3], [61, 3], [2, 44], [62, 46], [4, 90], [60, 92]]
+        .map(([x, y]) => ({ x: Math.min(x, 100 - size + 12), y: Math.min(y, 133 - size), d: Math.hypot(x + size / 2 - cx, y + size / 2 - cy) })).sort((a, b) => b.d - a.d);
+      const pick = spots[r1 < 0.5 ? 0 : 1];
+      note.style.setProperty("--note-x", pick.x); note.style.setProperty("--note-y", pick.y);
+    }
+    note.style.setProperty("--note-turn", `${((r3 * 2 - 1) * 7).toFixed(1)}deg`);
+  };
+  place();
+  for (let guard = 0; guard < 14 && note.scrollHeight > note.clientHeight + 1; guard++) {
+    if (size < 66) size += 4; else if (font > 1.5) font = Math.round((font - 0.2) * 10) / 10; else break;
+    place();
+  }
+}
 async function viewShortlist(main) {
   main.innerHTML = LOADING();
-  let d;
+  let d, meta = { tags: [] }, board = { groups: [] };
   const view = S.view;
-  try { d = await api("/api/shortlist"); } catch (e) { if (!left(view)) main.innerHTML = FAILED(e.message); return; }
+  try { [d, meta, board] = await Promise.all([api("/api/shortlist"), api("/api/tags?all=1").catch(() => meta), api("/api/draw/board?per=1&uper=1").catch(() => board)]); }
+  catch (e) { if (!left(view)) main.innerHTML = FAILED(e.message); return; }
   if (left(view)) return;
   const p = d.progress || {};
-  const tile = (it, extra = "") => `
-    <div class="tile ${it.frames > 1 ? "stacked" : ""}" data-photo="${it.photo}">
-      ${it.rank ? `<span class="rank">${it.rank}</span>` : ""}
-      ${it.frames > 1 ? `<span class="badge" data-frames="${it.photo}" title="Swap which take stands in for this stack">${it.frames} takes</span>` : ""}
-      <img src="${T(it.photo)}" alt="" loading="lazy" data-view="${it.photo}" style="${facePos(it.box)}">
-      <div class="meta">
-        <div class="conf" title="Chance it belongs in the shortlist: ${pct(it.p_in)}"><i style="width:${pct(it.p_in)}"></i></div>
-        <div class="row spread"><span>${pct(it.p_in)} sure</span><span>${it.duels} duel${it.duels === 1 ? "" : "s"}</span></div>
-        <div class="flags">${flagHtml(it.flags)}</div>
-        ${extra}
-      </div>
+  const rankKey=`matcher-ranks:${S.lib?.source || ""}:${S.journey?.cup || "all"}`;
+  let previous={}; try { previous=JSON.parse(localStorage.getItem(rankKey)||"{}"); } catch(_) { /* first visit */ }
+  try { localStorage.setItem(rankKey,JSON.stringify(Object.fromEntries(d.items.map((it)=>[it.photo,it.rank])))); } catch (_) { /* storage can be unavailable or full */ }
+  const entries = [...d.items, ...d.bubble.map((it) => ({ ...it, bubble: true }))];
+  if (boardPos.source !== (S.lib?.source || "")) { boardPos.source = S.lib?.source || ""; boardPos.at = 0; }
+  let at = Math.max(0, Math.min(boardPos.at, entries.length - 1));
+  const tagMeta = new Map((meta.tags || []).map((t) => [t.key, t]));
+  const groupOf = (pid) => {
+    const w = World.photos?.get(pid), gid = w && w.theme >= 0 ? w.theme : World.sea?.items.get(pid)?.group;
+    return (board.groups || []).find((g) => g.id === gid) || null;
+  };
+  // The sticky note: everything the app has gathered about the shot, in the app's own words.
+  const note = (it) => {
+    const change = it.rank && Object.keys(previous).length && !previous[it.photo] ? "NEW" : it.rank && previous[it.photo] > it.rank ? `▲ ${previous[it.photo] - it.rank}` : "";
+    const tagsOn = (World.photos?.get(it.photo)?.tags || []).map((k) => tagMeta.get(k)).filter(Boolean);
+    return `<div class="meta sticky" title="Drag me where you like">
+      <div class="note-head"><b class="note-rank">${it.rank ? `#${it.rank}` : "On the bubble"}</b>${change ? `<span class="note-change">${change}</span>` : ""}</div>
+      <div class="note-line">${pct(it.p_in)} sure · ${it.duels} duel${it.duels === 1 ? "" : "s"}</div>
+      <div class="conf" title="Chance it belongs on the leaderboard: ${pct(it.p_in)}"><i style="width:${pct(it.p_in)}"></i></div>
+      <div class="note-line">appeal ${(it.appeal > 0 ? "+" : "") + Number(it.appeal || 0).toFixed(2)} · ${it.frames > 1
+        ? `<button class="note-link" data-frames="${it.photo}" title="Swap which take stands in for this stack">${it.frames} takes ⧉</button>` : "one take"}${it.rescued ? " · 🧹 rescued" : ""}</div>
+      ${tagsOn.length ? `<div class="note-tags">${tagsOn.map((t) => `<span>${esc(t.emoji || "🏷️")} ${esc(t.label)}</span>`).join("")}</div>` : ""}
+      ${it.flags?.length ? `<div class="flags">${flagHtml(it.flags)}</div>` : ""}
+      ${it.bubble ? `<div class="actions">${it.added ? `<button class="btn" data-unpick="${it.photo}">Added ✓</button>` : `<button class="btn" data-pick="${it.photo}" title="It rides along in the export without a rank">+ Add</button>`}</div>` : ""}
     </div>`;
-  const scroll = $(".screen-body", main)?.scrollTop || 0;  // adding or removing one keeps your place
+  };
+  // The card is a pane like a duel's: its picture sits in the paper's window, so this photo's own crop, turn and
+  // enhancement show exactly as Save my best will write them.
+  // The chin, in handwriting: the file, its group and its date, within the frame.
+  const chin = (it) => {
+    const g = groupOf(it.photo), file = String(it.rel || "").split("/").pop();
+    return `<div class="chin">${g ? `<b class="chin-group">${esc(g.emoji || "🗂️")} ${esc(g.name)}</b>` : ""}<span class="chin-file" title="${esc(it.rel || "")}">${esc(file)}${it.taken ? ` · ${esc(prettyDate(it.taken))}` : ""}</span></div>`;
+  };
+  const cropOf = (e) => CROP_MODES.includes(e.crop) ? e.crop : "off";
+  const card = (it) => { const e = it.edits || {}; return `<div class="tile board-card print tile-pile ${it.frames > 1 ? "stacked" : ""}" ${cardData(it)}
+      data-note="${esc(JSON.stringify(e.note || null))}">
+      ${pilePhotos(it.photo, it.members)}<div class="paper"><div class="window"><img src="${P(it.photo)}" alt="" data-view="${it.photo}"></div>${chin(it)}</div>${note(it)}</div>`; };
+  const CROP_SHEET = { best: "Best", subject: "Focus subject", height: "Fill height", width: "Fill width", off: "Off" };
+  const knobText = (key, v) => key === "levels" || key === "colour" ? `×${v.toFixed(2)}` : v === 0 ? "0" : `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
+  const sheetHtml = (it) => {
+    const e = it.edits || {}, on = e.enhance !== false, k = knobsOf(e.look), crop = cropOf(e);
+    return `<h3>✨ Enhance</h3>
+      <div class="sheet-row"><button class="btn ghost" data-edit="enhance" aria-pressed="${on}">${on ? "On" : "Off"} <kbd>F</kbd></button>${on && e.look ? `<button class="btn ghost" data-edit="auto">Back to auto</button>` : ""}</div>
+      <div class="sheet-knobs" ${on ? "" : "hidden"}>${Object.entries(KNOBS).map(([key, [lo, hi]]) => `<label class="sheet-knob"><span>${KNOB_WORD[key]}</span>
+        <input type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05" value="${k[key]}" aria-label="${KNOB_WORD[key]}"><output>${knobText(key, k[key])}</output></label>`).join("")}</div>
+      <h3>✂ Crop</h3>
+      <div class="sheet-seg">${CROP_MODES.map((m) => `<button class="btn ghost" data-crop="${m}" aria-pressed="${crop === m}" ${m === "subject" && !it.box ? "hidden" : ""}>${CROP_SHEET[m]}</button>`).join("")}<kbd>C</kbd></div>
+      <h3>↻ Turn</h3>
+      <div class="sheet-row"><button class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><b class="sheet-deg">${e.rotate || 0}°</b><button class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻ <kbd>R</kbd></button></div>`;
+  };
+  const phoneFinishing=matchMedia('(max-width: 760px)');
   main.innerHTML = `
     <div class="screen board">
       <div class="screen-head">
@@ -2568,38 +3308,193 @@ async function viewShortlist(main) {
         <span class="stat-chip"><b>${fmt(p.votes)}</b> duels</span>
         <span class="stat-chip ${p.quality >= 0.8 ? "good" : ""}"><b>${pct(p.quality)}</b> of its best</span>
         ${d.settled ? `<span class="stat-chip good">👑 top <b>${d.settled}</b> from the finals</span>` : ""}
+        <span class="stat-chip board-pos" ${entries.length ? "" : "hidden"}></span>
         <span class="grow"></span>
-        ${helpBtn(`The best shots so far, best first. "Sure" is the chance a shot really belongs here; more duels make it surer.
-          At most ${S.lib.settings.per_scene} per scene, so it stays varied. <b>On the bubble</b> are the next ones in line: add one by hand
-          and it rides along in the export without a rank. Click a photo to see it big.`)}
+        ${helpBtn(`One shot at a time, best first: <b>←</b> and <b>→</b> (or A and D) walk the ranks and then <b>On the bubble</b>, the next
+          ones in line. The sticky note is everything the sorter knows about the shot: how sure it is that it belongs here (more duels make
+          it surer), its takes, tags and looks; drag it where you like. The sheet beside the card is the finishing: <b>F</b> enhance (with
+          knobs for levels, light, contrast, colour and warmth), <b>C</b> walks the crops (best, focus subject, fill height, fill width, off), <b>R</b> turns a
+          quarter; each is kept for that shot, shown in the card's window and baked into <b>Save my best</b> (Z takes one back). At most
+          ${S.lib.settings.per_scene} per scene, so it stays varied. Add a bubble shot by hand and it rides along in the export without a rank.
+          Click the photo to see it big.`)}
       </div>
       <div class="screen-body board-body">
-        <div class="grid">${d.items.map((it) => tile(it)).join("")}</div>
-        <h2 class="board-h">On the bubble <span class="muted small">the next ones in line: add any that deserve a look anyway</span></h2>
-        <div class="grid">${d.bubble.map((it) => tile(it, it.added ? `<div class="actions"><button class="btn" data-unpick="${it.photo}">Added ✓</button></div>`
-          : `<div class="actions"><button class="btn" data-pick="${it.photo}">+ Add</button></div>`)).join("")}</div>
+        ${entries.length ? `<div class="board-stage">
+          <button class="btn ghost board-arrow" data-step="-1" aria-label="Previous (←)" title="Previous (←)">‹</button>
+          <div class="board-fit"></div>
+          <aside class="edit-sheet rail-card" aria-label="Finishing"></aside>
+          <button class="btn ghost board-arrow" data-step="1" aria-label="Next (→)" title="Next (→)">›</button>
+        </div>` : `<div class="empty">Nothing on the board yet: play some duels first.</div>`}
       </div>
-      <aside class="screen-rail">
+      <aside class="screen-rail"><details class="board-insights" ${phoneFinishing.matches?'':'open'}><summary>About this shortlist</summary><div class="board-insight-pages">
         ${tasteHtml(d.taste, p.votes)}
         <div class="rail-card"><h3>Added by hand</h3>
           ${d.added.length ? `<div class="added-list">${d.added.map((it) => `<div class="added-item"><img src="${T(it.photo)}" alt="" data-view="${it.photo}">
             <button class="btn ghost" data-unpick="${it.photo}" title="Take it out of the export">Remove</button></div>`).join("")}</div>`
             : `<p class="muted small">Nothing yet. Add favourites from <b>On the bubble</b>; they ride along in the export without a rank.</p>`}
         </div>
-      </aside>
+      </div></details></aside>
       <div class="screen-bar action-bar">
         <div class="bar-left"><a class="btn big" href="#duel">Keep dueling</a></div>
         <div class="bar-mid"><button class="btn ghost" id="export">Blind review package</button></div>
         <div class="bar-right"><button class="btn primary big" id="export-best">Save my best</button></div>
       </div>
     </div>`;
-  $(".screen-body", main).scrollTop = scroll;
-  $$("[data-pick]").forEach((b) => (b.onclick = async () => { await api("/api/pick", { photo: Number(b.dataset.pick), on: true }); viewShortlist(main); }));
-  $$("[data-unpick]").forEach((b) => (b.onclick = async () => { await api("/api/pick", { photo: Number(b.dataset.unpick), on: false }); viewShortlist(main); }));
-  $$("[data-view]", main).forEach((img) => (img.onclick = () => openViewer(Number(img.dataset.view))));
-  $$("[data-frames]").forEach((b) => (b.onclick = () => openFrames(Number(b.dataset.frames), () => viewShortlist(main))));
+  const pick = async (b,on) => {try {await api("/api/pick",{photo:Number(on?b.dataset.pick:b.dataset.unpick),on});if(!left(view))viewShortlist(main);}catch(e){if(!left(view))toast(e.message);}};
+  const bind = (root) => {
+    $$("[data-pick]", root).forEach((b) => (b.onclick = () => pick(b,true)));
+    $$("[data-unpick]", root).forEach((b) => (b.onclick = () => pick(b,false)));
+    $$("[data-view]", root).forEach((img) => (img.onclick = () => openViewer(Number(img.dataset.view))));
+    $$("[data-frames]", root).forEach((b) => (b.onclick = () => openFrames(Number(b.dataset.frames), () => viewShortlist(main))));
+  };
+  bind($(".screen-rail", main));
+  const fit = $(".board-fit", main), pos = $(".board-pos", main), sheet = $(".edit-sheet", main);
+  phoneFinishing.addEventListener('change',event=>{$$('.sheet-fold,.board-insights',main).forEach(details=>details.open=!event.matches);},{signal:S.events.signal});
+  // The toolbelt (toolbelt.js) draws on the card; it is told this shot's edits so it never has to fetch them, and
+  // what it saves (marks, notes) comes back into this view's copy.
+  const fromBelt = (pid, edits) => { if (left(view)) { Toolbelt.listeners.delete(fromBelt); return; } const it = entries.find((x) => x.photo === pid); if (it) it.edits = edits; };
+  Toolbelt.listeners.add(fromBelt);
+  // Cards slide in from one random direction and out along another: no scaling, nothing rising from the sea.
+  const away = (angle) => `translate(${Math.round(Math.cos(angle) * 1200)}px, ${Math.round(Math.sin(angle) * 1200)}px) rotate(${((angle * 3) % 1 - 0.5) * 24}deg)`;
+  const show = (i, slide = true) => {
+    if (!fit || !entries.length) return;
+    at = boardPos.at = Math.max(0, Math.min(i, entries.length - 1));
+    const it = entries[at], old = $$(".board-card", fit), holder = document.createElement("div");
+    holder.innerHTML = card(it);
+    const el = holder.firstElementChild, img = el.querySelector(".window > img");
+    el.style.visibility = "hidden";  // framed before it is seen: no landing and then snapping into its crop
+    fit.append(el);
+    const leaving = slide && !reduceMotion && old.length;
+    if (leaving) for (const o of old) { o.style.pointerEvents = "none"; o.animate([{ transform: "none", opacity: 1 }, { transform: away(Math.random() * 6.2832), opacity: 0.5 }], { duration: 360, easing: "cubic-bezier(.4,0,.9,.5)", fill: "forwards" }).finished.then(() => o.remove(), () => o.remove()); }
+    else old.forEach((o) => o.remove());
+    pos.innerHTML = it.rank ? `#<b>${it.rank}</b> of ${d.items.length}` : `on the bubble <b>${at - d.items.length + 1}</b> of ${d.bubble.length}`;
+    $$(".board-arrow", main).forEach((b) => { const next = at + Number(b.dataset.step); b.style.visibility = next < 0 || next >= entries.length ? "hidden" : ""; });
+    bind(el);
+    dragNote(el); Toolbelt.know(it.photo, it.edits || {});
+    if (sheet) {
+      const open=sheet.querySelector('.sheet-fold')?.open??!phoneFinishing.matches;
+      sheet.innerHTML=`<details class="sheet-fold" ${open?'open':''}><summary>Finish this shot</summary>${sheetHtml(it)}</details>`;
+      bindSheet(it, el);
+    }
+    const ready = img && !(img.complete && img.naturalWidth) ? img.decode().catch(() => {}) : Promise.resolve();
+    ready.then(() => {
+      if (!el.isConnected || left(view)) return;
+      frameBoardCard(el); placeNote(el);
+      el.style.visibility = "";
+      if (leaving) el.animate([{ transform: away(Math.random() * 6.2832), opacity: 0.5 }, { transform: "none", opacity: 1 }], { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" });
+    });
+  };
+  const bindSheet = (it, el) => {
+    const e = it.edits || {};
+    $("[data-edit=enhance]", sheet).onclick = () => edit({ enhance: e.enhance === false });
+    const auto = $("[data-edit=auto]", sheet); if (auto) auto.onclick = () => edit({ look: null });
+    $$("[data-crop]", sheet).forEach((b) => (b.onclick = () => edit({ crop: b.dataset.crop === "off" ? "none" : b.dataset.crop })));
+    $$("[data-turn]", sheet).forEach((b) => (b.onclick = () => edit({ rotate: (((e.rotate || 0) + Number(b.dataset.turn)) % 360 + 360) % 360 })));
+    const knobsNow = () => Object.fromEntries($$("[data-knob]", sheet).map((r) => [r.dataset.knob, Number(r.value)]));
+    $$("[data-knob]", sheet).forEach((r) => {
+      r.oninput = () => {  // live: the card's window shows the look as the knob moves; nothing is saved yet
+        r.nextElementSibling.textContent = knobText(r.dataset.knob, Number(r.value));
+        el.dataset.look = JSON.stringify(knobsNow()); frameBoardCard(el);
+      };
+      r.onchange = () => edit({ look: knobsNow() });
+      r.addEventListener("pointerup", () => r.blur());  // letting go hands the arrows back to the ranks
+    });
+  };
+  // The note can be moved: drag it anywhere on the stage; where you put it is kept for that photo (not an undo step:
+  // it is where your note is, not a change to the shot).
+  const dragSticky = (note, card, onDrop) => {
+    const body = $(".board-body", main);
+    if (!note || !body) return;
+    note.addEventListener("pointerdown", (e) => {
+      if (e.button || e.target.closest("button, a, input, textarea") || !["hand", "note"].includes(Toolbelt.tool)) return;
+      e.preventDefault();
+      const unit = card.clientWidth / 100, x0 = Number(note.style.getPropertyValue("--note-x")) || 0, y0 = Number(note.style.getPropertyValue("--note-y")) || 0;
+      const start = [e.clientX, e.clientY];
+      let pos = [x0, y0];
+      note.setPointerCapture(e.pointerId); note.classList.add("dragging");
+      const move = (ev) => {
+        const r = card.getBoundingClientRect(), b = body.getBoundingClientRect(), w = note.offsetWidth, h = note.offsetHeight;
+        const leftPx = Math.max(b.left + 4, Math.min(b.right - w - 4, r.left + x0 * unit + ev.clientX - start[0]));  // it stays on the stage
+        const topPx = Math.max(b.top + 4, Math.min(b.bottom - h - 4, r.top + y0 * unit + ev.clientY - start[1]));
+        pos = [(leftPx - r.left) / unit, (topPx - r.top) / unit];
+        note.style.setProperty("--note-x", pos[0].toFixed(1)); note.style.setProperty("--note-y", pos[1].toFixed(1));
+      };
+      const up = () => {
+        note.removeEventListener("pointermove", move); note.removeEventListener("pointerup", up); note.removeEventListener("pointercancel", up);
+        note.classList.remove("dragging");
+        if (Math.hypot(pos[0] - x0, pos[1] - y0) < 0.5) return;
+        onDrop(Math.round(pos[0] * 10) / 10, Math.round(pos[1] * 10) / 10);
+      };
+      note.addEventListener("pointermove", move); note.addEventListener("pointerup", up); note.addEventListener("pointercancel", up);
+    });
+  };
+  const dragNote = (card) => dragSticky(card?.querySelector(".meta.sticky:not(.user-note)"), card, async (x, y) => {
+    const it = entries[at];
+    try { const r = await api("/api/edit", { photo: it.photo, note: [x, y] }); if (!left(view)) { it.edits = r.edits || {}; card.dataset.note = JSON.stringify(it.edits.note || null); } }
+    catch (err) { if (!left(view)) toast(err.message); }
+  });
+  // Finishing a shot: this photo's own enhancement and its knobs, crop mode and turn, saved and undoable, baked
+  // into Save my best. The card re-renders in place (no slide).
+  let editing = false;
+  const edit = async (change) => {
+    const it = entries[at];
+    if (!it || editing || !change) return;
+    editing = true;
+    try {
+      const r = await api("/api/edit", { photo: it.photo, ...change });
+      if (left(view)) return;
+      it.edits = r.edits || {};
+      show(at, false); refreshHud(true);
+      Toolbelt.know(it.photo, it.edits);
+    } catch (err) { if (!left(view)) toast(err.message); }
+    finally { editing = false; }
+  };
+  // C walks the crop modes for this shot: best, focus subject (with a subject), fill height, fill width, off.
+  const nextCrop = (it) => {
+    const order = CROP_MODES.filter((m) => m !== "subject" || it.box), m = order[(order.indexOf(cropOf(it.edits || {})) + 1) % order.length];
+    return m === "off" ? "none" : m;
+  };
+  $$(".board-arrow", main).forEach((b) => (b.onclick = () => show(at + Number(b.dataset.step))));
+  show(at);
+  if (fit && typeof ResizeObserver !== "undefined") {  // the window's size decides the framing
+    const ro = new ResizeObserver(() => { if (left(view)) { ro.disconnect(); return; } const card = $$(".board-card", fit).at(-1); if (card) { frameBoardCard(card); placeNote(card); } });
+    ro.observe(fit);
+  }
   $("#export").onclick = (e) => exportFlow("review", e.currentTarget);
   $("#export-best").onclick = (e) => exportFlow("bestof", e.currentTarget);
+  S.onKey = (e) => {
+    if (e.repeat || e.target.closest("input, select, textarea")) return;  // a knob or a note keeps its own keys
+    const k = e.key;
+    if (k === "ArrowRight" || k === "d" || k === "D") { e.preventDefault(); show(at + 1); }
+    else if (k === "ArrowLeft" || k === "a" || k === "A") { e.preventDefault(); show(at - 1); }
+    else if (k === "Home") { e.preventDefault(); show(0); }
+    else if (k === "End") { e.preventDefault(); show(entries.length - 1); }
+    else if (k === "f" || k === "F") { e.preventDefault(); edit({ enhance: (entries[at]?.edits || {}).enhance === false }); }
+    else if (k === "c" || k === "C") { e.preventDefault(); edit({ crop: nextCrop(entries[at]) }); }
+    else if (k === "r" || k === "R") { e.preventDefault(); edit({ rotate: (((entries[at]?.edits || {}).rotate || 0) + 90) % 360 }); }
+  };
+}
+// The data a card frames itself by (`frameBoardCard`): its subject and the Leaderboard's choices for that shot. A
+// `global` card (the Reveal's podium and strip) follows the C and F toggles wherever no choice was made; the
+// Leaderboard's own card shows the whole photo and enhances it unless told otherwise, as the export will.
+function cardData(it, global = false) {
+  const e = it?.edits || {}, crop = CROP_MODES.includes(e.crop) ? e.crop : "";
+  return `data-frame="own" data-photo="${it.photo}" data-box="${esc(JSON.stringify(it.box || null))}" data-crop="${crop}" data-crop-default="${global ? "global" : "off"}"
+    data-enhance="${e.enhance === false ? "off" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}"`;
+}
+// A card frames its picture by its own data attributes (see cardData), falling back to the global toggles.
+function frameBoardCard(card) {
+  const img = card?.querySelector(".window > img");
+  if (!img) return;
+  let box = null;
+  try { box = JSON.parse(card.dataset.box || "null"); } catch (_) { /* no subject */ }
+  let knobs = null;
+  try { knobs = JSON.parse(card.dataset.look || "null"); } catch (_) { /* auto */ }
+  const crop = card.dataset.crop || (card.dataset.cropDefault === "global" ? undefined : "off");
+  const enhance = card.dataset.enhance === "off" ? false : card.dataset.enhance === "on" ? true : undefined;
+  const frame = () => framePhoto(card, { dims: [img.naturalWidth || 1, img.naturalHeight || 1], box },
+    { crop, rotate: Number(card.dataset.rotate) || 0, enhance, knobs: knobs ? knobsOf(knobs) : null });
+  if (img.naturalWidth) frame(); else img.addEventListener("load", frame, { once: true });
 }
 
 function facePos(box) {
@@ -2626,777 +3521,70 @@ function tasteHtml(taste, votes) {
     </div>`;
 }
 
+function photoPathButton(id) {
+  return `<button class="btn ghost copy-path" data-copy-path="${Number(id)}" aria-label="Copy original file path" title="Copy this take's original file path">Copy path</button>`;
+}
+
+async function copyPhotoPath(button) {
+  if(button.dataset.copying)return;
+  const view=S.view,source=S.lib?.source,dialog=button.closest('dialog'),inspection=button.closest('.inspect');
+  const alive=()=>!left(view)&&S.lib?.source===source&&button.isConnected&&(!dialog||dialog.open)&&(!inspection||inspection.classList.contains('open'));
+  button.dataset.copying='true';
+  try {
+    const data=await api(`/api/photo/${Number(button.dataset.copyPath)}`);
+    if(!alive())return;
+    try {
+      if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(data.original_path);
+      if(alive()){button.textContent='Copied';button.title=data.original_path;setTimeout(()=>{if(alive())button.textContent='Copy path';},1600);}
+    } catch(_) {
+      if(!alive())return;
+      $('#photo-path-dialog')?.close();
+      const box=document.createElement('dialog');box.id='photo-path-dialog';
+      box.innerHTML='<h2>Original file path</h2><p class="muted small">Select and copy this path.</p><textarea readonly aria-label="Original file path" spellcheck="false"></textarea><div class="row"><button class="btn" data-close-path>Close</button></div>';
+      $('textarea',box).value=data.original_path;document.body.append(box);
+      const signal=S.events.signal,close=()=>box.close();signal.addEventListener('abort',close,{once:true});
+      box.addEventListener('close',()=>{signal.removeEventListener('abort',close);box.remove();if(alive())button.focus();},{once:true});
+      $('[data-close-path]',box).onclick=close;box.showModal();$('textarea',box).focus();$('textarea',box).select();
+    }
+  }catch(e){if(alive())toast(e.message);}finally{delete button.dataset.copying;}
+}
+
+// These controls may sit inside a selectable take; copying must never also cast a call or select its stack.
+document.addEventListener('click',e=>{const b=e.target.closest('[data-copy-path]');if(b){e.preventDefault();e.stopPropagation();copyPhotoPath(b);}},true);
+document.addEventListener('contextmenu',e=>{
+  const img=e.target.closest('img'),match=img?.getAttribute('src')?.match(/^\/img\/[tp]\/(\d+)\.jpg(?:\?|$)/);
+  if(!match||e.target.closest('#photo-path-dialog'))return;
+  e.preventDefault();e.stopPropagation();openViewer(Number(match[1]));
+});
+
 function openViewer(id) {
   const m = $("#modal");
   m.className = "wide";
-  m.innerHTML = `<div class="viewer"><img src="${P(id)}" alt=""></div>`;
-  m.onclick = () => m.close();  // any click (or Esc) closes it
+  m.innerHTML = `<div class="viewer"><div class="print"><img src="${P(id)}" alt=""></div><div class="viewer-actions">${photoPathButton(id)}<button class="btn" id="close-modal">Close</button></div></div>`;
+  m.onclick = e => {if(e.target===m||e.target.matches('.viewer>img'))m.close();};
+  $('#close-modal',m).onclick=()=>m.close();
   m.showModal();
 }
 
 async function openFrames(photo, done) {
-  const r = await api(`/api/group/${photo}`);
+  const view=S.view;
+  let r; try { r = await api(`/api/group/${photo}`); } catch(e) {if(!left(view))toast(e.message);return;}
+  if(left(view))return;
   const m = $("#modal");
   m.className = "wide";
+  m.onclick = null;
   m.innerHTML = `<h2>Pick the take that stands in for this stack</h2>
-    <div class="grid">${r.members.map((id) => `<div class="tile pick ${id === photo ? "rescued" : ""}" data-swap="${id}"><img src="${T(id)}" alt=""></div>`).join("")}</div>
+    <div class="photo-fan" style="--takes:${r.members.length}">${r.members.map((id,i) => `<button class="tile pick frame-pick ${id === r.rep ? "rescued" : ""}" style="${fanStyle(i,r.members.length)}" data-swap="${id}" aria-label="${id===r.rep?'Kept take':'Keep take '+(i+1)}"><img src="${T(id)}" alt="Take ${i+1}"></button>`).join("")}</div>
     <div class="row spread" style="margin-top:14px"><span class="muted small">Its duel record carries over.</span><button class="btn" id="close-modal">Close</button></div>`;
   $("#close-modal").onclick = () => m.close();
   $$("[data-swap]", m).forEach((t) => (t.onclick = async () => {
-    await api("/api/frame", { photo: Number(t.dataset.swap) });
+    try {await api("/api/frame", { photo: Number(t.dataset.swap) });}catch(e){if(!left(view))toast(e.message);return;}
     m.close();
     toast("Take swapped.");
-    done && done();
+    if(!left(view))done?.();
   }));
   m.showModal();
-}
-
-// ---------------------------------------------------------------- the photo sea: pictures floating into order
-// A field of photo cards with a little physics. Loose photos drift on a slow current in the open water; photos that
-// belong somewhere swim to their island and settle into a sunflower spiral around it (first ones in the middle);
-// everything makes room for its neighbours and gets pushed and stirred by the pointer. Moving a photo somewhere else
-// is only a new target: it swims there. Drag a photo onto an island, onto another photo, or into open water.
-const GOLDEN = Math.PI * (3 - Math.sqrt(5));
-class PhotoSea {
-  constructor(el, { onDrop, onSelect, onIsland, label } = {}) {
-    this.el = el;
-    this.onDrop = onDrop; this.onSelect = onSelect; this.onIsland = onIsland; this.label = label;
-    this.items = new Map(); this.islands = new Map(); this.order = [];
-    this.mouse = { x: -1e5, y: -1e5, vx: 0, vy: 0 };
-    this.s = 72; this.raf = 0; this.last = 0; this.drag = null; this.hover = null; this.alive = true;
-    el.classList.add("photo-sea");
-    this.water = document.createElement("div");
-    this.water.className = "ps-water";
-    el.append(this.water);
-    el.addEventListener("pointermove", (e) => this.pointer(e));
-    el.addEventListener("pointerleave", () => { if (!this.drag) this.mouse.x = this.mouse.y = -1e5; });
-    el.addEventListener("pointerdown", (e) => this.down(e));
-    this.ro = new ResizeObserver(() => this.layout());
-    this.ro.observe(el);
-  }
-  destroy() { this.alive = false; this.ro.disconnect(); cancelAnimationFrame(this.raf); }
-  local(e) { const r = this.el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
-  pointer(e) {
-    const [x, y] = this.local(e), m = this.mouse;
-    if (m.x > -1e4) { m.vx = m.vx * 0.5 + (x - m.x) * 0.5; m.vy = m.vy * 0.5 + (y - m.y) * 0.5; }
-    m.x = x; m.y = y;
-    if (this.drag) {
-      const d = this.drag;
-      if (!d.moving && Math.hypot(x - d.x0, y - d.y0) > 6) { d.moving = true; d.items.forEach((it) => it.el.classList.add("dragging")); }
-      if (d.moving) {
-        d.items.forEach((it, k) => { it.x = x + (k ? Math.cos(k * 2.4) * this.s * 0.35 : 0); it.y = y + (k ? Math.sin(k * 2.4) * this.s * 0.35 : 0); it.vx = it.vy = 0; });
-        const bin = this.binAt(e);
-        $$(".bin.hot").forEach((b) => b !== bin && b.classList.remove("hot"));
-        if (bin) { bin.classList.add("hot"); this.mark(null); } else this.mark(this.target(x, y, d.items[0]));
-      }
-    }
-    this.kick();
-  }
-  down(e) {
-    const el = e.target.closest(".ps-item");
-    if (!el || e.button > 0) return;
-    const it = this.items.get(Number(el.dataset.id));
-    if (!it) return;
-    e.preventDefault();
-    const [x, y] = this.local(e);
-    const group = it.selected ? [...this.items.values()].filter((o) => o.selected) : [it];
-    this.drag = { items: [it, ...group.filter((o) => o !== it)], x0: x, y0: y, moving: false };
-    this.el.setPointerCapture(e.pointerId);
-    const up = (ev) => {
-      this.el.removeEventListener("pointerup", up);
-      this.el.removeEventListener("pointercancel", up);
-      const d = this.drag;
-      const bin = d.moving ? this.binAt(ev) : null;  // (while the dragged photo still lets the pointer through)
-      this.drag = null;
-      this.mark(null);
-      d.items.forEach((o) => o.el.classList.remove("dragging"));
-      if (!d.moving) { if (this.onSelect) this.onSelect(it); return; }
-      $$(".bin.hot").forEach((b) => b.classList.remove("hot"));
-      if (bin) { if (this.onDrop) this.onDrop(d.items.map((o) => o.id), { kind: "bin", id: bin.dataset.bin }); this.kick(); return; }
-      const [ux, uy] = this.local(ev);
-      const t = this.target(ux, uy, it);
-      if (t.kind === "sea") d.items.forEach((o) => { o.hx = ux + (Math.random() - 0.5) * this.s; o.hy = uy + (Math.random() - 0.5) * this.s; });
-      if (this.onDrop) this.onDrop(d.items.map((o) => o.id), t);
-      this.kick();
-    };
-    this.el.addEventListener("pointerup", up);
-    this.el.addEventListener("pointercancel", up);
-  }
-  // A group's bin in the side list under the pointer (a drag can leave the field to drop a photo on one).
-  binAt(e) {
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    return el && !this.el.contains(el) ? el.closest("[data-bin]") : null;
-  }
-  // What's under a drop: another photo (stack them), an island (join it) or open water.
-  target(x, y, self) {
-    for (const it of this.items.values()) {
-      if (it === self || (this.drag && this.drag.items.includes(it))) continue;
-      if (Math.abs(it.x - x) < this.s * 0.42 && Math.abs(it.y - y) < this.s * 0.42) return { kind: "photo", id: it.id, item: it };
-    }
-    let best = null;
-    for (const is of this.islands.values()) {
-      const d = Math.hypot(is.cx - x, is.cy - y);
-      if (d < is.r + this.s * 0.6 && (!best || d < best.d)) best = { kind: "island", id: is.id, d, island: is };
-    }
-    return best || { kind: "sea" };
-  }
-  mark(t) {
-    const key = t ? `${t.kind}:${t.id}` : null;
-    if (key === this.hover) return;
-    this.hover = key;
-    this.el.querySelectorAll(".ps-hot").forEach((x) => x.classList.remove("ps-hot"));
-    if (t && t.kind === "photo") t.item.el.classList.add("ps-hot");
-    if (t && t.kind === "island") { t.island.ring.classList.add("ps-hot"); t.island.tag.classList.add("ps-hot"); }
-    if (t && t.kind === "sea") this.water.classList.add("ps-hot");
-  }
-  // islands: [{id, html}], in a stable order (their number); items: [{id, photo, island|null, n, title}]
-  set(islands, items) {
-    const keepI = new Set(islands.map((i) => i.id));
-    for (const [id, is] of this.islands) if (!keepI.has(id)) { is.ring.remove(); is.tag.remove(); this.islands.delete(id); }
-    this.order = islands.map((i) => i.id);
-    for (const i of islands) {
-      let is = this.islands.get(i.id);
-      if (!is) {
-        is = { id: i.id, cx: this.el.clientWidth / 2, cy: this.el.clientHeight / 2, r: 0 };
-        is.ring = document.createElement("div");
-        is.ring.className = "ps-ring";
-        is.tag = document.createElement("button");
-        is.tag.className = "ps-tag";
-        is.tag.onclick = (e) => { e.stopPropagation(); if (this.onIsland) this.onIsland(i.id, is.tag); };
-        this.el.append(is.ring, is.tag);
-        this.islands.set(i.id, is);
-      }
-      is.tag.innerHTML = i.html;
-      is.color = i.color;
-    }
-    this.syncItems(items);
-    this.layout();
-  }
-  // Where a new photo first appears (its island, or somewhere mid-water), and what an item takes from its data.
-  spawn(x) {
-    const from = x.island != null && this.islands.get(x.island), cw = this.el.clientWidth, ch = this.el.clientHeight;
-    return from ? [from.cx, from.cy] : [cw / 2 + (Math.random() - 0.5) * cw * 0.4, ch / 2 + (Math.random() - 0.5) * ch * 0.4];
-  }
-  adopt(it, x) { if (it.island !== x.island) { it.island = x.island; it.hx = null; } }
-  // Photos in, photos out (gone ones fade where they are), and each one's picture, stack count and group badge.
-  syncItems(items) {
-    const keep = new Set(items.map((x) => x.id));
-    for (const [id, it] of this.items) {
-      if (keep.has(id)) continue;
-      it.el.classList.add("leaving");  // stacked into another photo, or gone: it fades where it is
-      setTimeout(() => it.el.remove(), 500);
-      this.items.delete(id);
-    }
-    for (const x of items) {
-      let it = this.items.get(x.id);
-      if (!it) {
-        const [sx, sy] = this.spawn(x);
-        it = { id: x.id, x: sx, y: sy, vx: 0, vy: 0, ph: Math.random() * 6.28, w: 0.3 + Math.random() * 0.4, sel: false };
-        it.el = document.createElement("div");
-        it.el.className = "ps-item entering";
-        it.el.dataset.id = x.id;
-        it.el.tabIndex = 0;
-        it.el.setAttribute("role", "button");
-        this.el.append(it.el);
-        setTimeout(() => it.el.classList.remove("entering"), 30);
-        this.items.set(x.id, it);
-      }
-      it.el.classList.toggle("stacked", x.n > 1);
-      if (it.photo !== x.photo || it.n !== x.n || it.badge !== (x.badge || "")) {
-        it.el.innerHTML = `<img src="${T(x.photo)}" alt="" draggable="false">${x.n > 1 ? `<span class="ps-stack">⧉ ${x.n}</span>` : ""}${x.badge
-          ? `<span class="ps-badge">${esc(x.badge)}</span>` : ""}`;
-        it.photo = x.photo;
-        it.n = x.n;
-        it.badge = x.badge || "";
-      }
-      it.el.setAttribute("aria-label", x.title || "Photo");
-      it.el.title = x.title || "";
-      this.adopt(it, x);
-    }
-  }
-  // Light up some photos (a group or a suggestion you're pointing at) and dim the rest; null clears it.
-  highlight(ids) {
-    const on = ids ? new Set(ids) : null;
-    this.el.classList.toggle("ps-dim", !!on);
-    for (const it of this.items.values()) it.el.classList.toggle("ps-glow", !!on && on.has(it.id));
-  }
-  select(ids) {
-    const on = new Set(ids);
-    for (const it of this.items.values()) { it.selected = on.has(it.id); it.el.classList.toggle("selected", it.selected); }
-    this.kick();
-  }
-  // The biggest tile size at which every island and the open water fit; the water in the middle sized for the loose
-  // photos; islands on a ring around it, pushed apart (and off the water) until nothing overlaps; members get spiral
-  // slots; loose photos get a home somewhere in the water.
-  layout() {
-    if (!this.alive) return;
-    const W = this.el.clientWidth, H = this.el.clientHeight;
-    if (!W || !H) return;
-    const isl = this.order.map((id) => this.islands.get(id));
-    const count = new Map();
-    let free = 0;
-    for (const it of this.items.values()) {
-      if (it.island != null && this.islands.has(it.island)) count.set(it.island, (count.get(it.island) || 0) + 1);
-      else free++;
-    }
-    const radius = (s, n) => s * (0.7 + 0.62 * Math.sqrt(n + 0.5));
-    const need = (s) => isl.reduce((a, is) => a + (2 * radius(s, count.get(is.id) || 0) + s * 0.6) ** 2, 0) + (2 * radius(s, free) + s) ** 2;
-    let s = 104;
-    while (s > 28 && need(s) > W * H * 0.82) s -= 2;
-    // A photo or two coming and going shouldn't resize (and so move) everything: while the fitted size is about what it
-    // was at the last resize, keep the size the last layout settled on (smaller than the fit if islands clashed there).
-    if (this.fit != null && Math.abs(this.fit - s) <= 8 && need(this.s) <= W * H * 0.9) s = this.s;
-    else this.fit = s;
-    // Radii hold through small changes too (they grow with some headroom and shrink only past a fifth), so one photo
-    // arriving or leaving doesn't push every island somewhere new.
-    const hold = (cur, want, same) => (!same || !cur ? want : want > cur ? want * 1.12 : want < cur * 0.8 ? want : cur);
-    const K = isl.length;
-    let wr = 0, sig = "";
-    for (let tries = 0; tries < 14; tries++) {  // place everything; if islands still overlap, try a size smaller
-    wr = hold(this.wrHeld, free ? radius(s, free) * 1.1 : s * 0.8, this.wrS === s);  // the open water, held in the middle
-    this.wx = W / 2; this.wy = H / 2 + 10; this.wr = wr;
-    isl.forEach((is, k) => {
-      is.n = count.get(is.id) || 0;
-      is.r = hold(is.r, radius(s, is.n), is.rS === s);
-      const a = -Math.PI / 2 + ((k + 0.5) / Math.max(1, K)) * Math.PI * 2;
-      is.rx = W / 2 + Math.cos(a) * (W / 2 - is.r - 12);
-      is.ry = H / 2 + Math.sin(a) * (H / 2 - is.r - 26);
-      if (!is.placed || tries) { is.cx = is.rx; is.cy = is.ry; is.placed = true; }
-    });
-    sig = `${W}x${H}|${s}|${wr.toFixed(1)}|${isl.map((is) => `${is.id}:${is.r.toFixed(1)}`).join(",")}`;
-    if (!tries && sig === this.sig) break;  // nothing that places the islands changed: they stay exactly where they are
-    for (let pass = 0; pass < 120; pass++) {  // push islands apart and off the water; keep them on screen
-      for (let i = 0; i < K; i++) {
-        const a = isl[i];
-        a.cx += (a.rx - a.cx) * 0.015;
-        a.cy += (a.ry - a.cy) * 0.015;
-        const wx = a.cx - this.wx, wy = a.cy - this.wy, wd = Math.hypot(wx, wy) || 1, wneed = a.r + wr + s * 0.4;
-        if (wd < wneed) { a.cx += (wx / wd) * (wneed - wd); a.cy += (wy / wd) * (wneed - wd); }
-        for (let j = i + 1; j < K; j++) {
-          const b = isl[j], dx = b.cx - a.cx, dy = b.cy - a.cy, d = Math.hypot(dx, dy) || 1, gap = a.r + b.r + s * 0.4;
-          if (d < gap) { const f = (gap - d) / 2 / d; a.cx -= dx * f; a.cy -= dy * f; b.cx += dx * f; b.cy += dy * f; }
-        }
-        a.cx = Math.max(a.r + 6, Math.min(W - a.r - 6, a.cx));
-        a.cy = Math.max(a.r + 30, Math.min(H - a.r - 6, a.cy));
-      }
-    }
-    const clash = isl.some((a, i) => Math.hypot(a.cx - this.wx, a.cy - this.wy) < a.r + wr - s * 0.2
-      || isl.some((b, j) => j > i && Math.hypot(a.cx - b.cx, a.cy - b.cy) < a.r + b.r - s * 0.2));
-    if (!clash || s <= 30) break;
-    s -= 4;
-    }
-    this.s = s;
-    this.sig = sig;
-    this.wrHeld = wr; this.wrS = s;
-    for (const is of isl) is.rS = s;
-    this.el.style.setProperty("--ps", `${s}px`);
-    for (const is of isl) {
-      is.ring.style.transform = `translate(${is.cx - is.r}px, ${is.cy - is.r}px)`;
-      is.ring.style.width = is.ring.style.height = `${2 * is.r}px`;
-      if (is.color) is.ring.style.setProperty("--tint", is.color);
-      is.tag.style.transform = `translate(-50%, -100%) translate(${is.cx}px, ${is.cy - is.r - 4}px)`;
-    }
-    // Spiral slots stay put: a photo keeps its slot, and one that leaves hands its slot to the island's outermost photo,
-    // so one photo moves instead of every later one stepping round the spiral (which spun whole islands).
-    const members = new Map();
-    for (const it of this.items.values()) {
-      if (it.island != null && this.islands.has(it.island)) (members.get(it.island) || members.set(it.island, new Set()).get(it.island)).add(it.id);
-    }
-    for (const is of isl) {
-      const here = members.get(is.id) || new Set(), slots = is.slots || [];
-      for (let k = 0; k < slots.length; k++) while (k < slots.length && !here.has(slots[k])) { slots[k] = slots[slots.length - 1]; slots.pop(); }
-      const had = new Set(slots);
-      for (const id of here) if (!had.has(id)) slots.push(id);
-      is.slots = slots;
-      slots.forEach((id, k) => {
-        const it = this.items.get(id), rad = s * 0.62 * Math.sqrt(k + 0.5);
-        it.tx = is.cx + Math.cos(k * GOLDEN) * rad;
-        it.ty = is.cy + Math.sin(k * GOLDEN) * rad;
-        it.free = false;
-      });
-    }
-    for (const it of this.items.values()) {
-      if (it.island != null && this.islands.has(it.island)) continue;
-      it.free = true;
-      if (it.hx == null || Math.hypot(it.hx - this.wx, it.hy - this.wy) > wr) {  // a home somewhere in the water
-        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * Math.max(0, wr - s * 0.6);
-        it.hx = Math.max(s, Math.min(W - s, this.wx + Math.cos(a) * d));  // (and on screen, if the water spills over)
-        it.hy = Math.max(s, Math.min(H - s, this.wy + Math.sin(a) * d));
-      }
-    }
-    this.water.style.transform = `translate(${this.wx - wr}px, ${this.wy - wr}px)`;
-    this.water.style.width = this.water.style.height = `${2 * wr}px`;
-    this.kick();
-  }
-  kick() { if (!this.raf && this.alive) this.raf = requestAnimationFrame((t) => this.tick(t)); }
-  tick(now) {
-    this.raf = 0;
-    if (!this.alive || !this.el.isConnected) { this.destroy(); return; }
-    const dt = Math.min(3, this.last ? (now - this.last) / 16.67 : 1);
-    this.last = now;
-    const T = now / 1000, s = this.s, m = this.mouse, W = this.el.clientWidth, H = this.el.clientHeight;
-    const grid = new Map(), cell = s;
-    for (const it of this.items.values()) {
-      const k = `${Math.floor(it.x / cell)},${Math.floor(it.y / cell)}`;
-      (grid.get(k) || grid.set(k, []).get(k)).push(it);
-    }
-    let energy = 0;
-    // The photo under the pointer holds still (you're reaching for it), photos near a slow pointer calm down, and only a
-    // quick swish stirs the loose ones: nothing you're trying to grab runs away.
-    const speed = Math.hypot(m.vx, m.vy);
-    let held = null;
-    if (!this.drag) for (const it of this.items.values()) if (Math.abs(it.x - m.x) < s * 0.55 && Math.abs(it.y - m.y) < s * 0.55) { held = it; break; }
-    for (const it of this.items.values()) {
-      if (this.drag && this.drag.moving && this.drag.items.includes(it)) continue;
-      if (it === held) { it.vx *= 0.5; it.vy *= 0.5; it.x += it.vx * dt; it.y += it.vy * dt; continue; }
-      let tx, ty, k;
-      if (it.free) {  // floating: circling a home in the open water, carried by a slow current
-        tx = it.hx + Math.cos(T * it.w + it.ph) * s * 0.35 + Math.sin(it.hy * 0.006 + T * 0.25) * s * 0.25;
-        ty = it.hy + Math.sin(T * it.w * 0.8 + it.ph) * s * 0.3;
-        k = 0.0016;
-      } else {  // settled: its slot in the island's spiral, bobbing a little
-        tx = it.tx + Math.sin(T * 0.9 + it.ph) * 1.5;
-        ty = it.ty + Math.cos(T * 0.7 + it.ph) * 1.5;
-        k = 0.012;
-      }
-      it.vx += (tx - it.x) * k * dt;
-      it.vy += (ty - it.y) * k * dt;
-      const cx = Math.floor(it.x / cell), cy = Math.floor(it.y / cell);  // make room for neighbours
-      for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
-        for (const o of grid.get(`${gx},${gy}`) || []) {
-          if (o === it) continue;
-          const dx = it.x - o.x, dy = it.y - o.y, d = Math.hypot(dx, dy) || 0.01, need = s * (it.free && o.free ? 1.02 : 0.9);
-          if (d < need) { const f = ((need - d) / need) * (it.free ? 0.5 : 0.25) * dt; it.vx += (dx / d) * f; it.vy += (dy / d) * f; }
-        }
-      }
-      const dx = it.x - m.x, dy = it.y - m.y, d2 = dx * dx + dy * dy, R = s * 2.2;
-      let calm = 1;
-      if (!this.drag && it.free && d2 < R * R) {
-        const d = Math.sqrt(d2) || 1, f = 1 - d / R;
-        if (speed > 9) {  // a deliberate swish stirs the water
-          it.vx += ((dx / d) * f * f * 1.2 + m.vx * f * 0.04) * dt;
-          it.vy += ((dy / d) * f * f * 1.2 + m.vy * f * 0.04) * dt;
-        } else calm = 1 - f * 0.8;  // a slow hand stills the water around it
-      }
-      const damp = Math.pow((it.free ? 0.93 : 0.82) * (calm < 1 ? 0.75 + 0.25 * calm : 1), dt);
-      it.vx *= damp; it.vy *= damp;
-      it.x = Math.max(s / 2, Math.min(W - s / 2, it.x + it.vx * dt));
-      it.y = Math.max(s / 2, Math.min(H - s / 2, it.y + it.vy * dt));
-      energy += Math.abs(it.vx) + Math.abs(it.vy);
-    }
-    m.vx *= Math.pow(0.85, dt); m.vy *= Math.pow(0.85, dt);
-    for (const it of this.items.values()) {
-      const rot = it.free ? Math.sin(T * it.w + it.ph) * 5 : 0;
-      const want = this.drag && this.drag.items.includes(it) ? 1.3 : it === held ? 1.14 : 1;  // under the pointer grows, held grows more
-      it.k = (it.k || 1) + (want - (it.k || 1)) * 0.3;
-      if (Math.abs(want - it.k) > 0.002) energy += 1;
-      it.el.style.transform = `translate3d(${(it.x - s / 2).toFixed(1)}px, ${(it.y - s / 2).toFixed(1)}px, 0) rotate(${rot.toFixed(1)}deg) scale(${it.k.toFixed(3)})`;
-      it.el.style.zIndex = it.k > 1.01 ? (want > 1.2 ? 12 : 9) : "";
-    }
-    if (!reduceMotion || energy > 0.5 * this.items.size) this.kick();  // still settling (or always drifting)
-  }
-}
-
-// The tag sea: fuzzy Venn diagrams that grow out of the photos themselves. Every photo is a boid: it keeps a little
-// apart from its neighbours and never piles onto them. Every tag pulls its photos together, and its circle is drawn
-// around all of them, tightening as they gather (gravity between like photos); a photo keeps out of circles it
-// doesn't belong to. Groups hold their members in a lasso bubble (yours solid, the suggested ones dashed). Dropping a
-// photo somewhere gives it the tags of the circles there and takes away the ones it left.
-const hullOf = (pts) => {  // convex hull (monotone chain)
-  if (pts.length < 3) return pts.slice();
-  const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lo = [], hi = [];
-  for (const q of p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
-  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
-  return lo.slice(0, -1).concat(hi.slice(0, -1));
-};
-const hueOf = (key) => [...String(key)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
-
-class VennSea extends PhotoSea {
-  constructor(el, opts = {}) {
-    super(el, opts);
-    this.onCircle = opts.onCircle; this.onLasso = opts.onLasso;
-    this.circles = new Map(); this.keys = []; this.lassos = new Map();
-    el.classList.add("venn-sea");
-    this.canvas = document.createElement("canvas");
-    this.canvas.className = "vn-canvas";
-    el.prepend(this.canvas);
-    this.ctx = this.canvas.getContext("2d");
-    this.hint = document.createElement("div");
-    this.hint.className = "vn-hint";
-    this.hint.hidden = true;
-    el.append(this.hint);
-    this.water.hidden = true;
-  }
-  // circles: [{id: tag key, label, emoji, html}]; items: [{id, photo, tags, group, sugg, n, title, badge}];
-  // lassos: [{id, kind: "group" | "sugg", html, bin}] (a group's label takes drops like its bin in the side list)
-  setVenn(circles, items, lassos = []) {
-    const keep = new Set(circles.map((c) => c.id));
-    for (const [id, c] of this.circles) if (!keep.has(id)) { c.tag.remove(); this.circles.delete(id); }
-    for (const c of circles) {
-      let v = this.circles.get(c.id);
-      if (!v) {
-        v = { id: c.id, cx: this.el.clientWidth / 2, cy: this.el.clientHeight / 2, r: 0, hue: hueOf(c.id) };
-        v.tag = document.createElement("button");
-        v.tag.className = "ps-tag vn-tag";
-        v.tag.onclick = (e) => { e.stopPropagation(); if (this.onCircle) this.onCircle(c.id, v.tag); };
-        v.tag.onpointerenter = () => (v.still = true);  // a label you're reaching for holds still
-        v.tag.onpointerleave = () => (v.still = false);
-        this.el.append(v.tag);
-        this.circles.set(c.id, v);
-      }
-      if (v.tag.innerHTML !== c.html) { v.tag.innerHTML = c.html; v.w = 0; }  // (re-measure its width)
-      v.label = `${c.emoji || ""} ${c.label}`.trim();
-    }
-    this.keys = circles.map((c) => c.id);
-    const lk = new Set(lassos.map((l) => l.id));
-    for (const [id, l] of this.lassos) if (!lk.has(id)) { l.tag.remove(); this.lassos.delete(id); }
-    for (const l of lassos) {
-      let v = this.lassos.get(l.id);
-      if (!v) {
-        v = { id: l.id, hue: hueOf(l.id), x: this.el.clientWidth / 2, y: 0 };
-        v.tag = document.createElement(l.kind === "sugg" ? "button" : "div");
-        v.tag.className = `vn-lasso-tag is-${l.kind}`;
-        v.tag.onclick = (e) => { e.stopPropagation(); if (this.onLasso) this.onLasso(l.id, v.tag); };
-        v.tag.onpointerenter = () => (v.still = true);
-        v.tag.onpointerleave = () => (v.still = false);
-        this.el.append(v.tag);
-        this.lassos.set(l.id, v);
-      }
-      v.kind = l.kind;
-      if (v.tag.innerHTML !== l.html) { v.tag.innerHTML = l.html; v.w = 0; }
-      if (l.bin != null) v.tag.dataset.bin = l.bin; else delete v.tag.dataset.bin;
-    }
-    this.syncItems(items);
-    this.layout();
-    this.stir(240);
-  }
-  spawn(x) {  // near its tags' photos if there are any yet, else mid-sea
-    const W = this.el.clientWidth, H = this.el.clientHeight;
-    const kin = [...this.items.values()].filter((o) => (x.group != null && o.group === x.group) || (x.sugg != null && o.sugg === x.sugg));
-    const near = (kin.length ? kin : [...this.items.values()].filter((o) => (x.tags || []).some((t) => (o.tags || []).includes(t)))).slice(0, 12);
-    const cx = near.length ? near.reduce((a, o) => a + o.x, 0) / near.length : W / 2, cy = near.length ? near.reduce((a, o) => a + o.y, 0) / near.length : H / 2;
-    return [cx + (Math.random() - 0.5) * 80, cy + (Math.random() - 0.5) * 80];
-  }
-  adopt(it, x) { it.tags = x.tags || []; it.group = x.group ?? null; it.sugg = x.sugg ?? null; it.free = false; }
-  layout() {  // the tile size from how many photos share the field (it holds while little changes)
-    if (!this.alive) return;
-    const W = this.el.clientWidth, H = this.el.clientHeight;
-    if (!W || !H) return;
-    const blocked = (this.obstacles || []).filter((o) => !o.brief).reduce((a, o) => a + Math.max(0, o.x1 - o.x0) * Math.max(0, o.y1 - o.y0), 0);
-    const free = Math.max(W * H * 0.08, W * H - blocked);  // the photos live in the space the screen leaves open
-    let s = Math.max(this.obstacles && this.obstacles.length ? 12 : 26, Math.min(86, Math.sqrt((free * 0.2) / Math.max(1, this.items.size))));
-    if (this.s && Math.abs(this.s - s) < 4) s = this.s;
-    this.s = Math.round(s);
-    this.el.style.setProperty("--ps", `${this.s}px`);
-    this.homes(W, H);
-    const dpr = window.devicePixelRatio || 1;
-    if (this.canvas.width !== Math.round(W * dpr) || this.canvas.height !== Math.round(H * dpr)) {
-      this.canvas.width = Math.round(W * dpr); this.canvas.height = Math.round(H * dpr);
-      this.canvas.style.width = `${W}px`; this.canvas.style.height = `${H}px`;
-    }
-    this.kick();
-  }
-  // Each group (and suggestion) gets a home on the field, a cell of a grid shaped like it, so the bubbles spread out
-  // and use the whole screen. A group made from a suggestion takes over its home; a new one takes the free cell
-  // nearest its photos; nothing jumps.
-  homes(W, H) {
-    const keyOf = (it) => (it.group != null ? `g${it.group}` : it.sugg != null ? `s${it.sugg}` : null);
-    const now = new Map();
-    for (const it of this.items.values()) {
-      const k = keyOf(it);
-      if (!k) continue;
-      const c = now.get(k) || now.set(k, { n: 0, x: 0, y: 0, ids: new Set() }).get(k);
-      c.n++; c.x += it.x; c.y += it.y; c.ids.add(it.id);
-    }
-    for (const c of now.values()) { c.x /= c.n; c.y /= c.n; }
-    const K = now.size, obs = this.obstacles || [], m = (this.s || 40) * 0.8;
-    const open = (x, y) => !obs.some((o) => x > o.x0 - m && x < o.x1 + m && y > o.y0 - m && y < o.y1 + m);
-    let cols = Math.max(1, Math.round(Math.sqrt((K * W) / H))), rows = Math.max(1, Math.ceil(K / cols)), cells = [];
-    for (let grow = 0; grow < 12; grow++) {  // homes only in the open, never under the screen's own things
-      cells = [];
-      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-        const x = ((c + 0.5 + (r % 2 ? 0.18 : -0.18) * (cols > 1)) * W) / cols, y = ((r + 0.5) * H) / rows;
-        if (open(x, y)) cells.push({ x, y });
-      }
-      if (cells.length >= K) break;
-      cols++; rows++;
-    }
-    let free = [];  // the middle of the open water, where loose photos drift
-    for (let x = W * 0.05; x < W; x += W / 24) for (let y = H * 0.05; y < H; y += H / 16) if (open(x, y)) free.push([x, y]);
-    if (!free.length) free = [[W / 2, H / 2]];
-    this.mid = [free.reduce((a, q) => a + q[0], 0) / free.length, free.reduce((a, q) => a + q[1], 0) / free.length];
-    const old = this.anchors || new Map(), was = this.anchorIds || new Map(), same = this.grid === `${cols}x${rows}x${W}x${H}x${cells.length}`;
-    const next = new Map(), taken = new Set();
-    const nearestFree = (x, y) => { let best = -1; cells.forEach((p, i) => { if (!taken.has(i) && (best < 0 || Math.hypot(p.x - x, p.y - y) < Math.hypot(cells[best].x - x, cells[best].y - y))) best = i; }); return best; };
-    const order = [...now.entries()].sort((a, b) => b[1].n - a[1].n);
-    for (const [k, c] of order) {  // a home it had, or the one of the old group it mostly came from
-      let from = old.has(k) ? k : null;
-      if (!from) {
-        let bestOverlap = 0;
-        for (const [ok, ids] of was) if (!now.has(ok)) { let o = 0; for (const id of c.ids) if (ids.has(id)) o++; if (o > bestOverlap) { bestOverlap = o; from = ok; } }
-      }
-      const at = from ? old.get(from) : { x: c.x, y: c.y };
-      const i = nearestFree(at.x, at.y);
-      if (i < 0) continue;
-      taken.add(i);
-      next.set(k, same && from && old.get(from).cell === i ? old.get(from) : { ...cells[i], cell: i });
-    }
-    this.anchors = next;
-    this.anchorIds = new Map([...now].map(([k, c]) => [k, c.ids]));
-    this.grid = `${cols}x${rows}x${W}x${H}x${cells.length}`;
-  }
-  tick(now) {
-    this.raf = 0;
-    if (!this.alive || !this.el.isConnected) { this.destroy(); return; }
-    const dt = Math.min(2.5, this.last ? (now - this.last) / 16.67 : 1);
-    this.last = now;
-    const s = this.s, W = this.el.clientWidth, H = this.el.clientHeight, m = this.mouse, vis = new Set(this.keys);
-    // where each tag's, group's and suggestion's photos are gathered
-    const cent = new Map(), gcent = new Map();
-    const acc = (map, k, it) => { const c = map.get(k) || map.set(k, { x: 0, y: 0, n: 0 }).get(k); c.x += it.x; c.y += it.y; c.n++; };
-    for (const it of this.items.values()) {
-      for (const t of it.tags) acc(cent, t, it);
-      if (it.group != null) acc(gcent, `g${it.group}`, it);
-      else if (it.sugg != null) acc(gcent, `s${it.sugg}`, it);
-    }
-    for (const c of [...cent.values(), ...gcent.values()]) { c.x /= c.n; c.y /= c.n; }
-    // each circle: around all its photos, easing as they gather or spread
-    for (const k of this.keys) {
-      const c = this.circles.get(k), at = cent.get(k);
-      if (!at) { c.r = 0; continue; }
-      const ds = [];  // around most of its photos (a straggler can sit just outside: the diagram is fuzzy)
-      for (const it of this.items.values()) if (it.tags.includes(k)) ds.push(Math.hypot(it.x - at.x, it.y - at.y));
-      ds.sort((p, q) => p - q);
-      const r = (ds[Math.floor((ds.length - 1) * 0.85)] || 0) + s * 0.7;
-      c.cx += (at.x - c.cx) * 0.25; c.cy += (at.y - c.cy) * 0.25; c.r += (r - c.r) * 0.2;
-    }
-    const grid = new Map(), cell = s;
-    for (const it of this.items.values()) {
-      const key = `${Math.floor(it.x / cell)},${Math.floor(it.y / cell)}`;
-      (grid.get(key) || grid.set(key, []).get(key)).push(it);
-    }
-    let held = null;
-    if (!this.drag) for (const it of this.items.values()) if (Math.abs(it.x - m.x) < s * 0.55 && Math.abs(it.y - m.y) < s * 0.55) { held = it; break; }
-    // each group's (and suggestion's) reach: most of its photos, so other groups keep clear and the bubbles stay apart
-    const reach = new Map();
-    for (const [k, c] of gcent) reach.set(k, []);
-    for (const it of this.items.values()) {
-      const k = it.group != null ? `g${it.group}` : it.sugg != null ? `s${it.sugg}` : null;
-      if (k && gcent.has(k)) reach.get(k).push(Math.hypot(it.x - gcent.get(k).x, it.y - gcent.get(k).y));
-    }
-    for (const [k, ds] of reach) { ds.sort((p, q) => p - q); gcent.get(k).r = (ds[Math.floor(ds.length * 0.8)] || 0) + s * 0.7; }
-    let energy = 0;
-    for (const it of this.items.values()) {
-      if (this.drag && this.drag.moving && this.drag.items.includes(it)) continue;
-      if (it === held) { it.vx *= 0.5; it.vy *= 0.5; it.x += it.vx * dt; it.y += it.vy * dt; continue; }
-      const own = it.group != null ? `g${it.group}` : it.sugg != null ? `s${it.sugg}` : null;
-      const home = own && this.anchors && this.anchors.get(own);
-      // its group's home draws it (a loose photo just stays in view), and its group holds it together
-      const mid = this.mid || [W / 2, H / 2];
-      let ax = home ? (home.x - it.x) * 0.0016 : (mid[0] - it.x) * 0.0003, ay = home ? (home.y - it.y) * 0.0016 : (mid[1] - it.y) * 0.0003;
-      const g = own && gcent.get(own);
-      const blockedAt = (x, y) => (this.obstacles || []).some((o) => !o.brief && x > o.x0 && x < o.x1 && y > o.y0 && y < o.y1);
-      if (g && g.n > 1 && !blockedAt(g.x, g.y)) { const w = it.group != null ? 0.007 : 0.0045; ax += (g.x - it.x) * w; ay += (g.y - it.y) * w; }
-      for (const [k, c] of gcent) {  // other groups' bubbles push it out
-        if (k === own || c.n < 1) continue;
-        const dx = it.x - c.x, dy = it.y - c.y, d = Math.hypot(dx, dy) || 0.01, reachK = c.r + s * 0.5;
-        if (d < reachK) { const f = ((reachK - d) / reachK) * 0.7; ax += (dx / d) * f; ay += (dy / d) * f; }
-      }
-      const norm = 1 / Math.sqrt(Math.max(1, it.tags.length));
-      for (const t of it.tags) {  // a gentler pull toward its tags' photos (the shown tags pull hardest)
-        const c = cent.get(t);
-        if (!c || c.n < 2) continue;
-        const w = (vis.has(t) ? 0.0009 : 0.00015) * norm;
-        ax += (c.x - it.x) * w; ay += (c.y - it.y) * w;
-      }
-      for (const o of this.obstacles || []) {  // around the screen's own things, never under them
-        const m2 = s * 0.6;
-        if (it.x > o.x0 - m2 && it.x < o.x1 + m2 && it.y > o.y0 - m2 && it.y < o.y1 + m2) {
-          const out = [[it.x - (o.x0 - m2), -1, 0], [o.x1 + m2 - it.x, 1, 0], [it.y - (o.y0 - m2), 0, -1], [o.y1 + m2 - it.y, 0, 1]]
-            .sort((p, q) => p[0] - q[0])[0];
-          const f = Math.min(1.4, 0.15 + out[0] * 0.07);  // a spring, not a kick: it settles instead of bouncing
-          ax += out[1] * f; ay += out[2] * f;
-          it.vx *= 0.8; it.vy *= 0.8;
-        }
-      }
-      for (const k of this.keys) {  // and a nudge out of circles it doesn't belong to
-        if (it.tags.includes(k)) continue;
-        const c = this.circles.get(k), dx = it.x - c.cx, dy = it.y - c.cy, d = Math.hypot(dx, dy) || 0.01;
-        if (d < c.r) { const f = ((c.r - d) / c.r) * 0.12; ax += (dx / d) * f; ay += (dy / d) * f; }
-      }
-      const gx = Math.floor(it.x / cell), gy = Math.floor(it.y / cell);  // boids: a little apart, never on top
-      for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) {
-        for (const o of grid.get(`${x},${y}`) || []) {
-          if (o === it) continue;
-          const dx = it.x - o.x, dy = it.y - o.y, d = Math.hypot(dx, dy) || 0.01, need = s * 1.14;
-          if (d < need) { const f = ((need - d) / need) * 0.9; ax += (dx / d) * f; ay += (dy / d) * f; }
-        }
-      }
-      for (const o of this.obstacles || []) {  // resting against a panel: whatever pulls it inward is cancelled
-        if (o.brief) continue;
-        const mg = s * 0.55 + 4;
-        if (it.x > o.x0 - mg && it.x < o.x1 + mg && it.y > o.y0 - mg && it.y < o.y1 + mg) {
-          const d = [it.x - (o.x0 - mg), o.x1 + mg - it.x, it.y - (o.y0 - mg), o.y1 + mg - it.y], k = d.indexOf(Math.min(...d));
-          if ((k === 0 && ax > 0) || (k === 1 && ax < 0)) { ax = 0; it.vx = 0; }
-          if ((k === 2 && ay > 0) || (k === 3 && ay < 0)) { ay = 0; it.vy = 0; }
-        }
-      }
-      const dm = Math.hypot(it.x - m.x, it.y - m.y);
-      const calm = !this.drag && dm < s * 2.2 ? 0.7 : 1;  // a hand nearby stills the water
-      it.vx = (it.vx + ax * dt) * Math.pow(0.86 * calm, dt);
-      it.vy = (it.vy + ay * dt) * Math.pow(0.86 * calm, dt);
-      if (Math.abs(it.vx) + Math.abs(it.vy) < 0.07) it.vx = it.vy = 0;  // barely moving: at rest
-      it.x = Math.max(s / 2, Math.min(W - s / 2, it.x + it.vx * dt));
-      it.y = Math.max(s / 2, Math.min(H - s / 2, it.y + it.vy * dt));
-      for (const o of this.obstacles || []) {  // a hard rule, not just a push: never under the screen's own things
-        if (o.brief) continue;
-        const mg = s * 0.55;
-        if (it.x > o.x0 - mg && it.x < o.x1 + mg && it.y > o.y0 - mg && it.y < o.y1 + mg) {
-          const exits = [[it.x - (o.x0 - mg), o.x0 - mg, null], [o.x1 + mg - it.x, o.x1 + mg, null], [it.y - (o.y0 - mg), null, o.y0 - mg], [o.y1 + mg - it.y, null, o.y1 + mg]]
-            .filter((e) => (e[1] == null || (e[1] >= s / 2 && e[1] <= W - s / 2)) && (e[2] == null || (e[2] >= s / 2 && e[2] <= H - s / 2)))
-            .sort((p, q) => p[0] - q[0]);
-          const e = exits[0];
-          if (e) {
-            if (e[1] != null) { it.x += (e[1] - it.x) * 0.35; it.vx = 0; } else { it.y += (e[2] - it.y) * 0.35; it.vy = 0; }  // eased out, quickly
-          }
-        }
-      }
-      energy += Math.abs(it.vx) + Math.abs(it.vy);
-    }
-    m.vx *= Math.pow(0.85, dt); m.vy *= Math.pow(0.85, dt);
-    for (const it of this.items.values()) {  // the photo under the pointer grows a little; one you're holding, a little more
-      const want = this.drag && this.drag.moving && this.drag.items.includes(it) ? 1.32 : it === held || (this.drag && this.drag.items[0] === it) ? 1.15 : 1;
-      it.k = (it.k || 1) + (want - (it.k || 1)) * 0.3;
-      if (Math.abs(want - it.k) > 0.002) energy += 1;
-      it.el.style.transform = `translate3d(${(it.x - s / 2).toFixed(1)}px, ${(it.y - s / 2).toFixed(1)}px, 0) scale(${it.k.toFixed(3)})`;
-      it.el.style.zIndex = it.k > 1.01 ? (want > 1.2 ? 12 : 9) : "";
-    }
-    this.draw(W, H, s);
-    // keep going while anything moves (or for a little after a change); once it's all at rest, stop (no busy loop)
-    this.restless = Math.max(0, (this.restless || 0) - 1);
-    if (energy > 0.02 || this.drag || this.restless > 0) this.kick();
-  }
-  kick() { if (!this.raf && this.alive) { this.raf = requestAnimationFrame((t) => this.tick(t)); } }
-  stir(frames = 90) { this.restless = Math.max(this.restless || 0, frames); this.kick(); }
-  // A label's spot, moved out from under the screen's panels and away from labels already placed this frame.
-  clearSpot(lx, ly, w, h, taken) {
-    const W = this.el.clientWidth, H = this.el.clientHeight;
-    const inside = (e) => e[1] >= w / 2 + 2 && e[1] <= W - w / 2 - 2 && e[2] >= h / 2 + 2 && e[2] <= H - h / 2 - 2;  // (and on screen)
-    for (let pass = 0; pass < 4; pass++) {
-      let moved = false;
-      for (const o of [...(this.obstacles || []).filter((q) => !q.brief), ...taken]) {
-        if (lx + w / 2 > o.x0 && lx - w / 2 < o.x1 && ly + h / 2 > o.y0 && ly - h / 2 < o.y1) {
-          const exits = [[ly + h / 2 - o.y0, lx, o.y0 - h / 2 - 2], [o.y1 - (ly - h / 2), lx, o.y1 + h / 2 + 2],
-            [lx + w / 2 - o.x0, o.x0 - w / 2 - 2, ly], [o.x1 - (lx - w / 2), o.x1 + w / 2 + 2, ly]].filter(inside).sort((p, q) => p[0] - q[0]);
-          if (!exits.length) continue;
-          [, lx, ly] = exits[0];
-          moved = true;
-        }
-      }
-      if (!moved) break;
-    }
-    taken.push({ x0: lx - w / 2, y0: ly - h / 2, x1: lx + w / 2, y1: ly + h / 2 });
-    return [lx, ly];
-  }
-  draw(W, H, s) {
-    const x = this.ctx, dpr = window.devicePixelRatio || 1, taken = [];
-    x.setTransform(dpr, 0, 0, dpr, 0, 0);
-    x.clearRect(0, 0, W, H);
-    // lassos: a bubble around each group's photos
-    const members = new Map();
-    for (const it of this.items.values()) {
-      const k = it.group != null ? `g${it.group}` : it.sugg != null ? `s${it.sugg}` : null;
-      if (k) (members.get(k) || members.set(k, []).get(k)).push([it.x, it.y]);
-    }
-    for (const [id, l] of this.lassos) {
-      const pts = members.get(id);
-      if (!pts || !pts.length || this.lassos_on === false) { l.tag.hidden = true; continue; }
-      const core = hullOf(pts), ring = [];
-      for (const [px, py] of core) for (let a = 0; a < 10; a++) ring.push([px + Math.cos(a * 0.628) * s * 0.78, py + Math.sin(a * 0.628) * s * 0.78]);
-      const h = hullOf(ring);
-      x.beginPath();
-      h.forEach((p, i) => {  // through the midpoints, curving at the corners: a soft bubble
-        const q = h[(i + 1) % h.length], mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
-        if (!i) x.moveTo(mx, my); else x.quadraticCurveTo(p[0], p[1], mx, my);
-      });
-      x.quadraticCurveTo(h[0][0], h[0][1], (h[0][0] + h[1 % h.length][0]) / 2, (h[0][1] + h[1 % h.length][1]) / 2);
-      x.closePath();
-      const sugg = l.kind === "sugg";
-      x.fillStyle = `hsla(${l.hue}, 80%, 60%, ${sugg ? 0.05 : 0.11})`;
-      x.fill();
-      x.lineWidth = sugg ? 1.5 : 2.5;
-      x.setLineDash(sugg ? [7, 7] : []);
-      x.strokeStyle = `hsla(${l.hue}, 85%, ${sugg ? 75 : 65}%, ${sugg ? 0.55 : 0.85})`;
-      x.stroke();
-      const top = h.reduce((a, p) => (p[1] < a[1] ? p : a), h[0]);  // a label moves only when its bubble has really moved
-      if (!l.still && (l.y === 0 || Math.hypot(top[0] - l.x, top[1] - l.y) > 16)) { l.x = Math.round(top[0]); l.y = Math.round(top[1]); }
-      l.tag.hidden = false;
-      const lw = l.w || (l.w = l.tag.offsetWidth || 160), lh = 26;
-      const [px, py] = this.clearSpot(Math.max(lw / 2 + 4, Math.min(W - lw / 2 - 4, l.x)), Math.max(lh, l.y - 2) - lh / 2, lw, lh, taken);
-      l.tag.style.transform = `translate(-50%, -50%) translate(${Math.round(px)}px, ${Math.round(py)}px)`;
-    }
-    // tag circles: fuzzy, tinted, their labels on the outer edge
-    x.setLineDash([5, 6]);
-    for (const k of this.keys) {
-      const c = this.circles.get(k);
-      if (!c.r) { c.tag.hidden = true; continue; }
-      const grd = x.createRadialGradient(c.cx, c.cy, c.r * 0.2, c.cx, c.cy, c.r);
-      grd.addColorStop(0, `hsla(${c.hue}, 85%, 62%, 0.10)`);
-      grd.addColorStop(1, `hsla(${c.hue}, 85%, 62%, ${c.hot ? 0.16 : 0.04})`);
-      x.beginPath();
-      x.arc(c.cx, c.cy, c.r, 0, Math.PI * 2);
-      x.fillStyle = grd;
-      x.fill();
-      x.lineWidth = c.hot ? 3 : 1.3;
-      x.strokeStyle = `hsla(${c.hue}, 85%, 66%, ${c.hot ? 0.95 : 0.55})`;
-      x.stroke();
-      const ang = Math.atan2(c.cy - H / 2, c.cx - W / 2 || 0.01), lx = c.cx + Math.cos(ang) * (c.r + 4), ly = c.cy + Math.sin(ang) * (c.r + 4);
-      if (!c.still && (c.lx == null || Math.hypot(lx - c.lx, ly - c.ly) > 16)) { c.lx = Math.round(lx); c.ly = Math.round(ly); }
-      c.tag.hidden = false;
-      const cw = c.w || (c.w = c.tag.offsetWidth || 140), ch = 26;
-      const [px, py] = this.clearSpot(Math.max(cw / 2 + 4, Math.min(W - cw / 2 - 4, c.lx)), Math.max(ch / 2, Math.min(H - ch / 2, c.ly)), cw, ch, taken);
-      c.tag.style.transform = `translate(-50%, -50%) translate(${Math.round(px)}px, ${Math.round(py)}px)`;
-    }
-    x.setLineDash([]);
-  }
-  binAt(e) {  // a group's label in the sea, or its bin in the side list
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    return el && !el.closest(".ps-item") ? el.closest("[data-bin]") : null;
-  }
-  // A drop lands among the circles around it: those tags on, the other shown ones off.
-  target(x, y, self) {
-    for (const it of this.items.values()) {
-      if (it === self || (this.drag && this.drag.items.includes(it))) continue;
-      if (Math.abs(it.x - x) < this.s * 0.42 && Math.abs(it.y - y) < this.s * 0.42) return { kind: "photo", id: it.id, item: it };
-    }
-    const on = this.keys.filter((k) => { const c = this.circles.get(k); return c && c.r && Math.hypot(c.cx - x, c.cy - y) < c.r * 0.8; });
-    return { kind: "tags", on, off: this.keys.filter((k) => !on.includes(k)) };
-  }
-  mark(t) {
-    for (const c of this.circles.values()) c.hot = !!(t && t.kind === "tags" && t.on.includes(c.id));
-    const key = t ? `${t.kind}:${t.kind === "photo" ? t.id : ""}` : null;
-    if (key !== this.hover) {
-      this.hover = key;
-      this.el.querySelectorAll(".ps-item.ps-hot").forEach((e) => e.classList.remove("ps-hot"));
-      if (t && t.kind === "photo") t.item.el.classList.add("ps-hot");
-    }
-    const it = this.drag && this.drag.items[0];
-    if (!t || !it) { this.hint.hidden = true; return; }
-    let html;
-    if (t.kind === "photo") html = "⧉ Stack them: same shot";
-    else {
-      const was = new Set(it.tags.filter((k) => this.keys.includes(k)));
-      const plus = t.on.filter((k) => !was.has(k)), minus = [...was].filter((k) => !t.on.includes(k));
-      const lab = (k) => esc(this.circles.get(k)?.label || k);
-      html = plus.length || minus.length ? [...plus.map((k) => `<b class="plus">＋ ${lab(k)}</b>`), ...minus.map((k) => `<b class="minus">− ${lab(k)}</b>`)].join(" ")
-        : "<span>no change</span>";
-    }
-    this.hint.innerHTML = html;
-    this.hint.hidden = false;
-    this.hint.style.transform = `translate(${Math.min(this.mouse.x + 18, this.el.clientWidth - 220)}px, ${Math.max(4, this.mouse.y - 40)}px)`;
-  }
 }
 
 // ---------------------------------------------------------------- stacks: the same shot, one stack
@@ -3409,56 +3597,119 @@ function viewStacks(main, params) {
 
 async function stacksPage(main) {
   const view = S.view;
-  let shots = [], boxes = {}, twins = 0, undo = null, pairs = [];
+  let shots = [], boxes = {}, twins = 0, undo = null, pairs = [], total = 0, nextPage = 1, pages = 0, paging = false;
+  let order = (() => { try { return localStorage.getItem("matcher-stacks-order") === "time" ? "time" : "look"; } catch (_) { return "look"; } })();
   const byRep = new Map();
-  async function load(keep) {
-    const y = ($(".screen-body", main) || {}).scrollTop || 0;
+  let loadEpoch = 0;
+  function sizeFamilies() {
+    const grid = $(".stacker .lookgrid", main);if(!grid)return;
+    const columns = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length;
+    $$(":scope > .fam-tiles",grid).forEach(f=>{
+      const n=Math.min(columns,f.children.length);
+      f.style.gridColumn=`span ${n}`;f.style.gridTemplateColumns=`repeat(${n},minmax(0,1fr))`;
+    });
+  }
+  window.addEventListener('resize',sizeFamilies,{signal:S.events.signal});
+  async function load(keep, reorder = false) {
+    if (left(view)) return;
+    const request = ++loadEpoch;
+    paging = false;
+    const body = $(".screen-body", main), y = body?.scrollTop || 0, loadedPages = keep ? nextPage : 1;
+    const expanded = keep && byRep.get(Number($(".tile.open", main)?.dataset.dragShot));
+    const edge = body?.getBoundingClientRect(), visible = keep && edge ? $$(".tile[data-drag-shot]", body)
+      .map(el=>({shot:byRep.get(Number(el.dataset.dragShot)),box:el.getBoundingClientRect()}))
+      .filter(x=>x.shot&&x.box.bottom>edge.top&&x.box.top<edge.bottom)
+      .sort((a,b)=>Number(b.shot===expanded)-Number(a.shot===expanded)||Math.abs(a.box.top-edge.top)-Math.abs(b.box.top-edge.top))[0] : null;
+    const anchor = visible && {members:visible.shot.members,offset:visible.box.top-edge.top};
     try {
-      const [sug, first] = await Promise.all([api("/api/groups?view=suggest"), api("/api/groups?view=stacks&order=time&per=500&page=0")]);
+      const query = `/api/groups?view=stacks&order=${order}&per=120`;
+      const [sug, first] = await Promise.all([api("/api/groups?view=suggest"), api(`${query}&page=0${reorder?'&reorder=1':''}`)]);
+      if (left(view) || request !== loadEpoch) return;
+      const batches = [first, ...await Promise.all(Array.from({length:Math.max(0,Math.min(loadedPages,first.pages)-1)},(_,i)=>api(`${query}&page=${i+1}`)))];
+      // Splitting at a page boundary can move the reached-for stack onto the next page.
+      while(anchor && batches.length<first.pages && !batches.some(b=>b.shots.some(x=>x.members.some(m=>anchor.members.includes(m))))) {
+        batches.push(await api(`${query}&page=${batches.length}`));
+        if(left(view)||request!==loadEpoch)return;
+      }
+      if (left(view) || request !== loadEpoch) return;
       twins = sug.suggestions.length;
       pairs = sug.suggestions;
-      shots = first.shots; boxes = first.boxes; undo = first.undo;
-      for (let p = 1; p < first.pages && shots.length < GROUPS_CAP; p++) {
-        const d = await api(`/api/groups?view=stacks&order=time&per=500&page=${p}`);
-        shots = shots.concat(d.shots); Object.assign(boxes, d.boxes);
-      }
-    } catch (e) { if (!left(view)) main.innerHTML = FAILED(e.message); return; }
+      shots = batches.flatMap(b=>b.shots); boxes = Object.assign({},...batches.map(b=>b.boxes)); undo = first.undo; total = first.total;
+      nextPage = batches.length; pages = first.pages;
+    } catch (e) { if (!left(view) && request === loadEpoch) main.innerHTML = FAILED(e.message); return; }
     if (left(view)) return;
     byRep.clear();
     shots.forEach((x) => byRep.set(x.rep, x));
     render();
-    if (keep) $(".screen-body", main).scrollTop = y;
+    if (expanded) {
+      const members = new Set(expanded.members), match = shots.map(x=>({shot:x,n:x.members.filter(m=>members.has(m)).length})).sort((a,b)=>b.n-a.n)[0];
+      if(match?.n && match.shot.members.length>1){const button=$(`[data-expand="${match.shot.rep}"]`,main);if(button)expandStack(main,match.shot,button,boxes,false);}
+    }
+    if (keep) {
+      // Reattach the shared tag shelf before restoring scroll; its height changes the bottom scroll limit.
+      World.sea?.layout();
+      const body = $(".screen-body", main), match = anchor && shots.find(x=>x.members.some(m=>anchor.members.includes(m)));
+      const tile = match && $(`[data-drag-shot="${match.rep}"]`,main);
+      body.scrollTop = tile ? tile.getBoundingClientRect().top-body.getBoundingClientRect().top+body.scrollTop-anchor.offset : y;
+    }
+  }
+  async function moreStacks() {
+    if (paging || nextPage >= pages || left(view)) return;
+    paging = true;
+    const request = loadEpoch;
+    try {
+      const r = await api(`/api/groups?view=stacks&order=${order}&per=120&page=${nextPage}`);
+      if (left(view) || request !== loadEpoch) return;
+      nextPage++;
+      shots.push(...r.shots); Object.assign(boxes, r.boxes);
+      for (const x of r.shots) byRep.set(x.rep, x);
+      const grid = $(".lookgrid", main); if (grid) { grid.insertAdjacentHTML("beforeend", shotTiles(r.shots, null, boxes));sizeFamilies(); }
+    } catch (e) { if (!left(view) && request === loadEpoch) toast(e.message); }
+    finally { if (request === loadEpoch) paging = false; }
   }
   function render() {
     main.innerHTML = `
-      <div class="screen sorter stacker">
+      <div class="screen sorter stacker ${pairs.length ? '' : 'no-rail'}">
         <div class="screen-head">
           <h1>🧩 Stacks</h1>
-          <span class="stat-chip"><b>${fmt(shots.length)}</b> ${shots.length === 1 ? "stack" : "stacks"}</span>
+          <span class="stat-chip"><b>${fmt(total || shots.length)}</b> ${(total || shots.length) === 1 ? "stack" : "stacks"}</span>
           <span class="stat-chip">${twins ? `🧐 <b>${fmt(twins)}</b> possible ${twins === 1 ? "twin" : "twins"} to check` : "✅ all checked"}</span>
           <span class="grow"></span>
+          <span class="seg" role="group" aria-label="Stack order">
+            <button class="seg-btn ${order === "look" ? "on" : ""}" data-stack-order="look" title="Put similar stacks next to each other">Similar</button>
+            <button class="seg-btn ${order === "time" ? "on" : ""}" data-stack-order="time" title="Sort stacks by capture time">By date</button>
+          </span>
           ${helpBtn(`The same picture (a crop, a copy) or a burst of nearly the same shot belongs in <b>one stack</b>, so it competes
             as one shot showing its best take. The obvious ones are stacked already.<br><br><b>Twin check</b> shows the pairs that look
             like the same shot but weren't stacked. Here, <b>⧉</b> opens a stack (keep a different take, split one out, split it
             all), and dragging one stack onto another merges them. <b>Z</b> undoes.`)}
         </div>
         <div class="screen-body">
-          ${shots.length ? `<div class="lookgrid gsec-tiles">${shotTiles(shots, null)}</div>` : `<div class="empty">No stacks: every shot stands alone.</div>`}
+          ${shots.length ? `<div class="lookgrid gsec-tiles">${shotTiles(shots, null, boxes)}</div>` : `<div class="empty">No stacks: every shot stands alone.</div>`}
         </div>
-        <aside class="screen-rail">
+        ${pairs.length ? `<aside class="screen-rail">
           <div class="rail-card grow"><h3>🧐 Possible twins</h3>
-            ${pairs.length ? `<div class="twin-list">${pairs.map((x) => `<a class="twin-row" href="#stacks?check=1" title="${Math.round(x.similarity * 100)}% alike">
-              <img src="${T(x.a)}" alt=""><span>≈</span><img src="${T(x.b)}" alt=""><span class="muted small">${Math.round(x.similarity * 100)}%</span></a>`).join("")}</div>`
-              : `<p class="muted small">None left to check.</p>`}</div>
-        </aside>
+            <div class="twin-list">${pairs.map((x) => `<a class="twin-row" href="#stacks?check=1" title="${Math.round(x.similarity * 100)}% alike">
+              <img src="${T(x.a)}" alt=""><span>≈</span><img src="${T(x.b)}" alt=""><span class="muted small">${Math.round(x.similarity * 100)}%</span></a>`).join("")}</div>
+          </div></aside>` : ''}
         <div class="screen-bar action-bar">
-          <div class="bar-left"><span class="muted small">⧉ opens a stack · drag a stack onto another to merge</span></div>
-          <div class="bar-mid"><button class="btn ghost" id="g-undo" ${undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> ${undo ? `Undo ${DRAW_WORD[undo] || undo}` : "Undo"}</button></div>
-          <div class="bar-right">${twins ? `<a class="btn primary big" href="#stacks?check=1">🎮 Twin check <span class="btn-sub">${fmt(twins)} to check</span> <kbd>Enter</kbd></a>`
-            : `<a class="btn primary big" href="#draw">Next: group them → <kbd>Enter</kbd></a>`}</div>
+          <div class="bar-left"><a class="btn ghost" href="#filter">← Filter</a></div>
+          <div class="bar-mid"><button class="btn ghost" id="g-undo" ${undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> <span class="desktop-label">${undo ? `Undo ${DRAW_WORD[undo] || undo}` : "Undo"}</span><span class="phone-label">Undo</span></button></div>
+          <div class="bar-right">${twins ? `<a class="btn primary big" href="#stacks?check=1">🎮 Twin check <span class="btn-sub">${fmt(twins)} to check</span> <kbd>Enter</kbd></a>` : ""}</div>
         </div>
       </div>`;
+    setForward(twins ? null : { label: "Next: Crown →", name: "Crown", href: "#duel?stage=stacks" });
     $("#g-undo").onclick = () => drawUndo(() => load(true));
+    $$("[data-stack-order]", main).forEach((b) => (b.onclick = async () => {
+      if (b.dataset.stackOrder === order) return;
+      order = b.dataset.stackOrder;
+      try { localStorage.setItem("matcher-stacks-order", order); } catch (_) { /* private mode */ }
+      main.innerHTML = LOADING();
+      await load(false,true);
+    }));
+    const body = $(".screen-body", main);
+    sizeFamilies();
+    body.onscroll = () => { if (body.scrollHeight-body.scrollTop-body.clientHeight < 500) moreStacks(); };
     const page = $(".stacker", main);
     page.onclick = (e) => {
       const t = e.target.closest("[data-expand],[data-keep],[data-split],[data-unstack],[data-reset],[data-view]");
@@ -3469,7 +3720,18 @@ async function stacksPage(main) {
       if (t.dataset.split) return act("/api/groups/split", { photo: Number(t.dataset.split) }, "Split out; it's its own shot now.");
       if (t.dataset.unstack) return act("/api/groups/unstack", { photo: Number(t.dataset.unstack) }, "Split apart into separate shots.");
       if (t.dataset.reset) return act("/api/groups/reset", { photos: [Number(t.dataset.reset)] }, "Back to automatic stacking.");
+      if (t.dataset.asideStack) return setAsideStack(Number(t.dataset.asideStack));
       if (t.dataset.view) return openViewer(Number(t.dataset.view));
+    };
+    // X, or the bar's button, sets a whole stack aside with every take (the Set aside page can bring it back).
+    const setAsideStack = (rep) => { const x = byRep.get(rep); if (!x) return; act("/api/filter/decision", { photos: x.members, action: "aside" }, `Set aside with all ${x.members.length} takes.`); };
+    S.onKey = (e) => {
+      if (e.repeat) return;
+      if (["z", "Z", "Backspace"].includes(e.key)) { e.preventDefault(); drawUndo(() => load(true)); return; }
+      if (e.key !== "x" && e.key !== "X") return;
+      const t = $(".tile.open", page) || document.activeElement?.closest?.(".tile") || $(".tile.picked", page);
+      if (!t?.dataset.sel) return;
+      e.preventDefault(); setAsideStack(Number(t.dataset.sel));
     };
     let drag = null;
     page.ondragstart = (e) => {
@@ -3480,6 +3742,9 @@ async function stacksPage(main) {
       e.dataTransfer.setData("text/plain", String(drag.id));
     };
     page.ondragover = (e) => {
+      // Dragging above or below the list scrolls it, from anywhere outside, not only a thin band at its edge.
+      const body = $(".screen-body", page);
+      if (drag && body) { const r = body.getBoundingClientRect(), edge = 48, up = r.top + edge - e.clientY, down = e.clientY - (r.bottom - edge); if (up > 0) body.scrollTop -= Math.min(36, up * .4); else if (down > 0) body.scrollTop += Math.min(36, down * .4); }
       const z = e.target.closest("[data-drop]");
       if (!z || !drag || (drag.kind === "shot" && Number(z.dataset.drop) === drag.id)) return;
       e.preventDefault();
@@ -3496,7 +3761,7 @@ async function stacksPage(main) {
     };
   }
   async function act(path, payload, msg) {
-    try { await api(path, payload); toast(`${msg} Z undoes it.`); Sound.play("pick"); } catch (e) { toast(e.message); return; }
+    try { await api(path, payload); toastOnce(msg, `${msg} Z undoes it.`); Sound.play("pick"); } catch (e) { toast(e.message); return; }
     await load(true);
     refreshHud(true);
   }
@@ -3509,9 +3774,13 @@ async function stacksPage(main) {
 // them), ← different. Same layout as every game screen.
 async function twinCheck(main) {
   const view = S.view;
-  let queue = [], done = 0, busy = false, shownAt = 0;
-  async function load() {
-    try { queue = (await api("/api/groups?view=suggest")).suggestions; } catch (e) {
+  let queue = [], done = 0, busy = false, shownAt = 0, total = 0;
+  async function load(reset=false) {
+    try {
+      const page=await api("/api/groups?view=suggest"),fresh=page.suggestions;total=page.counts?.suggest??fresh.length;
+      const key=x=>[x.a,x.b].sort((a,b)=>a-b).join(":"), by=new Map(fresh.map(x=>[key(x),x]));
+      queue=reset?fresh:[...queue.filter(x=>by.has(key(x))).map(x=>{const next=by.get(key(x));by.delete(key(x));return next;}),...by.values()];
+    } catch (e) {
       if (!left(view)) main.innerHTML = FAILED(e.message);
       return;
     }
@@ -3525,19 +3794,20 @@ async function twinCheck(main) {
   }
   function paintPair() {
     const x = queue[0];
+    World.calm(false); setForward(null);
     if (!x) {
       main.innerHTML = `
         <div class="screen no-rail twins">
-          <div class="screen-head"><h1>🎮 Twin check</h1><span class="stat-chip good"><b>0</b> pairs left</span>
+          <div class="screen-head"><h1>Twin check</h1><span class="stat-chip good"><b>0</b> pairs left</span>
             ${done ? `<span class="stat-chip"><b>${fmt(done)}</b> checked</span>` : ""}</div>
-          <div class="screen-body fill"><div class="empty"><div class="big-emoji">🧩</div><h2>All checked!</h2>
-            <p class="muted">Every likely twin is stacked or set apart. Next, every stack and shot goes into a themed group.</p></div></div>
-          <div class="screen-bar action-bar"><div class="bar-left"><a class="btn big" href="#stacks">The Stacks page</a></div>
-            <div class="bar-mid">${done ? `<button class="btn ghost" data-c="undo"><kbd>Z</kbd> Undo the last call</button>` : ""}</div>
-            <div class="bar-right"><a class="btn primary big" href="#draw">Next: group them → <kbd>Enter</kbd></a></div></div>
+          <div class="screen-body fill">${stageClearHtml({ icon: "🧩", title: "All checked!", clear: done > 0,
+            text: "Every likely twin is stacked or set apart. Next, each stack's takes duel for the one that plays on.", summary: done ? `${plural(done, "pair")} settled by you.` : "" })}</div>
+          <div class="screen-bar action-bar">${clearActionsHtml({ back: ["#stacks", "The Stacks page"], undo: done ? "Undo the last call" : null, undoAttr: 'data-c="undo"' })}</div>
         </div>`;
       $$("[data-c]", main).forEach((b) => (b.onclick = () => undo()));
-      if (done) { Sound.play("crown"); confetti(window.innerWidth / 2, window.innerHeight / 3, 50); }
+      setForward({ label: "Next: Crown →", name: "Crown", href: "#duel?stage=stacks" });
+      if (done) { Sound.play("crown"); confetti(window.innerWidth / 2, window.innerHeight / 3, 50); World.calm(true); }
+      setHint(`Enter continues to Crown.${done ? " Z undoes the last call." : ""}`);
       refreshHud(true);
       return;
     }
@@ -3546,25 +3816,25 @@ async function twinCheck(main) {
     main.innerHTML = `
       <div class="screen no-rail twins">
         <div class="screen-head">
-          <h1>🎮 Twin check</h1>
-          <span class="stat-chip"><b>${fmt(queue.length)}</b> ${queue.length === 1 ? "pair" : "pairs"} left</span>
-          <span class="stat-chip">${Math.round(x.similarity * 100)}% alike · ${apart}</span>
+          <h1>Twin check</h1>
+          <span class="stat-chip"><b>${fmt(Math.max(total, queue.length))}</b> ${Math.max(total, queue.length) === 1 ? "pair" : "pairs"} left</span>
+          <span class="stat-chip twin-evidence">${Math.round(x.similarity * 100)}% alike · ${apart}</span>
           <span class="grow"></span>
-          <a class="btn" href="#stacks" title="Back to the Stacks page (Esc)"><kbd>Esc</kbd> Done</a>
+          <a class="btn" href="#stacks" title="Back to the Stacks page">Done</a>
           ${helpBtn(`Two shots that look like <b>the same shot</b> (a crop, a copy, or a burst) but weren't stacked. <b>→</b> stacks them: they
-            compete as one shot showing its best take. <b>←</b> keeps them apart for good. Nothing is deleted. <b>Z</b> undoes, <b>Esc</b> leaves.`)}
+            compete as one shot showing its best take. <b>←</b> keeps them apart for good. Nothing is deleted. <b>Z</b> undoes, <b>Esc</b> opens the pause menu.`)}
         </div>
-        <div class="screen-body fill"><div class="twin-arena">
-          <div class="side" data-photo="${x.a}" data-box='${JSON.stringify(x.box_a || null)}'><img src="${P(x.a)}" alt="First shot" draggable="false"></div>
-          <div class="side" data-photo="${x.b}" data-box='${JSON.stringify(x.box_b || null)}'><img src="${P(x.b)}" alt="Second shot" draggable="false"></div>
+        <div class="screen-body fill twin-stage"><div class="twin-arena">
+          <div class="side" data-photo="${x.a}" tabindex="0" title="Point here and press X to toss"><div class="print"><img src="${P(x.a)}" alt="First shot" draggable="false"></div></div>
+          <div class="side" data-photo="${x.b}" tabindex="0" title="Point here and press X to toss"><div class="print"><img src="${P(x.b)}" alt="Second shot" draggable="false"></div></div>
         </div></div>
         <div class="screen-bar action-bar"><div class="bar-left"><button class="btn big toss-btn" data-c="no"><kbd>←</kbd> Different shots</button></div>
-          <div class="bar-mid"><button class="btn ghost" data-c="undo"><kbd>Z</kbd> Undo</button></div>
-          <div class="bar-right"><button class="btn big keep-btn" data-c="yes">Same shot: stack them <kbd>→</kbd></button></div></div>
+          <div class="bar-mid"><button class="btn ghost" data-c="skip"><kbd>Space</kbd> Skip</button><button class="btn ghost" data-c="undo"><kbd>Z</kbd> Undo</button></div>
+          <div class="bar-right"><button class="btn big keep-btn" data-c="yes">Same shot <kbd>→</kbd></button></div></div>
       </div>`;
-    $$("[data-c]", main).forEach((b) => (b.onclick = () => (b.dataset.c === "undo" ? undo() : call(b.dataset.c === "yes"))));
+    $$("[data-c]", main).forEach((b) => (b.onclick = () => (b.dataset.c === "undo" ? undo() : b.dataset.c === "skip" ? skip() : call(b.dataset.c === "yes"))));
     paintFilters();
-    shownAt = performance.now();
+    shownAt = playTime();
   }
   async function call(same) {
     const x = queue[0];
@@ -3574,25 +3844,39 @@ async function twinCheck(main) {
     const arena = $(".twin-arena");
     if (arena) arena.classList.add(same ? "merge" : "apart");
     try {
-      if (same) await api("/api/groups/merge", { photos: [x.a, x.b] });
-      else await api("/api/groups/dismiss", { a: x.a, b: x.b });
-      floatText("+2 XP", arena);
+      const reply = same ? await api("/api/groups/merge", { photos: [x.a, x.b] }) : await api("/api/groups/dismiss", { a: x.a, b: x.b });
+      if(left(view))return;
+      if(reply.game){updateHudQuiet(reply.game);paintSaveChip();}
+      floatText(same ? "+5 XP" : "+2 XP", arena);
     } catch (e) { toast(e.message); busy = false; return load(); }
     await sleep(reduceMotion ? 0 : 220);
+    if (left(view)) return;
     done++;
     busy = false;
     if (same) return load();  // stacking changes which pairs are left
     queue.shift();
     paint();
   }
-  function undo() { if (!busy) drawUndo(load); }
+  function skip() {
+    if (busy || !queue.length) return;
+    if (queue.length<2) { location.hash="stacks"; return; }
+    queue.push(queue.shift()); Sound.play("skip"); paint();
+  }
+  async function toss() {
+    const target=gamePhotoTarget($(".twin-arena")); if(busy||!target)return; busy=true;
+    try { await api("/api/draw/toss",{photo:Number(target.dataset.photo)}); if(!left(view)){Sound.play("toss");await load();} }
+    catch(error){if(!left(view))toast(error.message);}finally{busy=false;}
+  }
+  function undo() { if (!busy) drawUndo(()=>load(true)); }
   S.onKey = (e) => {
     if (e.repeat) return;
     const k = e.key;
     if (k === "Escape") { e.preventDefault(); location.hash = "#stacks"; }
-    else if (!queue[0] && k === "Enter") { e.preventDefault(); location.hash = "#draw"; }
+    else if (!queue[0] && k === "Enter") { e.preventDefault(); location.hash = "#duel?stage=stacks"; }
     else if (k === "ArrowRight" || k === "Enter" || k === "d" || k === "D") { e.preventDefault(); call(true); }
     else if (k === "ArrowLeft" || k === "a" || k === "A") { e.preventDefault(); call(false); }
+    else if (k === " ") { e.preventDefault(); skip(); }
+    else if (k.toLowerCase() === "x") { e.preventDefault(); toss(); }
     else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); undo(); }
     else if (k === "f" || k === "F") { e.preventDefault(); toggleFilter(); }
   };
@@ -3603,11 +3887,10 @@ async function twinCheck(main) {
 // ---------------------------------------------------------------- the Draw: themed groups
 // Every shot goes into a themed group: pick a starter (it comes with a name), then call the likely matches it deals
 // (in, out, or "same shot": stacked). Groups play the group stage; their winners the knockouts. Z undoes anything.
-const DRAW_WORD = { "new group": "new group", add: "add", "not this one": "skip", twin: "twin stack", "bulk add": "batch",
+const DRAW_WORD = { edit: "touch-up", "new group": "new group", add: "add", "not this one": "skip", twin: "twin stack", "bulk add": "batch",
   rename: "rename", emoji: "emoji change", toss: "toss", tags: "tag change", reorder: "reorder", "auto-draw": "auto-group", place: "placement", "to the wildcards": "wildcard",
   move: "move", unsort: "move", "merge groups": "group merge", dissolve: "dissolve", merge: "stack merge", split: "split",
   unstack: "split-apart", reset: "reset", keep: "take pick", "not twins": "not-twins call", "best guesses": "best guesses" };
-const GROUPS_CAP = Math.max(3000, (navigator.deviceMemory || 4) * 2500);  // images on a board before it pauses
 
 const EMOJIS = ["🏖️", "🌅", "🏔️", "🌲", "💧", "❄️", "🌸", "☁️", "🏜️", "🦋", "🌧️", "🌈", "🌊", "🍂", "🌙", "⭐",
   "🏙️", "🌃", "🏛️", "🚶", "⚓", "✈️", "🛣️", "🏎️", "🛋️", "🐶", "🐱", "🐦", "🦒", "🍝", "🍰", "☕", "🍹", "🍳", "🎂",
@@ -3651,7 +3934,7 @@ function emojiPicker(anchor, pick) {
   document.body.append(pop);
   const r = anchor.getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
-  pop.style.top = `${r.bottom + 8 + window.scrollY}px`;
+  pop.style.top = `${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
   const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); document.removeEventListener("keydown", esc, true); };
   const away = (e) => { if (!pop.contains(e.target) && e.target !== anchor) close(); };
   const esc = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); anchor.focus(); } };
@@ -3686,27 +3969,30 @@ function emojiPicker(anchor, pick) {
 }
 
 // "?" in a screen's top strip: the explanation a page would spell out in a paragraph, there when you want it.
-const helpBtn = (html) => `<button class="help-btn" data-help="${esc(html)}" aria-label="How this works" aria-expanded="false">?</button>`;
+const helpBtn = (html) => `<button class="help-btn" data-help="${esc(html + "<br><br><b>WASD</b> = arrow keys · <b>Space</b> skips · <b>Z</b> undoes · <b>X</b> tosses the focused photo · <b>C</b> auto-crops · <b>F</b> enhances.")}" aria-label="How this works" aria-expanded="false">?</button>`;
+function closeHelp(focus=false) {
+  const source=$("[data-help][aria-expanded=true],#game-help[aria-expanded=true]");
+  $$(".help-pop").forEach(pop=>pop.remove());
+  $$("[data-help][aria-expanded=true],#game-help[aria-expanded=true]").forEach(b=>b.setAttribute("aria-expanded","false"));
+  if(focus)source?.focus();
+}
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest("[data-help]");
   const open = $(".help-pop");
-  if (open && (!b || open.dataset.for === b.dataset.help)) {
-    open.remove();
-    $$("[data-help][aria-expanded=true]").forEach((x) => x.setAttribute("aria-expanded", "false"));
-    if (!b) return;
-    if (open.dataset.for === b.dataset.help) return;
-  }
+  const same=open&&b&&open.dataset.for===b.dataset.help;
+  if(open)closeHelp();
+  if(same)return;
   if (!b) return;
-  const pop = document.createElement("div");
-  pop.className = "help-pop";
-  pop.dataset.for = b.dataset.help;
-  pop.innerHTML = b.dataset.help;
-  document.body.append(pop);
-  const r = b.getBoundingClientRect();
-  pop.style.left = `${Math.max(8, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 8))}px`;
-  pop.style.top = `${r.bottom + 8 + window.scrollY}px`;
-  b.setAttribute("aria-expanded", "true");
+  showHelp(b.dataset.help,b);
 });
+function showHelp(html,anchor) {
+  if(!html||!anchor)return;closeHelp();
+  const pop=document.createElement('div');pop.className='help-pop';pop.dataset.for=html;pop.innerHTML=html;document.body.append(pop);
+  const r=anchor.getBoundingClientRect();
+  pop.style.left=`${Math.max(8,Math.min(r.right-pop.offsetWidth,innerWidth-pop.offsetWidth-8))}px`;
+  pop.style.top=`${Math.max(8,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
+  anchor.setAttribute('aria-expanded','true');
+}
 
 // Swap a button for a text box in place; save(text) on Enter or blur (null if unchanged), Esc keeps the old one.
 function inlineRename(btn, current, save, opt = {}) {
@@ -3734,13 +4020,15 @@ let drawUndoing = false;
 async function drawUndo(after) {
   if (drawUndoing) return;
   drawUndoing = true;
+  const view = S.view;
   try {
     const r = await api("/api/draw/undo", {});
+    if (left(view)) return;
     Sound.play("undo");
-    toast(`Undid the ${DRAW_WORD[r.undone] || r.undone}.${r.next ? " Z again for the one before." : ""}`);
+
     if (after) await after(r);
-  } catch (e) { toast(e.message); }
-  drawUndoing = false;
+  } catch (e) { if (!left(view)) toast(e.message); }
+  finally { drawUndoing = false; }
 }
 
 // A card you can fling or carry: let go over a group bin and it drops there; otherwise a fling past a third of its
@@ -3769,10 +4057,15 @@ function carryable(el, { right, left, up, drop }) {
     const b = drop ? binAt(e.clientX, e.clientY) : null;
     if (b !== hot) { hot?.classList.remove("hot"); hot = b; hot?.classList.add("hot"); el.classList.toggle("over-bin", !!b); }
   });
-  const end = () => {
+  const end = (e) => {
     if (x0 == null) return;
     x0 = null;
     el.classList.remove("held", "over-bin");
+    if (e.type === "pointercancel") {
+      hot?.classList.remove("hot"); hot = null;
+      el.style.transform = ""; el.style.setProperty("--keep", 0); el.style.setProperty("--toss", 0);
+      return;
+    }
     if (hot) { const id = hot.dataset.bin; hot.classList.remove("hot"); hot = null; drop(id); return; }
     if (up && -dy > Math.min(140, el.clientHeight / 4) && Math.abs(dy) > Math.abs(dx)) up();
     else if (right && dx > Math.min(140, el.clientWidth / 3)) right();
@@ -3785,14 +4078,16 @@ function carryable(el, { right, left, up, drop }) {
 
 // Every group as a numbered bin (stable order: the order they were made), plus "new group". `fits` stars the groups
 // this shot is most like. Keys: the number (two digits for 10+), N for new.
-function binsHtml(bins, current, fits) {
+function binsHtml(bins, current, fits, focusable = false) {
   return bins.map((g, i) => `
-    <div class="bin ${g.id === current ? "current" : ""} ${fits && fits[0] === g.id ? "fit" : ""}" data-bin="${g.id}" role="button" tabindex="0"
+    <div class="bin ${g.id === current ? "current" : ""} ${fits && fits[0] === g.id ? "fit" : ""}" data-bin="${g.id}" role="group" tabindex="-1"
       title="${esc(g.name)}: ${plural(g.size, "shot")}. ${groupKeyLabel(i) ? `Key ${groupKeyLabel(i)}` : "Drag here"}${g.id === current ? " (or →)" : ""}">
-      <span class="bin-n">${groupKeyLabel(i)}</span><img src="${T(g.cover)}" alt="" loading="lazy">
-      <span class="bin-name"><span class="bin-emoji" data-emoji-bin="${g.id}" role="button" title="Change the emoji">${esc(g.emoji || "🗂️")}</span>
-        <span class="bin-label">${g.id === current ? "This group" : esc(g.name)}</span></span><span class="bin-size">${fmt(g.size)}</span>
-      <span class="bin-edit" data-rename-bin="${g.id}" role="button" title="Rename" aria-label="Rename ${esc(g.name)}">✏️</span>
+      <button class="bin-place" aria-label="${esc(g.name)}"><span class="bin-n">${groupKeyLabel(i)}</span><img src="${T(g.cover)}" alt="" loading="lazy">
+        <span class="bin-name"><span class="bin-label">${g.id === current ? "This group" : esc(g.name)}</span>
+        ${g.adv ? `<small>· ${g.adv} through</small>` : ""}</span><span class="bin-size">${fmt(g.size)}</span></button>
+      <button class="bin-emoji" data-emoji-bin="${g.id}" title="Change the emoji" aria-label="Change emoji for ${esc(g.name)}">${esc(g.emoji || "🗂️")}</button>
+      <button class="bin-edit" data-rename-bin="${g.id}" title="Rename" aria-label="Rename ${esc(g.name)}">✏️</button>
+      ${focusable && g.size ? `<button class="btn ghost bin-focus" data-focus-bin="${g.id}" aria-label="Focus ${esc(g.name)}" aria-pressed="false">Focus</button>` : ""}
       ${fits && fits[0] === g.id ? `<span class="bin-star" title="Looks most like this group">★</span>` : ""}
     </div>`).join("") + `
     <div class="bin new" data-bin="new" role="button" tabindex="0" title="Start a new group from this shot (N)"><span class="bin-n">N</span>
@@ -3863,22 +4158,24 @@ function binTools(e, binEl, group, redraw) {
   }
   return false;
 }
-// Bins are role=button: Enter or Space on a focused one (not on the text box inside) drops the photo there.
+// Arrow navigation can focus the group itself; its separate buttons also work with the keyboard.
 document.addEventListener("keydown", (e) => {
-  const b = e.target.closest && e.target.closest(".bin[role=button]");
+  const b = e.target.closest && e.target.closest(".bin");
   if (b && e.target === b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); b.click(); }
 }, true);
 
-// Rename a group from its bin in a side list: the name turns into a text box; Enter saves, Esc keeps it.
+// The editor sits over the bin, outside its buttons, so typing never places a photo.
 function renameBin(binEl, group, done) {
-  const name = binEl.querySelector(".bin-label");
-  if (!name || binEl.querySelector(".bin-input")) return;
+  if (!group || $(".bin-editor")) return;
+  const view = S.view, rect = binEl.getBoundingClientRect(), editor = document.createElement("div");
+  editor.className = "bin-editor";
+  editor.style.cssText = `left:${Math.max(8,Math.min(innerWidth-220,rect.left))}px;top:${Math.max(8,Math.min(innerHeight-60,rect.top))}px;width:${Math.min(rect.width,innerWidth-16)}px`;
   const inp = document.createElement("input");
   inp.className = "bin-input";
   inp.maxLength = 60;
   inp.value = group.name;
   inp.setAttribute("aria-label", "Group name");
-  name.replaceWith(inp);
+  editor.append(inp); document.body.append(editor);
   inp.focus();
   inp.select();
   let over = false;
@@ -3889,7 +4186,8 @@ function renameBin(binEl, group, done) {
     if (save && v && v !== group.name) {
       try { await api("/api/draw/rename", { theme: group.id, name: v }); group.name = v; toast("Renamed. Z undoes it."); } catch (e) { toast(e.message); }
     }
-    done();
+    editor.remove();
+    if (!left(view)) done();
   };
   for (const ev of ["click", "pointerdown", "keyup", "keypress"]) inp.addEventListener(ev, (e) => e.stopPropagation());
   inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") finish(true); else if (e.key === "Escape") finish(false); };
@@ -3902,8 +4200,8 @@ const groupKeyLabel = (i) => {
   return n <= 10 ? d : n <= 20 ? `Alt ${d}` : n <= 30 ? `Alt⇧${d}` : "";
 };
 function groupKey(e) {  // the group index a key press picks, or null
-  if (!/^Digit[0-9]$/.test(e.code) || e.ctrlKey || e.metaKey || (e.shiftKey && !e.altKey)) return null;
-  const d = Number(e.code.slice(5)), n = (d === 0 ? 10 : d) + (e.altKey ? (e.shiftKey ? 20 : 10) : 0);
+  if (!/^(Digit|Numpad)[0-9]$/.test(e.code) || e.ctrlKey || e.metaKey || (e.shiftKey && !e.altKey)) return null;  // the numpad counts too
+  const d = Number(e.code.slice(-1)), n = (d === 0 ? 10 : d) + (e.altKey ? (e.shiftKey ? 20 : 10) : 0);
   return n - 1;
 }
 
@@ -3913,48 +4211,148 @@ function viewDraw(main, params) {
   return drawSorter(main, params.get("g"));
 }
 
+// Every tag has an editable roster and a finite set of borderline calls to teach it.
+async function viewTags(main, params) {
+  const view = S.view, play = params.get("play");
+  main.innerHTML = LOADING();
+  let data;
+  try { data = await api("/api/tags?all=1"); await World.allPhotos(); }
+  catch (e) { if (!left(view)) main.innerHTML = FAILED(e.message); return; }
+  if (left(view)) return;
+  const list = data.tags.sort((a,b)=>b.count-a.count || a.label.localeCompare(b.label));
+  let key = play || params.get("key") || list[0]?.key, shown = 80, busy = false;
+  if (!list.some((t)=>t.key===key)) key=list[0]?.key;
+  const update = (r) => { if (r.game) { updateHudQuiet(r.game); paintSaveChip(); } };
+  const act = async (path, body, message) => {
+    if (busy) return; busy = true;
+    try { const r=await api(path,body);update(r); if (!left(view)) { toast(message); viewTags(main, new URLSearchParams({key: r.key || body.key || key || ""})); } }
+    catch (e) { if (!left(view)) toast(e.message); }
+    finally { busy = false; }
+  };
+  if (play) {
+    const tag = list.find((t)=>t.key===play);
+    if (!tag) { location.hash = "#tags"; return; }
+    let cards;
+    try { cards = (await api(`/api/tags/deck?key=${encodeURIComponent(play)}`)).cards; }
+    catch(e) { if (!left(view)) main.innerHTML=FAILED(e.message); return; }
+    if (left(view)) return;
+    let index=0, calls=[];
+    main.innerHTML=`<div class="screen tag-game no-rail"><div class="screen-head"><h1>🏷️ Tag check</h1><span id="tag-count" class="stat-chip"></span><span class="grow"></span>
+      ${helpBtn("Does the tag describe this photo? → or Enter adds it; ← removes it. Z undoes your last call. Esc opens the pause menu.")}</div>
+      <div class="screen-body tag-call" id="tag-call"></div><div class="screen-bar action-bar">
+      <div class="bar-left"><button class="btn ghost" id="tag-skip"><kbd>Space</kbd> Skip</button><button class="btn ghost" id="tag-undo" hidden>Undo <kbd>Z</kbd></button></div>
+      <div class="bar-mid"><button class="btn danger" id="tag-no">Doesn't fit <kbd>←</kbd></button></div><div class="bar-right"><button class="btn primary big" id="tag-yes">Fits <kbd>→</kbd></button></div></div></div>`;
+    const paint = () => {
+      const c=cards[index]; $("#tag-count").textContent=`${index} of ${cards.length} checked`;
+      $("#tag-undo").hidden=!calls.length; $("#tag-skip").hidden=$("#tag-no").hidden=$("#tag-yes").hidden=!c;
+      $("#tag-call").innerHTML=c ? `<h2>Is this ${esc(tag.emoji || "🏷️")} ${esc(tag.label)}?</h2><div class="print"><img src="${P(c.photo)}" alt="Photo to check"></div>
+        `
+        : `<div class="empty"><div class="clear-stamp">All checked</div><p>Your calls override automatic guesses.</p><a class="btn primary" href="#tags?key=${encodeURIComponent(play)}">See the tag's photos →</a></div>`;
+    };
+    const call = async (yes) => {
+      const c=cards[index]; if (!c || busy) return; busy=true;
+      try { update(await (yes === "toss" ? api("/api/draw/toss",{photo:c.photo}) : api("/api/tags/set",{photos:[c.photo],on:yes?[play]:[],off:yes?[]:[play]})));
+        if (left(view)) return; calls.push(index++); Sound.play(yes===true?"keep":"toss"); paint(); }
+      catch(e) { if (!left(view)) toast(e.message); } finally {busy=false;}
+    };
+    const undo = async () => { if (!calls.length || busy) return; busy=true;
+      try { update(await api("/api/draw/undo",{})); if (!left(view)) {index=calls.pop();paint();} }
+      catch(e) { if (!left(view)) toast(e.message); } finally {busy=false;}
+    };
+    const skip=()=>{if(busy||!cards[index])return;if(cards.length-index<2){location.hash=`#tags?key=${encodeURIComponent(play)}`;return;}
+      cards.push(cards.splice(index,1)[0]);Sound.play("skip");paint();};
+    $("#tag-skip").onclick=skip;
+    $("#tag-yes").onclick=()=>call(true); $("#tag-no").onclick=()=>call(false); $("#tag-undo").onclick=undo;
+    S.onKey=(e)=>{if(e.repeat)return; if(["ArrowRight","Enter","ArrowLeft"," ","x","X","z","Z","Escape"].includes(e.key))e.preventDefault();
+      if(e.key==="ArrowRight"||e.key==="Enter") cards[index]?call(true):location.hash=`#tags?key=${encodeURIComponent(play)}`;
+      else if(e.key==="ArrowLeft")call(false); else if(e.key===" ")skip(); else if(e.key.toLowerCase()==="x")call("toss"); else if(e.key==="z"||e.key==="Z")undo(); else if(e.key==="Escape")location.hash=`#tags?key=${encodeURIComponent(play)}`;};
+    paint(); return;
+  }
+  main.innerHTML=`<div class="screen tags-page"><div class="screen-head"><h1>🏷️ Tags</h1><span class="stat-chip">${plural(list.length,"tag")}</span><span class="grow"></span>
+      ${helpBtn("Every recognition becomes a tag. Rename people, combine duplicate tags, or correct the machine. Select tags in the sea to gather their photos. Every edit can be undone with Z.")}</div>
+    <div class="screen-body tag-roster" id="tag-roster"></div><aside class="screen-rail"><label>Find a tag<input class="hint-input" id="tag-search" type="search"></label>
+      <div class="tag-list" id="tag-list"></div><form id="tag-new"><label>New tag<input class="hint-input" name="label" maxlength="40" required></label><button class="btn">＋ Create tag</button></form></aside>
+    <div class="screen-bar action-bar"><div class="bar-left"><a class="btn" href="#draw">Groups</a><button class="btn ghost" id="tags-undo">Undo <kbd>Z</kbd></button></div>
+      <div class="bar-mid"></div><div class="bar-right"><a class="btn primary big" id="tag-play">Check this tag → <kbd>Enter</kbd></a></div></div></div>`;
+  const paintList=()=> { const q=$("#tag-search").value.toLowerCase(); $("#tag-list").innerHTML=list.filter((t)=>t.label.toLowerCase().includes(q))
+    .map((t)=>`<button class="tag-row ${t.key===key?"on":""}" data-tag="${esc(t.key)}"><span>${esc(t.emoji || "🏷️")} ${esc(t.label)}</span><b>${fmt(t.count)}</b></button>`).join("");
+    $$("[data-tag]",main).forEach((b)=>b.onclick=()=>{key=b.dataset.tag;shown=80;paintList();paint();}); };
+  const paint=()=>{
+    const t=list.find((t)=>t.key===key), roster=$("#tag-roster");
+    $("#tag-play").hidden=!t;
+    if(!t){roster.innerHTML=`<div class="empty">Create a tag to begin.</div>`;return;}
+    $("#tag-play").href=`#tags?play=${encodeURIComponent(key)}`;
+    const photos=[...World.photos.values()].filter((p)=>p.tags.includes(key));
+    roster.innerHTML=`<div class="tag-edit" data-solid><form id="tag-edit"><button type="button" class="btn" id="tag-emoji">${esc(t.emoji||"🏷️")}</button>
+      <label>Name<input class="hint-input" name="label" value="${esc(t.label)}" maxlength="40" required></label><button class="btn">Save name</button></form>
+      <div class="row wrap"><label>Merge into<select id="tag-merge"><option value="">Choose a tag…</option>
+        ${list.filter((x)=>x.key!==key).map((x)=>`<option value="${esc(x.key)}">${esc(x.emoji||"🏷️")} ${esc(x.label)}</option>`).join("")}</select></label><button class="btn ghost danger" id="tag-delete">Delete tag</button></div>
+      <p class="muted">${plural(photos.length,"photo")} · includes takes and photos set aside</p></div>
+      <div class="grid tag-photos">${photos.slice(0,shown).map((p)=>`<button class="tag-photo ${p.cut?"dim":""}" type="button" data-tag-photo="${p.id}" aria-label="Open photo"><img src="${T(p.id)}" alt="" loading="lazy" draggable="false"></button>`).join("")}</div>
+      ${photos.length>shown?`<button class="btn" id="tag-more">More photos (${fmt(photos.length-shown)} left)</button>`:""}`;
+    $("#tag-edit").onsubmit=(e)=>{e.preventDefault();act("/api/tags/meta",{key,label:new FormData(e.target).get("label")},"Renamed. Z undoes it.");};
+    $("#tag-emoji").onclick=(e)=>emojiPicker(e.currentTarget,(emoji)=>act("/api/tags/meta",{key,emoji},"New emoji. Z undoes it."));
+    $("#tag-merge").onchange=(e)=>{if(e.target.value)act("/api/tags/merge",{source:key,key:e.target.value},"Tags merged. Z undoes it.");};
+    $("#tag-delete").onclick=()=>act("/api/tags/delete",{source:key},"Deleted. Z restores the tag.");
+    $$("[data-tag-photo]",roster).forEach((b)=>b.onclick=()=>World.inspect(Number(b.dataset.tagPhoto)));
+    if($("#tag-more"))$("#tag-more").onclick=()=>{shown+=80;paint();};
+  };
+  $("#tag-search").oninput=paintList;
+  $("#tag-new").onsubmit=(e)=>{e.preventDefault();act("/api/tags/new",{label:new FormData(e.target).get("label"),photos:[]},"Tag created. Z undoes it.");};
+  $("#tags-undo").onclick=()=>act("/api/draw/undo",{},"Undone.");
+  S.onKey=(e)=>{if(e.key==="z"||e.key==="Z"){e.preventDefault();$("#tags-undo").click();}else if(e.key==="Enter"){e.preventDefault();$("#tag-play").click();}};
+  paintList();paint();
+}
+
+// Real takes peek out from under the kept print. Stable offsets keep a pile still while you reach for it.
+function pilePhotos(rep, members = []) {
+  return members.filter((p)=>p!==rep).slice(0,4).reverse().map((p,i)=>`<img class="pile-take under" src="${T(p)}" alt="" loading="lazy" draggable="false"
+    style="--pile-x:${[5,-6,7,-3][i]}%;--pile-y:${[4,-3,-5,6][i]}%;--pile-turn:${[7,-8,3,-4][i]}deg;--pile-z:${i}">`).join("");
+}
+const fanStyle = (i,n) => `--i:${i};--fan-turn:${Math.max(-12,Math.min(12,(i-(n-1)/2)*4))}deg;--fan-y:${Math.min(16,Math.abs(i-(n-1)/2)*2)}px`;
 // A shot (or a stack, ⧉ n) as a tile: click selects it, drag it onto another to stack them, ⤢ views it larger.
-function shotTile(x, selected) {
+function shotTile(x, selected, boxes = null) {
   const on = selected && selected.has(x.rep);
   return `
     <div class="tile pick ${on ? "picked" : ""} ${x.members.length > 1 ? "stacked" : ""}" data-sel="${x.rep}" draggable="true" data-drag-shot="${x.rep}"
-      data-drop="${x.rep}" tabindex="0" role="button" aria-pressed="${!!on}" title="${x.taken ? esc(x.taken.replace("T", " ")) : "no date"}">
-      <img src="${T(x.rep)}" alt="Shot" loading="lazy" draggable="false" style="${facePos(x.box)}">
+      data-drop="${x.rep}" role="group" title="${x.taken ? esc(x.taken.replace("T", " ")) : "no date"}">
+      <button class="shot-select" aria-label="Select shot" aria-pressed="${!!on}">${pilePhotos(x.rep,x.members)}<img class="pile-cover" src="${T(x.rep)}" alt="Shot" loading="lazy" draggable="false" data-box="${esc(JSON.stringify(boxes?.[x.rep] || null))}">${selected ? `<span class="shot-selected" aria-hidden="true" title="Selected" ${on ? "" : "hidden"}>✓</span>` : ""}</button>
       ${x.members.length > 1 ? `<span class="kept-crown" title="The take that stands in for this stack">👑</span>
         <button class="badge expand" data-expand="${x.rep}" title="Show all ${x.members.length} takes" aria-expanded="false">⧉ ${x.members.length}</button>` : ""}
       ${x.solo ? `<button class="rank undo-split" data-reset="${x.rep}" title="Hand it back to automatic stacking">split by you · undo</button>` : ""}
       <button class="zoom" data-view="${x.rep}" title="View larger" aria-label="View larger">⤢</button>
     </div>`;
 }
-function shotTiles(list, selected) {  // consecutive look-alikes (2+) share a dashed box
+function shotTiles(list, selected, boxes = null) {  // consecutive look-alikes (2+) share a dashed box
   const out = [];
   for (const x of list) {
     const last = out[out.length - 1];
     if (x.family != null && last && last.family === x.family) last.items.push(x);
     else out.push({ family: x.family, items: [x] });
   }
-  return out.map((k) => (k.items.length > 1 ? `<div class="fam-tiles">${k.items.map((x) => shotTile(x, selected)).join("")}</div>`
-    : shotTile(k.items[0], selected))).join("");
+  return out.map((k) => (k.items.length > 1 ? `<div class="fam-tiles">${k.items.map((x) => shotTile(x, selected, boxes)).join("")}</div>`
+    : shotTile(k.items[0], selected, boxes))).join("");
 }
-// A stack opens down its own column: the kept take on top, the other takes beneath (keep one, split one out, split all).
-function expandStack(root, x, btn, boxes) {
+// Open the pile into a fan: overlapping prints, every take reachable to keep or split out.
+function expandStack(root, x, btn, boxes, reveal = true) {
   const t = btn.closest(".tile");
   const open = t.classList.contains("open");
   $$(".tile.open", root).forEach((o) => { o.classList.remove("open"); o.style.gridRow = ""; $(".tile-frames", o)?.remove(); $("[data-expand]", o)?.setAttribute("aria-expanded", "false"); });
   if (open || !x) return;
   t.classList.add("open");
   btn.setAttribute("aria-expanded", "true");
-  if (getComputedStyle(t.parentElement).display === "grid") t.style.gridRow = `span ${x.members.length}`;
   t.insertAdjacentHTML("beforeend", `
     <div class="tile-frames">
-      <div class="tile-frames-bar"><a class="btn primary crown-btn" href="#duel?stack=${x.rep}" title="Play this stack's mini-tournament">👑 Crown</a>
-        <button class="btn" data-unstack="${x.rep}" title="Split the whole stack into separate shots">Split all</button></div>
-      ${x.members.filter((m) => m !== x.rep).map((m) => `
-        <div class="ftile" draggable="true" data-drag-frame="${m}" title="Drag onto another shot to move this take">
-          <img src="${T(m)}" alt="Take" loading="lazy" data-view="${m}" draggable="false" style="${facePos(boxes[m])}">
-          <div class="ftile-actions"><button data-keep="${m}">Keep</button><button data-split="${m}">Split out</button></div>
-        </div>`).join("")}
+      <div class="tile-frames-bar">${x.crownable!==false?`<a class="btn primary crown-btn" href="#duel?stack=${x.rep}" title="Play this stack's mini-tournament">👑 Crown</a>`:""}
+        <button class="btn" data-unstack="${x.rep}" title="Split the whole stack into separate shots">Split all</button>
+        <button class="btn ghost" data-aside-stack="${x.rep}" title="Set this stack aside with all its takes (X)">🗑 Set aside <kbd>X</kbd></button></div>
+      <div class="photo-fan" style="--takes:${x.members.length}">${x.members.map((m,i) => `
+        <div class="ftile ${m===x.rep?'kept':''}" style="${fanStyle(i,x.members.length)}" draggable="true" data-drag-frame="${m}" title="Drag onto another shot to move this take" tabindex="0">
+          <img src="${T(m)}" alt="Take" loading="lazy" data-view="${m}" draggable="false" data-box="${esc(JSON.stringify(boxes?.[m] || null))}">
+          <div class="ftile-actions">${m===x.rep?'<span>👑 Kept</span>':`<button data-keep="${m}">Keep</button>`}<button data-split="${m}">Split out</button>${photoPathButton(m)}</div>
+        </div>`).join("")}</div>
     </div>`);
+  if(reveal)requestAnimationFrame(()=>{if(t.isConnected)t.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});});
 }
 
 // The Groups page: every group (and the unsorted pile) as a section of its shots, all editable in place. Drag photos
@@ -3967,30 +4365,80 @@ async function drawSorter(main, focus) {
   // 🌊 sea: every photo floating, groups as islands (the default on a big screen); ▦ list: sections of tiles
   let mode = (() => { try { return localStorage.getItem("matcher-groups-view"); } catch (_) { return null; } })() || (innerWidth >= 900 ? "sea" : "list");
   const byRep = new Map();
-  async function load(keep) {
-    const y = ($("#sections", main) || {}).scrollTop || 0;
-    const q = mode === "sea" ? "per=400&uper=600&tags=1" : `per=24${full.size ? `&full=${[...full].join(",")}` : ""}`;
-    try { b = await api(`/api/draw/board?${q}`); } catch (e) {
-      if (!left(view)) main.innerHTML = FAILED(e.message);
-      return;
-    }
-    if (left(view)) return;
-    if (b.game) { Ach.check(b.game); S.game = b.game; paintSaveChip(); }
-    byRep.clear();
-    [b.unsorted, ...b.groups].forEach((g) => g.shots.forEach((x) => byRep.set(x.rep, x)));
-    for (const r of [...selected]) if (!byRep.has(r)) selected.delete(r);
-    if (mode === "sea") return renderSea();
-    if (sea) { sea = null; World.setMode("dim"); }  // (the world sea lives on; it just stops being worked here)
-    render();
-    if (keep) $("#sections", main).scrollTop = y;
-    else if (focus) $(`#gsec-${focus}`)?.scrollIntoView({ block: "start" });
+  let loadEpoch = 0, listPages = 1, openedStack = null;
+  const matchingShot = (rows, members, rep) => {
+    const ids=new Set(members);
+    return rows.map(shot=>({shot,n:shot.members.filter(m=>ids.has(m)).length})).filter(x=>x.n)
+      .sort((a,b)=>b.n-a.n||Number(b.shot.rep===rep)-Number(a.shot.rep===rep))[0]?.shot;
+  };
+  async function load(keep, edit = null) {
+    const epoch = ++loadEpoch, body=$("#sections",main), y=body?.scrollTop||0;
+    const expanded=keep&&(byRep.get(Number($(".tile.open[data-sel]",body||main)?.dataset.sel))||openedStack);
+    const members=expanded?.members.filter(m=>m!==edit?.split);
+    const edge=body?.getBoundingClientRect(),visible=keep&&edge?$$(".tile[data-sel]",body)
+      .map(el=>({shot:byRep.get(Number(el.dataset.sel)),box:el.getBoundingClientRect()}))
+      .filter(x=>x.shot&&x.box.bottom>edge.top&&x.box.top<edge.bottom)
+      .sort((a,b)=>Number(b.shot===expanded)-Number(a.shot===expanded)||Math.abs(a.box.top-edge.top)-Math.abs(b.box.top-edge.top))[0]:null;
+    const anchor=visible&&{members:visible.shot===expanded?members:visible.shot.members,rep:visible.shot.rep,offset:visible.box.top-edge.top};
+    const circles = Number(localStorage.getItem("matcher-circles") || 6);
+    const q = mode === "sea" ? `per=400&uper=600&tags=1&circles=${circles}` : `per=24${full.size ? `&full=${[...full].join(",")}` : ""}`;
+    try {
+      const [board, allTags] = await Promise.all([api(`/api/draw/board?${q}`), mode==="sea"?api("/api/tags?all=1"):Promise.resolve(null)]);
+      if (left(view) || epoch !== loadEpoch) return;
+      b = board; if(allTags)b.allTags=allTags;
+      if(mode==="list"){
+        const loaded=keep?listPages:1;let page=0;
+        const rows=()=>[b.unsorted,...b.groups].flatMap(g=>g.shots);
+        // A changed cover can sort onto a later page. Find the remaining stack before rebuilding its fan.
+        while(b.more&&(page+1<loaded||members?.length&&!matchingShot(rows(),members,expanded.rep))){
+          const next=await api(`/api/draw/board?${q}&page=${++page}`);
+          if(left(view)||epoch!==loadEpoch)return;
+          for(const g of [b.unsorted,...b.groups]){
+            const add=g===b.unsorted?next.unsorted:next.groups.find(x=>x.id===g.id),seen=new Set(g.shots.map(x=>x.rep));
+            if(add)g.shots.push(...add.shots.filter(x=>!seen.has(x.rep)));
+          }
+          Object.assign(b.boxes,next.boxes);b.more=next.more;
+        }
+        listPages=page+1;
+      }
+      if (b.game) { Ach.check(b.game); S.game = b.game; paintSaveChip(); }
+      const paint = () => {
+        byRep.clear(); [b.unsorted, ...b.groups].forEach((g) => g.shots.forEach((x) => byRep.set(x.rep, x)));
+        if (mode === "sea") renderSea(); else { if (sea) { sea = null; World.setMode("dim"); } render(); }
+      };
+      paint();
+      if (mode === "sea") {
+        let page = 0;
+        while (b.more && !left(view) && epoch === loadEpoch) {
+          const next = await api(`/api/draw/board?per=400&uper=600&page=${++page}`);
+          if (left(view) || epoch !== loadEpoch) return;
+          for (const g of next.groups) b.groups.find((x) => x.id === g.id)?.shots.push(...g.shots);
+          b.unsorted.shots.push(...next.unsorted.shots); b.more = next.more;
+          paint(); await sleep(0);
+        }
+        await World.allPhotos(() => { if (!left(view) && epoch === loadEpoch) renderSea(); });
+      }
+      if (left(view) || epoch !== loadEpoch) return;
+      for (const r of [...selected]) if (!byRep.has(r) && !World.photos?.has(r)) selected.delete(r);
+      if (keep && $("#sections", main)) {
+        if(expanded){
+          const match=matchingShot([...byRep.values()],members,expanded.rep),button=match&&$(`[data-expand="${match.rep}"]`,main);
+          if(button&&match.members.length>1){expandStack(main,match,button,b.boxes,false);openedStack=match;}
+        }
+        World.sea?.layout();
+        const body=$("#sections",main),match=anchor&&matchingShot([...byRep.values()],anchor.members,anchor.rep),tile=match&&$(`[data-sel="${match.rep}"]`,body);
+        body.scrollTop=tile?tile.getBoundingClientRect().top-body.getBoundingClientRect().top+body.scrollTop-anchor.offset:y;
+      }
+      else if (focus) $(`#gsec-${focus}`)?.scrollIntoView({ block: "start" });
+    } catch (e) { if (!left(view)) { if (!b) main.innerHTML = FAILED(e.message); else toast(e.message); } }
   }
   const viewToggle = () => `<span class="seg" role="group" aria-label="View">
-    <button class="seg-btn ${mode === "sea" ? "on" : ""}" data-mode="sea" title="Every photo in the circles of its tags">🫧 Tags</button>
+    <button class="seg-btn ${mode === "sea" ? "on" : ""}" data-mode="sea" title="Photos flock together by their tags">🫧 Sea</button>
     <button class="seg-btn ${mode === "list" ? "on" : ""}" data-mode="list" title="Groups as sections of tiles">▦ List</button></span>`;
   function setMode(m) {
     if (m === mode) return;
     mode = m;
+    openedStack=null;
     try { localStorage.setItem("matcher-groups-view", m); } catch (_) { /* private mode */ }
     if (sea) { sea = null; World.setMode("dim"); }
     main.innerHTML = LOADING();
@@ -4001,30 +4449,32 @@ async function drawSorter(main, focus) {
     return `<div class="bar-left"><span id="sel-count" class="muted small"></span></div>
       <div class="bar-mid">
         <button class="btn ghost" data-sel-act="clear"><kbd>Esc</kbd> Clear</button>
+        <button class="btn" data-sel-act="inspect">Grab selected</button>
         <button class="btn" data-sel-act="unsort"><kbd>U</kbd> Unsorted</button>
-        <button class="btn" data-sel-act="stack" title="They're the same shot: one stack"><kbd>S</kbd> Stack them</button>
+        <button class="btn" data-sel-act="stack" title="They're the same shot: one stack">Stack them</button>
         <button class="btn" data-sel-act="new"><kbd>N</kbd> New group</button>
         <button class="btn" data-sel-act="tag" title="A tag of your own on these"><kbd>T</kbd> Tag</button>
-        <button class="btn ghost" id="g-undo" ${b.undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> ${b.undo ? `Undo ${DRAW_WORD[b.undo] || b.undo}` : "Undo"}</button>
+        <button class="btn ghost" id="g-undo" ${b.undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> <span class="desktop-label">${b.undo ? `Undo ${DRAW_WORD[b.undo] || b.undo}` : "Undo"}</span><span class="phone-label">Undo</span></button>
       </div>
-      <div class="bar-right">${left_ ? `<a class="btn primary big" href="#draw?sort=1">🎮 Quick sort <span class="btn-sub">${fmt(left_)} left</span> <kbd>Enter</kbd></a>`
-        : `<a class="btn primary big" href="#duel?stage=stacks">Next: crown the stacks → <kbd>Enter</kbd></a>`}</div>`;
+      <div class="bar-right">${left_ ? `<a class="btn primary big" href="#draw?sort=1">🎮 Quick sort <span class="btn-sub">${fmt(left_)} left</span> <kbd>Enter</kbd></a>` : ""}</div>`;
   };
+  const forwardState = () => setForward(b.unsorted.count ? null : groupStageForward());
   const seaHead = () => {
     const T = b.tagging || { tags: [], visible: [] };
     return `
     <h1>🗂️ Groups</h1>
     <span class="stat-chip" title="Shots in a group">${ring(b.total ? b.drawn / b.total : 0)}<b>${fmt(b.drawn)}</b>/ ${fmt(b.total)} grouped · ${plural(b.groups.length, "group")}</span>
-    <button class="stat-chip chip-btn" id="tag-tray" title="Every tag: pick which ones are circles, rename them">🏷️ <b>${fmt(T.tags.length)}</b> tags · ${fmt(T.visible.length)} shown</button>
+    <a class="btn ghost" href="#tags">Edit tags</a><button class="btn ghost" id="more-circles">${sea?.lassos_on===false?'Show lassos':'Hide lassos'}</button>
+    <button class="stat-chip chip-btn" id="tag-tray" title="Find a tag to focus">🏷️ <b>${fmt((b.allTags?.tags||T.tags).length)}</b> tags</button>
     <span class="grow"></span>
     ${viewToggle()}
     ${b.unsorted.count ? `<button class="btn" id="d-auto" title="Groups everything that's left for you (rename, merge or dissolve after)">✨ Auto-group the rest</button>` : ""}
-    ${helpBtn(`Every photo floats in the circles of its <b>tags</b>: what it recognized (what's in it, who, how it looks, when) and the ones
-      you add. Circles overlap as much as their tags share photos, so they fall into Venn diagrams on their own.<br><br>
-      <b>Drag a photo</b> to where it belongs: it takes the tags of the circles you drop it in and loses the ones it left (onto another
-      photo stacks them). The side list <b>suggests groups</b> from where tags meet: <b>Make</b> one, or drop photos on a group (or select
-      and press its <b>number</b>). Click a circle's name to rename it (name the people!), change its emoji or hide it; 🏷️ lists every tag.
-      <b>T</b> tags the selection, <b>Z</b> undoes.`)}`;
+    ${helpBtn(`Photos sharing <b>tags</b> flock together, leaving room between prints. Lassos follow the neighbourhoods they form.<br><br>
+      Select tags to gather their photos onto steady spots. <b>All</b> selected tags narrows the focus; <b>Any</b> widens it.
+      Click a group in the side list to bring it into focus. With photos selected, clicking a group moves them there; its <b>Focus</b> button still just looks.
+      Drop a print onto another to stack their takes, or inside a group's lasso to file it there.
+      Drag into open water to rearrange the swarm. Group keys work the same way as the side list.
+      Right-click a tag or group label to edit it. <b>T</b> tags the selection, <b>Z</b> undoes edits.`)}`;
   };
   // The tag sea: the field stays put across reloads, so a change is photos swimming somewhere new, not a redraw.
   function renderSea() {
@@ -4038,33 +4488,40 @@ async function drawSorter(main, focus) {
           <div class="screen-bar action-bar" id="mergebar"></div>
         </div>`;
       sea = World.live({
-        onSelect: (it) => { selected.has(it.id) ? selected.delete(it.id) : selected.add(it.id); updateSelection(); },
+        onSelectMatches: ids=>{if(left(view))return;selected.clear();for(const id of World.groupSelection(ids))selected.add(id);updateSelection();},
+        onSelect: (it, e) => { if (World.stackWith) return World.stackPick(it.id);
+          if (e?.altKey || e?.detail > 1) return World.inspect(it.id, null, () => load(true));
+          selected.has(it.id) ? selected.delete(it.id) : selected.add(it.id); updateSelection(); },
         onDrop: (ids, t) => {
           if (t.kind === "photo") return act("/api/groups/merge", { photos: [...ids, t.id] }, "Stacked: same shot, one stack.", true);
           if (t.kind === "bin") return moveTo(ids, t.id === "new" ? "new" : String(t.id));
+          if (t.kind === "group") return moveTo(ids, String(t.id));
           if (t.kind === "tags") return dropTags(ids, t.on, t.off);
         },
         onCircle: (key, el) => tagMenu(key, el),
         onLasso: (id, el) => {
+          if(id.startsWith("gcup:"))return World.tagMenu(`kind:${id.slice(5)}`,el);
+          if(id==="gcut"){location.hash="#cuts";return;}
           if (id[0] === "g") return groupMenu(b.groups.find((g) => `g${g.id}` === id), el);
           const sg = b.tagging.suggestions.find((x) => `s${x.key}` === id);
           if (sg) makeSuggestion(sg);
         },
       });
+      sea.tray.addEventListener("click", updateGroupFocus, {signal: S.events.signal});
       World.fence();
     }
-    const T = b.tagging, meta = new Map(T.tags.map((t) => [t.key, t]));
+    const T = b.tagging, meta = new Map((b.allTags?.tags || T.tags).map((t) => [t.key, t]));
     $("#sea-head", main).innerHTML = seaHead();
-    $("#mergebar", main).innerHTML = barHtml();
+    $("#mergebar", main).innerHTML = barHtml(); forwardState();
     const groupAt = new Map(b.groups.map((g, i) => [g.id, i]));
-    const circles = T.visible.filter((k) => meta.has(k)).map((k) => { const t = meta.get(k); return { id: k, label: t.label, emoji: t.emoji,
+    const circles = [...meta.values()].filter((t)=>t.count || t.user).map((t) => { return { id: t.key, label: t.label, emoji: t.emoji, catchy: t.catchy, ring:T.visible.includes(t.key),
       html: `${esc(t.emoji || "🏷️")} ${esc(t.label)} <span class="ps-count">${fmt(t.count)}</span>` }; });
     const items = [], suggOf = new Map();
     T.suggestions.forEach((sg) => sg.shots.forEach((rep) => suggOf.set(rep, sg.key)));
     const add = (x, g) => {
       byRep.set(x.rep, { ...x, island: g ? g.id : null });
       const tg = T.shot_tags[x.rep] || [];
-      items.push({ id: x.rep, photo: x.rep, tags: tg, n: x.members.length, group: g ? g.id : null, sugg: g ? null : suggOf.get(x.rep) ?? null,
+      items.push({ id: x.rep, photo: x.rep, tags: tg, n: x.members.length, members:x.members, rep:x.rep, group: g ? g.id : null, sugg: g ? null : suggOf.get(x.rep) ?? null,
         badge: g ? groupKeyLabel(groupAt.get(g.id)) || "•" : "",
         title: `${g ? `${g.emoji} ${g.name}` : "Not in a group yet"}${tg.length ? ` · ${tg.map((k) => (meta.get(k) || {}).label || k).join(", ")}` : ""}` });
     };
@@ -4075,26 +4532,46 @@ async function drawSorter(main, focus) {
         html: `${groupKeyLabel(i) ? `<b class="ps-num">${groupKeyLabel(i)}</b> ` : ""}${esc(g.emoji || "🗂️")} ${esc(g.name)} <span class="ps-count">${fmt(g.size)}</span>` })),
       ...T.suggestions.map((sg) => ({ id: `s${sg.key}`, kind: "sugg", html: `＋ ${esc(sg.emoji)} ${esc(sg.name)} <span class="ps-count">${fmt(sg.shots.length)}</span>` })),
     ];
-    sea.setVenn(circles, items, lassos);
+    World.board = b; World.tagMeta = meta;
+    const focusedGroup = b.groups.find(g => `g${g.id}` === sea.focusCluster);
+    if (focusedGroup) sea.focusIds = new Set(items.filter(it => it.group === focusedGroup.id).map(it => it.id));
+    sea.setVenn(circles, World.extras(items), [...lassos, ...World.categories(items), { id: "gcut", kind: "group", html: "🫙 Set aside" }]);
     renderRail();
     bindSea();
     updateSelection();
+  }
+  function updateGroupFocus() {
+    for (const el of $$("#venn-rail [data-bin]", main)) {
+      const on = sea?.focusCluster === `g${el.dataset.bin}`;
+      el.classList.toggle("focused-group", on);
+      const button = $("[data-focus-bin]", el);
+      if (button) {
+        button.setAttribute("aria-pressed", String(on)); button.textContent = on ? "Release" : "Focus";
+        button.setAttribute("aria-label", `${on ? "Release" : "Focus"} ${b.bins.find(g => String(g.id) === el.dataset.bin)?.name || "group"}`);
+      }
+    }
+  }
+  function focusGroup(id) {
+    const group = b.groups.find(g => String(g.id) === String(id));
+    if (!sea || !group?.size) return;
+    sea.focusLasso(`g${group.id}`);
+    updateGroupFocus();
   }
   // The side list: the groups the tags suggest (point at one to see its shots), then your groups to drop photos on.
   function renderRail() {
     const T = b.tagging, rail = $("#venn-rail", main);
     const lab = (k) => esc((T.tags.find((t) => t.key === k) || {}).label || k);
     rail.innerHTML = `
-      <div class="rail-card sugg-card"><h3>💡 Suggested groups ${T.suggestions.length > 1 ? `<button class="btn primary sugg-all" id="make-all" title="Make every suggestion a group">Lock in all ${T.suggestions.length}</button>` : ""}</h3>
+      ${T.suggestions.length || b.unsorted.count ? `<div class="rail-card sugg-card"><h3>💡 Suggested groups ${T.suggestions.length > 1 ? `<button class="btn primary sugg-all" id="make-all" title="Make every suggestion a group">Lock in all ${T.suggestions.length}</button>` : ""}</h3>
         ${T.suggestions.length ? `<div class="sugg-list">${T.suggestions.map((g, i) => `
           <div class="sugg" data-sugg="${i}">
             <span class="sugg-emoji">${esc(g.emoji)}</span>
             <span class="sugg-body"><b>${esc(g.name)}</b><span class="muted small">${g.tags.map(lab).join(" ∩ ")} · ${plural(g.shots.length, "shot")}</span></span>
             <button class="btn" data-make="${i}" title="Make this a group">Make</button></div>`).join("")}</div>`
-          : `<p class="muted small">${b.unsorted.count ? "Nothing yet: tag more photos, or show other tags as circles (🏷️)." : "Every shot is in a group."}</p>`}
-      </div>
-      <div class="rail-card grow bins-wrap"><h3>Groups <span class="muted small">drop photos here, or press a number</span></h3>
-        <div class="bins" id="bins">${binsHtml(b.bins, null, null)}</div></div>`;
+          : `<p class="muted small">Nothing yet: tag more photos, or focus a tag (🏷️).</p>`}
+      </div>` : ""}
+      <div class="rail-card grow bins-wrap"><h3>Groups</h3>
+        <div class="bins" id="bins">${binsHtml(b.bins, null, null, true)}</div></div>`;
     $$("[data-sugg]", rail).forEach((el) => {
       const g = T.suggestions[Number(el.dataset.sugg)];
       el.onmouseenter = () => sea && sea.highlight(g.shots);
@@ -4108,11 +4585,14 @@ async function drawSorter(main, focus) {
       el.onmouseenter = () => { if (sea && g) sea.highlight(b.groups.find((x) => x.id === g.id)?.shots.map((s) => s.rep) || []); };
       el.onmouseleave = () => sea && sea.highlight(null);
       el.onclick = (e) => {
+        if (e.target.closest("[data-focus-bin]")) { focusGroup(el.dataset.bin); return; }
         if (g && binTools(e, el, g, () => load(true))) return;
         if (selected.size) moveTo([...selected], el.dataset.bin);
-        else toast(el.dataset.bin === "new" ? "Select photos first (or drag them here) to start a group." : "Select photos (or drag them here) to put them in this group.");
+        else if (g) focusGroup(g.id);
+        else toast("Select photos first (or drag them here) to start a group.");
       };
     });
+    updateGroupFocus();
   }
   function makeSuggestion(g) {
     if (sea) sea.highlight(null);
@@ -4168,7 +4648,7 @@ async function drawSorter(main, focus) {
     document.body.append(pop);
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - pop.offsetWidth / 2, innerWidth - pop.offsetWidth - 8))}px`;
-    pop.style.top = `${r.bottom + 8 + window.scrollY}px`;
+    pop.style.top = `${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
     const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); };
     const away = (e) => { if (!pop.contains(e.target) && !e.target.closest(".emoji-pop")) close(); };
     setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
@@ -4181,16 +4661,16 @@ async function drawSorter(main, focus) {
       const ids = moveInOrder(b.groups.map((x) => x.id), g.id, d);
       if (ids && (await saveOrder(ids))) { close(); toast("Moved. Z undoes it."); await load(true); }
     };
-    $("[data-ip=dissolve]", pop).onclick = () => { if (confirm(`Dissolve ${g.name}? Its ${plural(g.size, "shot")} float back into open water.`)) { close(); act("/api/draw/dissolve", { theme: g.id }, "Dissolved."); } };
+    $("[data-ip=dissolve]", pop).onclick = () => { close(); act("/api/draw/dissolve", { theme: g.id }, "Dissolved. Z undoes it."); };
     if ($(".ip-merge", pop)) $(".ip-merge", pop).onchange = (e) => {
       const into = Number(e.target.value);
-      if (into && confirm(`Merge ${g.name} into ${groupName(into)}?`)) { close(); act("/api/draw/merge", { from: g.id, into }, "Merged."); }
+      if (into) { close(); act("/api/draw/merge", { from: g.id, into }, "Merged. Z undoes it."); }
     };
     name.focus();
   }
-  // A circle's menu: rename the tag (a person gets their name), its emoji, select its photos, hide it.
+  // A tag's edit menu: its name, emoji and photo selection.
   function tagMenu(key, anchor) {
-    const t = b.tagging.tags.find((x) => x.key === key);
+    const t = (b.allTags?.tags || b.tagging.tags).find((x) => x.key === key);
     if (!t) return;
     $(".island-pop")?.remove();
     const pop = document.createElement("div");
@@ -4198,12 +4678,11 @@ async function drawSorter(main, focus) {
     pop.innerHTML = `<div class="ip-head"><button class="t-emoji ip-emoji" data-tp="emoji" title="Change the emoji">${esc(t.emoji || "🏷️")}</button>
         <input class="hint-input ip-name" value="${esc(t.label)}" maxlength="40" aria-label="Tag name"></div>
       <span class="muted small">${plural(t.count, "shot")} · ${{ what: "what's in it", people: "who", look: "how it looks", when: "when" }[t.family] || "your tag"}${t.user ? " · yours" : ""}</span>
-      <div class="ip-actions"><button class="btn" data-tp="select">Select its photos</button>
-        <button class="btn ghost" data-tp="hide">Hide this circle</button></div>`;
+      <div class="ip-actions"><button class="btn" data-tp="select">Select its photos</button></div>`;
     document.body.append(pop);
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - pop.offsetWidth / 2, innerWidth - pop.offsetWidth - 8))}px`;
-    pop.style.top = `${r.bottom + 8 + window.scrollY}px`;
+    pop.style.top = `${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
     const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); };
     const away = (e) => { if (!pop.contains(e.target) && !e.target.closest(".emoji-pop")) close(); };
     setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
@@ -4213,16 +4692,15 @@ async function drawSorter(main, focus) {
     $("[data-tp=emoji]", pop).onclick = (e) => emojiPicker(e.currentTarget, (emoji) => { close(); act("/api/tags/meta", { key, emoji }, "New emoji."); });
     $("[data-tp=select]", pop).onclick = () => {
       close();
-      Object.entries(b.tagging.shot_tags).forEach(([rep, tg]) => { if (tg.includes(key) && byRep.has(Number(rep))) selected.add(Number(rep)); });
+      for(const it of sea.items.values())if(it.tags.includes(key))selected.add(it.id);
       updateSelection();
     };
-    $("[data-tp=hide]", pop).onclick = () => { close(); act("/api/tags/meta", { key, hidden: true }, `${t.label} is off the sea (🏷️ brings it back).`); };
     name.focus();
   }
-  // Every tag, by kind: click one to show it as a circle (or take it off the sea).
+  // Every tag, by kind: click one to narrow the sea's focus.
   function tagTray(anchor) {
     $(".island-pop")?.remove();
-    const T = b.tagging, shown = new Set(T.visible);
+    const T = {...b.tagging,tags:b.allTags?.tags||b.tagging.tags}, shown = sea.focusKeys;
     const pop = document.createElement("div");
     pop.className = "pop-card island-pop tag-tray";
     const fam = { what: "What's in it", people: "Who", look: "How it looks", when: "When" };
@@ -4231,19 +4709,19 @@ async function drawSorter(main, focus) {
       $(".tray-body", pop).innerHTML = Object.entries(fam).map(([f, title]) => {
         const list = T.tags.filter((t) => (t.family || "what") === f && hit(t));
         return list.length ? `<div class="tray-fam"><b>${title}</b><div class="tray-chips">${list.map((t) => `<button class="tag-chip ${shown.has(t.key) ? "on" : ""}"
-          data-chip="${esc(t.key)}" title="${shown.has(t.key) ? "Take it off the sea" : "Show it as a circle"}">${esc(t.emoji || "🏷️")} ${esc(t.label)} <b>${fmt(t.count)}</b></button>`).join("")}</div></div>` : "";
+          data-chip="${esc(t.key)}" title="Focus this tag">${esc(t.emoji || "🏷️")} ${esc(t.label)} <b>${fmt(t.count)}</b></button>`).join("")}</div></div>` : "";
       }).join("") || `<p class="muted small">No tags match.</p>`;
       $$("[data-chip]", pop).forEach((c) => (c.onclick = () => {
         const k = c.dataset.chip;
         close();
-        act("/api/tags/meta", shown.has(k) ? { key: k, hidden: true } : { key: k, pinned: true }, shown.has(k) ? "Taken off the sea." : "Shown as a circle.");
+        sea.toggleTag(k);
       }));
     };
     pop.innerHTML = `<input class="hint-input tray-q" placeholder="Find a tag" aria-label="Find a tag"><div class="tray-body"></div>`;
     document.body.append(pop);
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
-    pop.style.top = `${r.bottom + 8 + window.scrollY}px`;
+    pop.style.top = `${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
     const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); };
     const away = (e) => { if (!pop.contains(e.target)) close(); };
     setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
@@ -4276,12 +4754,13 @@ async function drawSorter(main, focus) {
     inp.focus();
   }
   function bindSea() {
+    const more = $("#more-circles", main);
+    if (more) more.onclick = () => { sea.outlines=sea.lassos_on===false;sea.lassos_on=sea.outlines;more.textContent=sea.outlines?'Hide lassos':'Show lassos';sea.geometryAt=0;sea.kick(); };
     $$("[data-mode]", main).forEach((x) => (x.onclick = () => setMode(x.dataset.mode)));
     $("#g-undo").onclick = () => drawUndo(() => load(true));
     $$("[data-sel-act]", main).forEach((x) => (x.onclick = () => selAct(x.dataset.selAct, x)));
     $("#tag-tray").onclick = (e) => tagTray(e.currentTarget);
     if ($("#d-auto")) $("#d-auto").onclick = async () => {
-      if (!confirm(`Group the ${fmt(b.unsorted.count)} unsorted shots for you? You can rename, merge or dissolve any group after, and Z takes it all back.`)) return;
       $("#d-auto").disabled = true;
       await act("/api/draw/auto", {}, "Grouped.", true);
     };
@@ -4303,7 +4782,7 @@ async function drawSorter(main, focus) {
           ${helpBtn(`Every shot goes into a <b>themed group</b>; each group then plays its own mini-tournament.<br><br>
             <b>Move</b>: drag photos into a section or onto a group on the right, or click to select some and press the group's
             key (1–9, 0 for the 10th, Alt+1… for the 11th on). <b>N</b> makes a new group from the selection, <b>U</b> sends them back to
-            Unsorted, <b>S</b> stacks them (same shot), <b>Z</b> undoes.<br><br><b>Edit</b>: click a group's name or emoji;
+            Unsorted, <b>M</b> stacks them (same shot), <b>Z</b> undoes.<br><br><b>Edit</b>: click a group's name or emoji;
             🔎 adds words <i>Find more</i> looks for. Drop one photo on another to stack them.`)}
         </div>
         <div class="screen-body sections" id="sections">
@@ -4334,18 +4813,19 @@ async function drawSorter(main, focus) {
         <aside class="screen-rail bins-wrap" aria-label="Groups"><div class="bins-head"><b>Groups</b>
           <span class="muted small">drag photos here, or select some and press a number</span></div><div class="bins" id="bins"></div></aside>
         <div class="screen-bar action-bar" id="mergebar">
-          <div class="bar-left"><span id="sel-count" class="muted small"></span></div>
+          <div class="bar-left"><a class="btn ghost" id="groups-tag-lab" href="#tags">🏷️ Tag lab</a><span id="sel-count" class="muted small"></span></div>
           <div class="bar-mid">
             <button class="btn ghost" data-sel-act="clear"><kbd>Esc</kbd> Clear</button>
+            <button class="btn" data-sel-act="inspect">Grab selected</button>
             <button class="btn" data-sel-act="unsort"><kbd>U</kbd> Unsorted</button>
-            <button class="btn" data-sel-act="stack" title="They're the same shot: one stack"><kbd>S</kbd> Stack them</button>
+            <button class="btn" data-sel-act="stack" title="They're the same shot: one stack">Stack them</button>
             <button class="btn" data-sel-act="new"><kbd>N</kbd> New group</button>
-            <button class="btn ghost" id="g-undo" ${b.undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> ${b.undo ? `Undo ${DRAW_WORD[b.undo] || b.undo}` : "Undo"}</button>
+            <button class="btn ghost" id="g-undo" ${b.undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> <span class="desktop-label">${b.undo ? `Undo ${DRAW_WORD[b.undo] || b.undo}` : "Undo"}</span><span class="phone-label">Undo</span></button>
           </div>
-          <div class="bar-right">${left_ ? `<a class="btn primary big" href="#draw?sort=1">🎮 Quick sort <span class="btn-sub">${fmt(left_)} left</span> <kbd>Enter</kbd></a>`
-            : `<a class="btn primary big" href="#duel?stage=stacks">Next: crown the stacks → <kbd>Enter</kbd></a>`}</div>
+          <div class="bar-right">${left_ ? `<a class="btn primary big" href="#draw?sort=1">🎮 Quick sort <span class="btn-sub">${fmt(left_)} left</span> <kbd>Enter</kbd></a>` : ""}</div>
         </div>
       </div>`;
+    forwardState();
     $("#bins").innerHTML = binsHtml(b.bins, null, null);
     bind();
     updateSelection();
@@ -4362,36 +4842,54 @@ async function drawSorter(main, focus) {
     });
   }
   const onResize = () => (left(view) ? window.removeEventListener("resize", onResize) : sizeFamilies());
-  window.addEventListener("resize", onResize);
-  function updateSelection() {
-    $$("[data-sel]", main).forEach((el) => { const on = selected.has(Number(el.dataset.sel)); el.classList.toggle("picked", on); el.setAttribute("aria-pressed", on); });
+  window.addEventListener("resize", onResize, { signal: S.events.signal });
+  function updateSelection(anchor = null) {
+    const lab=$("#groups-tag-lab",main);if(lab)lab.hidden=selected.size>0;
+    $$("[data-sel]", main).forEach((el) => {
+      const on = selected.has(Number(el.dataset.sel));el.classList.toggle("picked", on);
+      const button=$(".shot-select",el),mark=$(".shot-selected",el);
+      button?.setAttribute("aria-pressed",on);if(mark)mark.hidden=!on;
+    });
     const bar = $("#mergebar");
-    $("#sel-count").innerHTML = selected.size ? `<b>${plural(selected.size, "shot")} selected</b> · press a group's key or drag them there`
-      : "Click photos to select them, or drag one straight to a group";
-    $$("[data-sel-act]", bar).forEach((x) => { x.hidden = !selected.size || (x.dataset.selAct === "stack" && selected.size < 2); });
+    const movable=World.groupSelection([...selected],b.cup);
+    $("#sel-count").innerHTML = selected.size ? `<b>${plural(selected.size, "photo")} selected</b><span class="selection-help">${movable.length ? ` · ${plural(movable.length,"shot")} can move to a group` : " · grab them or edit their tags"}</span>`
+      : sea ? "Click a group to focus · select photos to move them" : "Click photos to select them, or drag one straight to a group";
+    $$("[data-sel-act]", bar).forEach((x) => { x.hidden = !selected.size || (x.dataset.selAct === "stack" && selected.size < 2)
+      || (["new","unsort"].includes(x.dataset.selAct) && !movable.length); });
     if (sea) sea.select([...selected]);
+    // Selection actions can grow the phone bar; keep the print just chosen in the remaining play area.
+    else if(anchor&&selected.has(Number(anchor.dataset.sel)))$(".shot-select",anchor)?.scrollIntoView({block:"nearest",inline:"nearest"});
   }
   async function act(path, payload, msg, cheer) {
     if (busy) return;
     busy = true;
-    try { await api(path, payload); toast(`${msg} Z undoes it.`); } catch (e) { toast(e.message); busy = false; return; }
+    try {
+      const r=await api(path, payload);if(left(view))return;
+      if(path==="/api/draw/auto")msg=`Placed ${plural(r.placed,"shot")} in ${plural(r.groups,"new group")}.`;
+      if(path!=="/api/groups/merge")toast(`${msg} Z undoes it.`);
+    } catch (e) { if(!left(view))toast(e.message); busy = false; return; }
     if (cheer) Sound.play("great"); else Sound.play("pick");
     selected.clear();
     busy = false;
-    await load(true);
+    await load(true,path==="/api/groups/split"?{split:Number(payload.photo)}:null);
     refreshHud(true);
     if (/\/(merge|move|new)$/.test(path)) gameCheck();
   }
   const groupName = (id) => { const g = b.groups.find((x) => x.id === id); return g ? `${g.emoji} ${g.name}` : "that group"; };
-  const moveTo = (reps, target) => (target === "new" ? act("/api/draw/new", { photos: reps }, `New group from ${plural(reps.length, "shot")}.`, true)
-    : act("/api/draw/move", { photos: reps, theme: target === "none" ? null : Number(target) },
-      target === "none" ? "Back in the unsorted pile." : `Into ${groupName(Number(target))}.`));
-  const expand = (rep, btn) => expandStack(main, byRep.get(rep), btn, b.boxes);
+  const moveTo = (photos, target) => {
+    const reps=World.groupSelection(photos,b.cup);if(!reps.length)return;
+    return target === "new" ? act("/api/draw/new", { photos: reps }, `New group from ${plural(reps.length, "shot")}.`, true)
+      : act("/api/draw/move", { photos: reps, theme: target === "none" ? null : Number(target) },
+        target === "none" ? "Back in the unsorted pile." : `${plural(reps.length,"shot")} into ${groupName(Number(target))}.`);
+  };
+  const expand = (rep, btn) => {
+    openedStack=btn.closest(".tile").classList.contains("open")?null:byRep.get(rep);
+    expandStack(main,byRep.get(rep),btn,b.boxes);
+  };
   function bind() {
     $$("[data-mode]", main).forEach((x) => (x.onclick = () => setMode(x.dataset.mode)));
     $("#g-undo").onclick = () => drawUndo(() => load(true));
     if ($("#d-auto")) $("#d-auto").onclick = async () => {
-      if (!confirm(`Group the ${fmt(b.unsorted.count)} unsorted shots for you? You can rename, merge or dissolve any group after, and Z takes it all back.`)) return;
       const btn = $("#d-auto");
       btn.disabled = true;
       btn.textContent = "Grouping…";
@@ -4431,19 +4929,18 @@ async function drawSorter(main, focus) {
         if (t.dataset.hint) return inlineRename(t, g.hint || "", (hint) => (hint !== null ? act("/api/draw/hint", { theme: id, hint }, hint ? "Find more will look for that." : "Cleared.") : render()),
           { cls: "hint-input", max: 120, label: "What to look for", placeholder: "laptops, screens, desks", empty: true });
         if (t.dataset.dissolve) {
-          if (confirm(`Dissolve ${g.name}? Its ${plural(g.size, "shot")} go back to the unsorted pile.`)) act("/api/draw/dissolve", { theme: id }, "Dissolved.");
+          act("/api/draw/dissolve", { theme: id }, "Dissolved. Z undoes it.");
           return;
         }
       }
       const sel = e.target.closest("[data-sel]");
-      if (sel && !e.target.closest("a, .tile-frames")) { const r = Number(sel.dataset.sel); selected.has(r) ? selected.delete(r) : selected.add(r); updateSelection(); }
+      if (sel && !e.target.closest("a, .tile-frames")) { const r = Number(sel.dataset.sel); selected.has(r) ? selected.delete(r) : selected.add(r); updateSelection(sel); }
     };
     page.onchange = (e) => {
       const m = e.target.closest("[data-merge]");
       if (!m || !m.value) return;
       const from = Number(m.dataset.merge), into = Number(m.value);
-      if (confirm(`Merge ${groupName(from)} into ${groupName(into)}?`)) act("/api/draw/merge", { from, into }, "Merged.");
-      else m.value = "";
+      act("/api/draw/merge", { from, into }, "Merged. Z undoes it.");
     };
     page.onkeydown = (e) => {  // tiles are buttons: Enter or Space selects one
       const sel = e.target.closest(".tile[data-sel]");
@@ -4494,6 +4991,7 @@ async function drawSorter(main, focus) {
     const reps = [...selected];
     if (a === "clear") { selected.clear(); return updateSelection(); }
     if (!reps.length) return;
+    if (a === "inspect") return World.inspect(reps[0], reps, () => load(true));
     if (a === "tag") return tagSelection(el);
     if (a === "unsort") return moveTo(reps, "none");
     if (a === "new") return moveTo(reps, "new");
@@ -4503,10 +5001,11 @@ async function drawSorter(main, focus) {
     if (e.repeat || !b) return;
     const k = e.key;
     const gi = groupKey(e);
-    if (gi != null) { e.preventDefault(); if (selected.size && b.bins[gi]) moveTo([...selected], String(b.bins[gi].id)); return; }
+    if (gi != null) { e.preventDefault(); if (b.bins[gi]) { if (selected.size) moveTo([...selected], String(b.bins[gi].id)); else focusGroup(b.bins[gi].id); } return; }
     else if (k === "Escape" && selected.size) { e.preventDefault(); selAct("clear"); }
+    else if (k === "Escape" && sea && !sea.focusBar.hidden) { e.preventDefault(); $("[data-clear-focus]", sea.focusBar)?.click(); }
     else if ((k === "n" || k === "N") && selected.size) { e.preventDefault(); selAct("new"); }
-    else if ((k === "s" || k === "S") && selected.size > 1) { e.preventDefault(); selAct("stack"); }
+    else if ((k === "m" || k === "M") && selected.size > 1) { e.preventDefault(); selAct("stack"); }
     else if ((k === "u" || k === "U") && selected.size) { e.preventDefault(); selAct("unsort"); }
     else if ((k === "t" || k === "T") && selected.size) { e.preventDefault(); selAct("tag", $("[data-sel-act=tag]", main)); }
     else if (["z", "Z", "Backspace"].includes(k)) { e.preventDefault(); drawUndo(() => load(true)); }
@@ -4525,6 +5024,7 @@ async function drawPlay(main, tid) {
   const nobulk = new Set();
   history.replaceState(null, "", `#draw?play=${tid}`);
   async function load() {
+    if (left(view)) return;
     try { deck = await api(`/api/draw/deck?theme=${tid}&n=10${nobulk.size ? `&nobulk=${[...nobulk].slice(-200).join(",")}` : ""}`); } catch (e) {
       if (left(view)) return;
       if (e.status === 404 || e.status === 400) { location.hash = "#draw"; return; }
@@ -4539,6 +5039,7 @@ async function drawPlay(main, tid) {
     else { paintHead(); paintCrew(); showCard(); }
   }
   async function refill() {
+    if (left(view)) return;
     try {
       const d = await api(`/api/draw/deck?theme=${tid}&n=10${nobulk.size ? `&nobulk=${[...nobulk].slice(-200).join(",")}` : ""}`);
       if (left(view)) return;
@@ -4552,18 +5053,20 @@ async function drawPlay(main, tid) {
     } catch (_) { /* the next call retries */ }
   }
   function paint() {
+    if (left(view)) return;
     main.innerHTML = `
       <div class="screen draw-play">
         <div class="screen-head play-head" id="t-head"></div>
         <div class="screen-body fill"><div class="deck" id="ddeck"></div></div>
         <aside class="screen-rail bins-wrap" aria-label="Groups"><div class="bins-head"><b>Groups</b>
-          <span class="muted small">drag the photo here, or press its number</span></div><div class="bins" id="bins"></div></aside>
-        <div class="screen-bar"><div class="action-bar" id="dctl"></div><p class="muted small center bar-hint" id="d-hint"></p></div>
+          <span class="muted small">↑ ↓</span></div><div class="bins" id="bins"></div></aside>
+        <div class="screen-bar action-bar" id="dctl"></div>
       </div>`;
     paintHead();
     showCard();
   }
   function paintHead() {
+    if (left(view)) return;
     const h = $("#t-head");
     h.innerHTML = `
       <span class="muted small play-kind">🎮 Find more</span>
@@ -4574,10 +5077,10 @@ async function drawPlay(main, tid) {
       <button class="linkish small" id="t-hint" title="Words it should look for: it deals photos that match them first">🔎 ${theme.hint
         ? `Looking for <b>${esc(theme.hint)}</b>` : "Tell it what to look for"}</button>
       <div class="crew grow" id="crew" aria-label="In this group so far"></div>
-      <a class="btn" href="#draw?g=${tid}" title="Back to the Groups page (Esc)"><kbd>Esc</kbd> Done</a>
+      <a class="btn" href="#draw?g=${tid}" title="Back to the Groups page">Done</a>
       ${helpBtn(`It deals the unsorted photos <b>likeliest to belong to this group</b> first, and every one gets a home on the spot:
         <b>→</b> this group, <b>a number</b> (or drag it onto a group on the right) for another, <b>N</b> for a new group.
-        <b>↑</b> stacks a photo with a near-twin already in the group. <b>🔎</b> words steer what comes first. <b>Z</b> undoes, <b>Esc</b> when you're done.`)}`;
+        <b>↑</b> stacks a photo with a near-twin already in the group. <b>🔎</b> words steer what comes first. <b>Z</b> undoes, <b>Esc</b> opens the pause menu.`)}`;
     paintCrew();
     $("#t-name").onclick = (e) => inlineRename(e.currentTarget, theme.name, async (name) => {
       if (name) {
@@ -4604,14 +5107,17 @@ async function drawPlay(main, tid) {
     $("#t-roll").onclick = reroll;
   }
   function paintCrew() {
+    if (left(view)) return;
     $("#crew").innerHTML = deck.members.map((id) => `<img src="${T(id)}" alt="" data-crew="${id}">`).join("");
   }
   function paintBins() {
+    if (left(view)) return;
     const c = mode === "card" || mode === "pick" ? deck.cards[0] : null;
     const box = $("#bins");
     box.innerHTML = binsHtml(deck.bins.map((b) => (b.id === tid ? { ...b, name: theme.name, emoji: theme.emoji } : b)), tid, c && c.fits);
     box.classList.toggle("picking", mode === "pick");
     box.classList.toggle("idle", !c);
+    $$(".bin-place",box).forEach((button)=>button.hidden=!c);
     $$("[data-bin]", box).forEach((b) => (b.onclick = (e) => {
       const g = deck.bins.find((x) => String(x.id) === b.dataset.bin);
       if (g && binTools(e, b, g.id === tid ? { ...g, name: theme.name } : g, () => (g.id === tid ? load() : paintBins()))) return;
@@ -4626,18 +5132,20 @@ async function drawPlay(main, tid) {
     $("#dctl").innerHTML = `<div class="bar-left">${btn(left_)}</div>
       <div class="bar-mid">${middle.map((b) => `<button class="btn ${b.cls || "ghost"}" data-c="${b.c}">${b.label}</button>`).join("")}</div>
       <div class="bar-right">${btn(right)}</div>`;
-    $("#d-hint").innerHTML = hint || "&nbsp;";
+    $("#dctl").title = "WASD or arrows · Space skips · Z undoes · X tosses";
     $$("[data-c]", $("#dctl")).forEach((b) => (b.onclick = () => command(b.dataset.c)));
   }
   const UNDO = { c: "undo", label: "<kbd>Z</kbd> Undo" };
+  const SKIP = { c: "skip", label: "<kbd>Space</kbd> Skip" };
   const NEW = { c: "new", label: "<kbd>N</kbd> New group" };
   function command(c) {
-    ({ undo, roll: reroll, done, dig: keepDigging, pick: startPick, cancel: cancelPick, new: () => place("new"), aim: pickAim,
+    ({ undo, skip, toss, roll: reroll, done, dig: keepDigging, pick: startPick, cancel: cancelPick, new: () => place("new"), aim: pickAim,
       bulkin: () => bulk(true), onebyone: () => bulk(false), in: () => act("in"), twin: () => act("twin"),
       next: () => (location.hash = "#duel?stage=stacks") }[c] || (() => {}))();
   }
   function done() { location.hash = `#draw?g=${tid}`; }
   function showCard() {
+    if (left(view)) return;
     const box = $("#ddeck");
     if (!box) return;
     if (deck.bulk.length) {
@@ -4669,20 +5177,20 @@ async function drawPlay(main, tid) {
     }
     mode = "card";
     const nx = deck.cards[1];
-    box.innerHTML = `${nx ? `<div class="swipe-card under"><img src="${P(nx.photo)}" alt="" draggable="false"></div>` : ""}
-      <div class="swipe-card top" id="dtop" data-photo="${c.photo}" data-box='${JSON.stringify((c.view || {}).box || null)}'><img src="${P(c.photo)}" alt="Which group does this belong in?" draggable="false">
+    box.innerHTML = `${nx ? `<div class="swipe-card under"><div class="print"><img src="${P(nx.photo)}" alt="" draggable="false"></div></div>` : ""}
+      <div class="swipe-card top" id="dtop" data-photo="${c.photo}" data-box='${JSON.stringify((c.view || {}).box || null)}'><div class="print"><img src="${P(c.photo)}" alt="Which group does this belong in?" draggable="false"></div>
         ${c.long ? `<span class="why kept">Long shot for this group</span>` : ""}
         ${c.twin ? `<div class="twin-ask"><img src="${T(c.twin.of)}" alt=""><span><b>Same shot as this one?</b>
           ${c.twin.apart != null ? `${c.twin.apart < 120 ? `${c.twin.apart} s` : c.twin.apart < 7200 ? `${Math.round(c.twin.apart / 60)} min` : `${Math.round(c.twin.apart / 3600)} h`} apart · ` : ""}↑ stacks them</span></div>` : ""}
         <span class="stamp keep">IN</span></div>`;
     carryable($("#dtop"), { right: () => act("in"), left: startPick, up: c.twin ? () => act("twin") : null, drop: place });
     bar({ c: "pick", label: "<kbd>←</kbd> Another group" },
-      [...(c.twin ? [{ c: "twin", cls: "twin-btn", label: "<kbd>↑</kbd> Same shot" }] : []), NEW, UNDO],
+      [...(c.twin ? [{ c: "twin", cls: "twin-btn", label: "<kbd>↑</kbd> Same shot" }] : []), SKIP, UNDO],
       { c: "in", cls: "keep-btn", label: `Into this group <kbd>→</kbd>` },
-      "Every photo gets a group: → or Enter for this one, ← to pick another (or its key, or a drag), N for a new one. Esc when you're done.");
+      "Every photo gets a group: → or Enter for this one, ← to pick another (or its key, or a drag), N for a new one. Esc opens the pause menu.");
     paintBins();
     paintFilters();
-    shownAt = performance.now();
+    shownAt = playTime();
   }
   let pcur = 0;
   function startPick() {
@@ -4691,7 +5199,7 @@ async function drawPlay(main, tid) {
     Sound.play("whoop");
     const fit = deck.cards[0].fits[0];
     pcur = Math.max(0, deck.bins.findIndex((b) => b.id === (fit != null ? fit : -1)));
-    bar({ c: "cancel", label: "<kbd>Esc</kbd> Back" }, [NEW, UNDO], { c: "aim", cls: "keep-btn", label: "Into it <kbd>→</kbd>" },
+    bar({ c: "cancel", label: "Back" }, [NEW, UNDO], { c: "aim", cls: "keep-btn", label: "Into it <kbd>→</kbd>" },
       `Which group? ↑ ↓ to pick one${fit != null ? " (it starts on the ★ one)" : ""} and → to drop it there, or its number, a drag, N for a new group.`);
     paintBins();
     paintPick();
@@ -4728,6 +5236,7 @@ async function drawPlay(main, tid) {
     try {
       r = bin === "new" ? await api("/api/draw/new", { photos: [c.photo] }) : await api("/api/draw/place", { photo: c.photo, theme: Number(bin) });
     } catch (e) { toast(e.message); busy = false; return load(); }
+    if (left(view)) return;
     if (r.game) { Ach.check(r.game); S.game = r.game; }
     if (bin === "new") {
       deck.bins.push({ id: r.theme.id, name: r.theme.name, emoji: r.theme.emoji, size: 1, cover: c.photo });
@@ -4740,6 +5249,7 @@ async function drawPlay(main, tid) {
     deck.left = Math.max(0, deck.left - 1);
     deck.cards.shift();
     await sleep(reduceMotion ? 0 : 230);
+    if (left(view)) return;
     busy = false;
     paintHead();
     showCard();
@@ -4756,7 +5266,8 @@ async function drawPlay(main, tid) {
     Sound.play(call === "twin" ? "great" : "pick");
     floatText(call === "twin" ? "+5 XP" : "+2 XP", el, call === "twin" ? "bonus" : "");
     const req = api("/api/draw/call", { theme: tid, photo: c.photo, call, twin: c.twin ? c.twin.of : null,
-      ms: Math.round(performance.now() - shownAt) });
+      ms: Math.round(playTime() - shownAt) });
+    req.catch(() => {});
     deck.cards.shift();
     stay = 0;
     if (call === "in") { theme.size++; deck.left = Math.max(0, deck.left - 1); deck.members.unshift(c.photo); }
@@ -4767,15 +5278,18 @@ async function drawPlay(main, tid) {
     const img = $(`[data-crew="${call === "twin" ? c.twin.of : c.photo}"]`);
     if (img) img.classList.add("joined");
     await sleep(reduceMotion ? 0 : 170);
+    if (left(view)) { await req.catch(() => {}); return; }
     if (call === "twin") {  // the stacking changed: deal again
-      try { await req; } catch (e) { toast(e.message); }
-      toast("Stacked: same shot, one stack. Z undoes it.");
+      try { await req; } catch (e) { if (!left(view)) toast(e.message); busy = false; return load(); }
+      if (left(view)) return;
+      toastOnce("stacked", "Stacked: same shot, one stack. Z undoes it.");
       busy = false;
       return load();
     }
     showCard();
     try {
       const r = await req;
+      if (left(view)) return;
       if (r.game) { Ach.check(r.game); S.game = r.game; }
     } catch (e) { toast(e.message); busy = false; return load(); }
     busy = false;
@@ -4789,6 +5303,7 @@ async function drawPlay(main, tid) {
     try {
       if (add.length) {
         await api("/api/draw/bulk", { theme: tid, add, reject: [] });
+        if (left(view)) return;
         Sound.play("great");
         const r = $("#ddeck").getBoundingClientRect();
         confetti(r.left + r.width / 2, r.top + r.height / 3, 30);
@@ -4802,11 +5317,24 @@ async function drawPlay(main, tid) {
   async function reroll() {
     try {
       const r = await api("/api/draw/rename", { theme: tid, roll: ++roll });
+      if (left(view)) return;
       theme = { ...theme, ...r.theme };
       Sound.play("whoop");
       paintHead();
       paintBins();
     } catch (e) { toast(e.message); }
+  }
+  async function skip() {
+    if(busy)return;if(mode==="bulk")return bulk(false);
+    if(!deck.cards[0]||!["card","pick","thin"].includes(mode))return; busy=true;
+    try {if(deck.cards.length<2)await refill();if(left(view))return;
+      if(deck.cards.length<2){done();return;}deck.cards.push(deck.cards.shift());stay=-999;Sound.play("skip");showCard();
+    } finally {busy=false;}
+  }
+  async function toss() {
+    if(busy||!deck.cards[0]||!["card","pick","thin"].includes(mode))return;busy=true;
+    try{await api("/api/draw/toss",{photo:deck.cards[0].photo});if(!left(view)){deck.cards.shift();Sound.play("toss");await load();}}
+    catch(error){if(!left(view))toast(error.message);}finally{busy=false;}
   }
   function undo() {
     if (busy) return;
@@ -4850,6 +5378,8 @@ async function drawPlay(main, tid) {
     else if (k === "n" || k === "N") { if (mode === "card" || mode === "pick") { e.preventDefault(); place("new"); } }
     else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); undo(); }
     else if (k === "r" || k === "R") { e.preventDefault(); reroll(); }
+    else if (k === " ") { e.preventDefault(); skip(); }
+    else if (k.toLowerCase() === "x") { e.preventDefault(); toss(); }
     else if (k === "f" || k === "F") { e.preventDefault(); toggleFilter(); }
   };
   main.innerHTML = LOADING("Dealing…");
@@ -4862,43 +5392,58 @@ async function drawPlay(main, tid) {
 async function drawQuickSort(main) {
   const view = S.view;
   let cards = [], bins = [], busy = false, left_ = 0, cur = 0;
+  const resolved = new Set();
   const called = { right: 0, total: 0, combo: 0, last: 0 };  // the ★ guess, and placements in quick succession
   const aimed = () => (cur < bins.length ? String(bins[cur].id) : "new");
   function paintCursor() {
+    if (left(view)) return;
     $$("#bins [data-bin]", main).forEach((el, i) => el.classList.toggle("cursor", i === cur));
     const el = $$("#bins [data-bin]", main)[cur];
     if (el) el.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
     const b = bins[cur], btn = $("[data-c=star]", main) || $(".bar-right [data-c=new]", main);
     if (btn) btn.innerHTML = b ? "Into this group <kbd>→</kbd>" : "New group <kbd>→</kbd>";
   }
-  async function load() {
-    try { ({ cards, bins, left: left_ } = await api("/api/draw/stragglers")); } catch (e) {
+  async function load(render = true) {
+    if (left(view)) return;
+    let fresh;
+    try { fresh = await api("/api/draw/stragglers"); } catch (e) {
       if (!left(view)) main.innerHTML = FAILED(e.message);
       return;
     }
     if (left(view)) return;
-    paint();
+    bins = fresh.bins; left_ = fresh.left;
+    const pending = new Map(fresh.cards.map(c => [c.photo, c])), next = [];
+    const take = id => { if (pending.has(id)) { next.push(pending.get(id)); pending.delete(id); } };
+    // Reload hints without undoing a skip. An undone placement or toss comes back to the front.
+    for (const c of fresh.cards) if (resolved.delete(c.photo)) take(c.photo);
+    for (const c of cards) take(c.photo);
+    cards = [...next, ...pending.values()];
+    if (render) paint();
+    return true;
   }
-  function paint() {
+  function paint(selected = null) {
+    if (left(view)) return;
     const gone = World.grab(main);
-    paintCard();
+    paintCard(selected);
     World.swap(main, gone);
   }
-  function paintCard() {
+  function paintCard(selected) {
     const c = cards[0];
+    World.calm(false); setForward(null);
     if (!c) {
       main.innerHTML = `
         <div class="screen draw-play no-rail">
           <div class="screen-head play-head"><h1>🎮 Quick sort</h1><span class="stat-chip good"><b>0</b> unsorted · ${plural(bins.length, "group")}</span></div>
-          <div class="screen-body fill"><div class="empty"><div class="big-emoji">🗂️</div><h2>Everything's grouped</h2>
-            <p class="muted">Every shot has a group. Next, the stacks crown their best takes, then each group plays its own mini-tournament.</p></div></div>
-          <div class="screen-bar action-bar"><div class="bar-left"><a class="btn big" href="#draw">The Groups page</a></div>
-            <div class="bar-mid"><button class="btn ghost" data-c="undo"><kbd>Z</kbd> Undo the last one</button></div>
-            <div class="bar-right"><a class="btn primary big" href="#duel?stage=stacks">Next: crown the stacks → <kbd>Enter</kbd></a></div></div>
+          <div class="screen-body fill">${stageClearHtml({ icon: "🗂️", title: "Everything's grouped", bonusKey: "draw",
+            text: "Every shot has a group. Next, the stacks crown their best takes, then each group plays its own mini-tournament.",
+            photos: bins.map((g) => g.cover).filter(Boolean).slice(0, 8), summary: `${plural(bins.length, "team")} ready for the group stage.` })}</div>
+          <div class="screen-bar action-bar">${clearActionsHtml({ back: ["#draw", "The Groups page"], undo: "Undo the last one", undoAttr: 'data-c="undo"' })}</div>
         </div>`;
-      $("[data-c=undo]", main).onclick = () => drawUndo(load);
-      confetti(window.innerWidth / 2, window.innerHeight / 3, 50);
-      refreshHud(true);
+      $("[data-c=undo]", main).onclick = undo;
+      setForward(groupStageForward());
+      Sound.play("crown"); confetti(window.innerWidth / 2, window.innerHeight / 3, 60); World.calm(true);
+      setHint("Enter continues to Crown. Z undoes the last one.");
+      fillStageBonus("draw", main);
       return;
     }
     const star = c.options[0];
@@ -4910,23 +5455,25 @@ async function drawQuickSort(main) {
           ${called.total ? `<span class="stat-chip ${called.right / called.total >= 0.7 ? "good" : ""}" title="How often its ★ guess was the group you picked">★ called it <b>${called.right}</b>/${called.total}</span>` : ""}
           ${called.combo >= 3 ? `<span class="stat-chip good">🔥 ×<b>${called.combo}</b></span>` : ""}
           <span class="grow"></span>
-          <a class="btn" href="#draw" title="Back to the Groups page (Esc)"><kbd>Esc</kbd> Done</a>
+          <a class="btn" href="#draw" title="Back to the Groups page">Done</a>
           ${helpBtn(`The unsorted photos one at a time, in the order they were taken. <b>→</b> puts it in the group it looks most like
             (★), <b>a number</b> or a drag onto a group puts it in another, <b>N</b> starts a new group with it (it gets a name you can
-            change on the Groups page), <b>←</b> tosses a throw-out (it goes to Set aside). <b>↑</b> / <b>↓</b> walk the groups, <b>E</b> renames the
-            highlighted one. <b>Z</b> undoes, <b>Esc</b> leaves.`)}
+            change on the Groups page), <b>←</b> sets it aside (out of the running; Z brings it back). <b>↑</b> / <b>↓</b> walk the groups, <b>E</b> renames the
+            highlighted one. <b>Space</b> skips it until later. <b>Z</b> undoes, <b>Esc</b> opens the pause menu.`)}
         </div>
-        <div class="screen-body fill"><div class="deck"><div class="swipe-card top" id="dtop" data-photo="${c.photo}" data-box='${JSON.stringify((c.view || {}).box || null)}'><img src="${P(c.photo)}" alt="Which group does this belong in?" draggable="false"><span class="stamp toss">TOSS</span></div></div></div>
+        <div class="screen-body fill"><div class="deck"><div class="swipe-card top" id="dtop" data-photo="${c.photo}" data-box='${JSON.stringify((c.view || {}).box || null)}'><div class="print"><img src="${P(c.photo)}" alt="Which group does this belong in?" draggable="false"></div><span class="stamp toss">SET ASIDE</span></div></div></div>
         <aside class="screen-rail bins-wrap" aria-label="Groups"><div class="bins-head"><b>Groups</b>
-          <span class="muted small">drag the photo here, or press its number</span></div>
+          <span class="muted small">↑ ↓</span></div>
           <div class="bins" id="bins">${binsHtml(bins, null, c.options.map((o) => o.id))}</div></aside>
-        <div class="screen-bar"><div class="action-bar"><div class="bar-left"><button class="btn big toss-btn" data-c="toss" title="Out of the running: it goes to Set aside (Z undoes)"><kbd>←</kbd> Toss</button></div>
+        <div class="screen-bar action-bar"><div class="bar-left"><button class="btn ghost toss-btn" data-c="toss" title="Out of the running: it goes to Set aside (Z undoes)"><kbd>←</kbd> Set aside</button>
+          <button class="btn ghost" data-c="skip" title="Leave this take for later"><kbd>Space</kbd> Skip</button></div>
           <div class="bar-mid"><button class="btn ghost" data-c="new"><kbd>N</kbd> New group</button><button class="btn ghost" data-c="undo"><kbd>Z</kbd> Undo</button></div>
           <div class="bar-right">${star ? `<button class="btn big keep-btn" data-c="star">Into this group <kbd>→</kbd></button>`
-            : `<button class="btn big keep-btn" data-c="new">New group <kbd>→</kbd></button>`}</div></div>
-        <p class="muted small center bar-hint">${star ? "↑ ↓ pick a group (it starts on the ★ one), → or Enter puts the photo there; its key or a drag works too, N makes a new group, ← tosses it. E renames the highlighted group, Shift+↑ ↓ moves it (or drag it), its emoji changes it." : "Start your first group with this photo (→ or N), or toss it (←). It gets a name you can change."}</p></div>
+            : `<button class="btn big keep-btn" data-c="new">New group <kbd>→</kbd></button>`}</div>
+        </div>
       </div>`;
-    cur = star ? Math.max(0, bins.findIndex((b) => b.id === star.id)) : bins.length;  // ↑/↓ walk the groups from the ★ one
+    cur = selected === "new" ? bins.length : selected != null ? Math.max(0, bins.findIndex(b => String(b.id) === selected))
+      : star ? Math.max(0, bins.findIndex((b) => b.id === star.id)) : bins.length;  // ↑/↓ walk the groups from the ★ one
     carryable($("#dtop"), { right: () => place(aimed()), left: toss, drop: (b) => place(b) });
     $$("[data-bin]", main).forEach((b) => (b.onclick = (e) => {
       const g = bins.find((x) => String(x.id) === b.dataset.bin);
@@ -4935,11 +5482,31 @@ async function drawQuickSort(main) {
     }));
     $$("[data-c=new]", main).forEach((x) => (x.onclick = () => place("new")));
     $("[data-c=toss]", main).onclick = toss;
-    $("[data-c=undo]", main).onclick = () => drawUndo(load);
+    if ($("[data-c=skip]", main)) $("[data-c=skip]", main).onclick = skip;
+    $("[data-c=undo]", main).onclick = undo;
     if ($("[data-c=star]", main)) $("[data-c=star]", main).onclick = () => place(aimed());
     sortableBins($("#bins", main), bins.map((b) => b.id), (ids) => { bins.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)); paint(); });
     paintCursor();
     paintFilters();
+  }
+  async function skip() {
+    if (busy || !cards[0]) return;
+    if (left_ < 2) { location.hash="draw"; return; }
+    busy = true;
+    const selected = aimed();
+    try {
+      // The last card of a dealt batch can still have more unsorted takes waiting on the server.
+      if (cards.length < 2 && !await load(false)) return;
+      if (cards.length < 2) return;
+      const card = cards.shift();
+      cards.splice(1 + Math.floor(Math.random() * cards.length), 0, card);
+      paint(selected);
+    } finally { busy = false; }
+  }
+  async function undo() {
+    if (busy) return;
+    busy = true;
+    try { await drawUndo(() => load()); } finally { busy = false; }
   }
   async function place(bin) {
     if (busy || !cards[0]) return;
@@ -4947,14 +5514,18 @@ async function drawQuickSort(main) {
     try {
       if (bin === "new") {
         const r = await api("/api/draw/new", { photos: [cards[0].photo] });
+        if (left(view)) return;
         toast(`New group: ${r.theme.emoji} ${r.theme.name}. Rename it any time on the Groups page.`);
+        resolved.add(cards[0].photo);
         cards.shift();
+        await load();  // the new group is a bin now, and the hints change
         busy = false;
-        return load();  // the new group is a bin now, and the hints change
+        return;
       }
       await api("/api/draw/place", { photo: cards[0].photo, theme: Number(bin) });
+      if (left(view)) return;
       Sound.play("pick");
-      const star = cards[0].options[0], now = performance.now();
+      const star = cards[0].options[0], now = playTime();
       called.total++;
       if (star && String(star.id) === String(bin)) called.right++;
       called.combo = now - called.last < 2500 ? called.combo + 1 : 1;
@@ -4964,6 +5535,7 @@ async function drawQuickSort(main) {
       left_ = Math.max(0, left_ - 1);
       const g = bins.find((x) => String(x.id) === String(bin));
       if (g) g.size++;  // its count goes up right away
+      resolved.add(cards[0].photo);
       cards.shift();
     } catch (e) { toast(e.message); }
     busy = false;
@@ -4979,19 +5551,21 @@ async function drawQuickSort(main) {
     try {
       await api("/api/draw/toss", { photo: cards[0].photo });
       await sleep(reduceMotion ? 0 : 200);
+      if (left(view)) return;
       left_ = Math.max(0, left_ - 1);
+      resolved.add(cards[0].photo);
       cards.shift();
     } catch (e) { toast(e.message); if (el) el.classList.remove("fly-left"); busy = false; return; }
     busy = false;
     if (cards.length) paint(); else await load();
   }
   S.onKey = (e) => {
-    if (e.repeat) return;
+    if (e.repeat || e.defaultPrevented || e.target?.isContentEditable) return;
     const k = e.key;
     if (!cards[0]) {  // the finish screen: the way on, back, or undo the last one
       if (k === "Enter") { e.preventDefault(); location.hash = "#duel?stage=stacks"; }
       else if (k === "Escape") { e.preventDefault(); location.hash = "#draw"; }
-      else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); drawUndo(load); }
+      else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); undo(); }
       return;
     }
     const gi = groupKey(e);
@@ -5004,10 +5578,11 @@ async function drawQuickSort(main) {
     else if (k === "ArrowUp" || k === "ArrowDown") { e.preventDefault(); cur = (cur + (k === "ArrowUp" ? -1 : 1) + bins.length + 1) % (bins.length + 1); paintCursor(); }
     else if ((k === "e" || k === "E") && bins[cur]) { e.preventDefault(); renameBin($$("#bins [data-bin]", main)[cur], bins[cur], paint); }
     else if (k === "ArrowRight" || k === "Enter") { e.preventDefault(); place(aimed()); }  // Enter confirms, like →
-    else if (k === "ArrowLeft") { e.preventDefault(); toss(); }
+    else if (k === "ArrowLeft" || k.toLowerCase() === "x") { e.preventDefault(); toss(); }
+    else if (k === " " && !e.target?.closest("input, select, textarea, button, a, [role=button]")) { e.preventDefault(); skip(); }
     else if (k === "Escape") { e.preventDefault(); location.hash = "#draw"; }
     else if (k === "n" || k === "N") { e.preventDefault(); place("new"); }
-    else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); drawUndo(load); }
+    else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); undo(); }
   };
   main.innerHTML = LOADING();
   await load();
@@ -5024,19 +5599,27 @@ async function viewCuts(main, params) {
   for (const p of d.photos) (by[p.reason] = by[p.reason] || []).push(p);
   const reasons = Object.keys(by).sort((a, b) => by[b].length - by[a].length);
   let current = params.get("reason") && by[params.get("reason")] ? params.get("reason") : reasons[0];
+  let busy = false;
   const label = (r) => esc(d.labels[r] || r);
 
   const send = async (items, on) => {
-    if (!items.length) return;
-    await api("/api/rescue", { ids: items.map((p) => p.id), on, reason: current });
-    items.forEach((p) => (p.rescued = on));
+    if (!items.length || busy || left(view)) return false;
+    busy = true;
+    try {
+      await api("/api/rescue", { ids: items.map((p) => p.id), on, reason: current });
+      items.forEach((p) => (p.rescued = on));
+      return !left(view);
+    } catch (e) { if (!left(view)) toast(e.message); return false; }
+    finally { busy = false; }
   };
 
   // the tabs (one per reason) and the bar's bulk buttons: only the ones that would do something
   const paint = () => {
+    if (left(view)) return;
     const list = by[current] || [];
     const back = list.filter((p) => p.rescued);
     const aside = list.length - back.length;
+    $("#cut-remaining").textContent=fmt(d.photos.filter(p=>!p.rescued).length);
     $("#cut-tabs").innerHTML = reasons.map((r) => {
       const nb = by[r].filter((p) => p.rescued).length;
       return `<button class="chip ${r === current ? "on" : ""}" data-r="${esc(r)}">${label(r)} <b>${fmt(by[r].length)}</b>${nb ? `<span class="back-n">· ${fmt(nb)} back in</span>` : ""}</button>`;
@@ -5050,9 +5633,8 @@ async function viewCuts(main, params) {
       render();
     }));
     const bulk = async (items, on) => {
-      await send(items, on);
-      paint();
-      $$(".tile[data-id]").forEach((t) => t.classList.toggle("rescued", list.find((x) => x.id === Number(t.dataset.id)).rescued));
+      if (!await send(items, on)) return;
+      render();  // the user may have opened a different reason while this saved
       toast(on ? `${fmt(items.length)} photos back in the tournament.` : `${fmt(items.length)} photos set aside again.`);
     };
     const all = $("#all-back");
@@ -5062,12 +5644,13 @@ async function viewCuts(main, params) {
   };
 
   const render = () => {
+    if (left(view)) return;
     const list = by[current] || [];
     main.innerHTML = `
       <div class="screen cuts no-rail">
         <div class="screen-head">
           <h1>🗑️ Set aside</h1>
-          <span class="stat-chip"><b>${fmt(d.photos.length)}</b> set aside</span>
+          <span class="stat-chip"><b id="cut-remaining">${fmt(d.photos.filter(p=>!p.rescued).length)}</b> set aside</span>
           <span class="cut-tabs" id="cut-tabs"></span>
           <span class="grow"></span>
           ${helpBtn(`What it decided were obvious throw-outs, by reason. Click a photo (or Enter / Space on it) to bring it back into the
@@ -5089,7 +5672,7 @@ async function viewCuts(main, params) {
     }));
     $$(".tile[data-id]").forEach((t) => (t.onclick = async () => {
       const p = list.find((x) => x.id === Number(t.dataset.id));
-      await send([p], !p.rescued);
+      if (!await send([p], !p.rescued)) return;
       t.classList.toggle("rescued", p.rescued);
       t.setAttribute("aria-pressed", p.rescued);
       paint();
@@ -5103,7 +5686,8 @@ async function viewCuts(main, params) {
 async function viewPeople(main) {
   main.innerHTML = LOADING();
   const view = S.view;
-  const d = await api("/api/people");
+  let d;
+  try { d = await api("/api/people"); } catch(e) { if (!left(view)) main.innerHTML=FAILED(e.message); return; }
   if (left(view)) return;
   main.innerHTML = `
     <div class="screen people-screen no-rail">
@@ -5138,30 +5722,33 @@ async function viewPeople(main) {
       </div>
       <div class="screen-bar action-bar">
         <div class="bar-left"><button class="btn ghost" id="not-me">That's not me at all</button></div>
-        <div class="bar-mid">${d.last ? `<button class="btn ghost" id="people-undo">Undo last change</button>` : ""}</div>
+        <div class="bar-mid">${d.last ? `<button class="btn ghost" id="people-undo"><kbd>Z</kbd> Undo last change</button>` : ""}</div>
         <div class="bar-right"><a class="btn primary big" href="#home">The map → <kbd>Enter</kbd></a></div>
       </div>
     </div>`;
   const act = async (key, action, msg) => {
-    await api(`/api/people/${key}`, { action });
+    try { await api(`/api/people/${key}`, { action }); } catch(e) { if (!left(view)) toast(e.message); return; }
+    if (left(view)) return;
     toast(msg);
-    setTimeout(() => viewPeople(main), 1200);
+    setTimeout(() => { if (!left(view)) viewPeople(main); }, 1200);
   };
-  $("#not-me").onclick = () => {
-    if (!confirm("Tell it these faces aren't you? It will look for someone else who shows up often. (You can undo this.)")) return;
+  $("#not-me").onclick = async () => {
+    if (!await askInGame("Tell it these faces aren't you? It will look for someone else who shows up often. You can undo this.", "Find someone else")) return;
     act(0, "not_me", "Got it, re-working out which face is you…");
   };
   const undoBtn = $("#people-undo");
+  S.onKey=e=>{if(e.key.toLowerCase()==="z"&&undoBtn){e.preventDefault();if(!e.repeat)undoBtn.click();}else if(e.key==="Escape"){e.preventDefault();location.hash="home";}};
   if (undoBtn) undoBtn.onclick = async () => {
-    try { await api("/api/people/undo", {}); } catch (e) { toast(e.message); return; }
+    try { await api("/api/people/undo", {}); } catch (e) { if(!left(view))toast(e.message); return; }
+    if(left(view))return;
     toast("Undone. Re-sorting your photos…");
-    setTimeout(() => viewPeople(main), 1200);
+    setTimeout(() => { if (!left(view)) viewPeople(main); }, 1200);
   };
   $$("[data-match]").forEach((b) => (b.onclick = async () => {
-    await api("/api/settings", { match: b.dataset.match });
-    await loadState();
+    try { await api("/api/settings", { match: b.dataset.match });await loadState(); }catch(e){if(!left(view))toast(e.message);return;}
+    if(left(view))return;
     toast(`Face matching: ${b.dataset.match}. Re-sorting your photos…`);
-    setTimeout(() => viewPeople(main), 1500);
+    setTimeout(() => { if (!left(view)) viewPeople(main); }, 1500);
   }));
   $$("[data-act]").forEach((b) => (b.onclick = () => act(b.dataset.k, b.dataset.act,
     { exclude: "Excluded; their photos are being set aside.", include: "Included again.", me: "Merged into you." }[b.dataset.act])));
@@ -5172,6 +5759,13 @@ $("#open-menu").onclick = openMenu;
 function openSettings() {
   const s = S.lib.settings;
   const d = $("#settings");
+  let busy = false;
+  const change = async (action) => {
+    if (busy || !d.open) return;
+    busy = true;
+    try { await action(); } catch (e) { toast(e.message); }
+    finally { busy = false; }
+  };
   const opt = (vals, cur, fmtv = (v) => v) => vals.map((v) => `<option value="${v}" ${v === cur ? "selected" : ""}>${fmtv(v)}</option>`).join("");
   d.innerHTML = `
     <h2>Settings</h2>
@@ -5180,7 +5774,7 @@ function openSettings() {
       <option value="me" ${MODE() === "me" ? "selected" : ""}>Photos of me (profile pics)</option></select></label>
     <label>Leaderboard size (at most; small cups use a quarter of their shots)<select id="s-k">${opt([20, 25, 30, 40, 50, 60], s.finalists)}</select></label>
     <label>At most this many shots from one scene<select id="s-cap">${opt([1, 2, 3, 4, 5], s.per_scene)}</select></label>
-    <label>Set aside photos older than<select id="s-age">${opt([0, 2, 3, 5, 8], s.max_age_years, (v) => (v ? `${v} years` : "never (just rank them lower)"))}</select></label>
+    <button class="btn ghost" id="s-filter">🎛️ Tune quality, age and subjects in Filter →</button>
     <p class="muted small">Folder: <code class="path">${esc(S.lib.source)}</code></p>
     <div class="row spread" style="margin-top:18px">
       <span class="row"><button class="btn ghost" id="s-rescan">Re-scan for new photos</button><button class="btn ghost" id="s-change">Switch save</button>
@@ -5188,28 +5782,28 @@ function openSettings() {
       <span class="row"><button class="btn" id="s-cancel">Cancel</button><button class="btn primary" id="s-save">Save</button></span>
     </div>`;
   $("#s-cancel").onclick = () => d.close();
-  $("#s-save").onclick = async () => {
+  $("#s-save").onclick = () => change(async () => {
     const mode = $("#s-mode").value;
-    await api("/api/settings", { finalists: Number($("#s-k").value), per_scene: Number($("#s-cap").value),
-      max_age_years: Number($("#s-age").value), mode });
+    await api("/api/settings", { finalists: Number($("#s-k").value), per_scene: Number($("#s-cap").value), mode });
     const changed = mode !== MODE();
     await loadState();
     d.close();
     toast(changed ? "Re-sorting your photos for the new mode; give it a few seconds." : "Saved.");
     if (changed) location.hash = "home";
     route();
-  };
-  $("#s-rescan").onclick = async () => { await api("/api/rescan", {}); await loadState(); d.close(); location.hash = "analyze"; route(); };
+  });
+  $("#s-rescan").onclick = () => change(async () => { await api("/api/rescan", {}); await loadState(); d.close(); location.hash = "analyze"; route(); });
+  $("#s-filter").onclick = () => { if(busy)return;d.close();location.hash="#filter"; };
   $("#s-change").onclick = () => { d.close(); location.hash = "#saves"; };
-  $("#s-forget").onclick = async () => {
-    if (!confirm("Delete everything MatchER keeps about this folder: your calls, face data, previews and exports? Your photos themselves aren't touched. This can't be undone.")) return;
+  $("#s-forget").onclick = () => change(async () => {
+    if (!await askInGame("Delete everything MatchER keeps about this folder: your calls, face data, previews and exports? Your photos themselves aren't touched. This can't be undone.", "Forget this save")) return;
     await api("/api/library/forget", { path: S.lib.source });
     await loadState();
     d.close();
     toast("Forgotten.");
     location.hash = "onboard";
     route();
-  };
+  });
   d.showModal();
 }
 
@@ -5235,16 +5829,19 @@ function hslToRgb([h, s, l]) {
 const vivid = (c) => { const [h, s, l] = rgbToHsl(c); return hslToRgb([h, Math.min(1, s * 1.35 + 0.1), Math.min(0.5, Math.max(0.3, l))]); };
 
 // Where a photo actually shows on screen (object-fit: contain leaves bars), or null if it's off screen or tiny.
-function shownRect(img) {
+function shownRect(img, minimum = 48) {
   if (!img.offsetParent || img.closest(".under, .help-pop")) return null;
   const r = img.getBoundingClientRect();
-  if (r.width < 48 || r.height < 48 || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return null;
+  if (r.width < minimum || r.height < minimum || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return null;
   let { left: x, top: y, width: w, height: h } = r;
-  if (img.naturalWidth && getComputedStyle(img).objectFit === "contain") {
+  const style = getComputedStyle(img);
+  if (img.naturalWidth && style.objectFit === "contain") {
     const a = img.naturalWidth / img.naturalHeight;
-    if (w / h > a) { const nw = h * a; x += (w - nw) / 2; w = nw; } else { const nh = w / a; y += (h - nh) / 2; h = nh; }
+    const [px = '50%', py = '50%'] = style.objectPosition.split(' ');
+    const offset = (value, spare) => value.endsWith('%') ? spare * parseFloat(value) / 100 : parseFloat(value) || 0;
+    if (w / h > a) { const nw = h * a; x += offset(px,w-nw); w = nw; } else { const nh = w / a; y += offset(py,h-nh); h = nh; }
   }
-  return w * h >= 2500 ? { x, y, w, h } : null;
+  return w * h >= (minimum ? 2500 : 0) ? { x, y, w, h } : null;
 }
 
 const Sea = {
@@ -5437,23 +6034,66 @@ const World = {
   init() {
     this.el = $("#world");
     if (!this.el) return;
-    this.sea = new VennSea(this.el, {});
-    this.plain = { onSelect: (it) => this.inspect(it.id) };  // anywhere but the Groups page, a click grabs a photo
+    this.el.removeAttribute("aria-hidden");
+    this.sea = new VennSea(this.el, {catalog:true});
+    this.plain = { onSelect: (it, e) => { if (e?.shiftKey) { it.selected = !it.selected; this.sea.select([...this.sea.items.values()].filter((x) => x.selected).map((x) => x.id)); } else this.inspect(it.id); },
+      onDrop:(ids,target)=>this.drop(ids,target),
+      onCircle:(key,anchor)=>this.tagMenu(key,anchor),onLasso:(id,anchor)=>{if(id.startsWith("gcup:"))return this.tagMenu(`kind:${id.slice(5)}`,anchor);location.hash=id==="gcut"?"#cuts":`#draw?g=${id.slice(1)}`;} };
     Object.assign(this.sea, this.plain);
+    const main = $("#main");
+    let scheduled = false;
+    new MutationObserver(() => {
+      if (scheduled || this.mode === "hidden") return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        if (this.mode === "hidden") return;
+        for (const {pid,img,area} of this.images(main)) {
+          const old=this.recycled?.get(pid), r=old?.getBoundingClientRect();
+          if (old && old !== img && (!old.isConnected || (main.contains(old)&&area>r.width*r.height*1.2))) {
+            if(old.isConnected){const copy=old.cloneNode(false);copy.onclick=old.onclick;copy.onload=old.onload;old.replaceWith(copy);}
+            for (const a of [...old.attributes]) old.removeAttribute(a.name);
+            for (const a of [...img.attributes]) old.setAttribute(a.name, a.value);
+            old.onclick = img.onclick; old.onload=img.onload; img.replaceWith(old);
+          }
+        }
+        const gone = this.focused || [];
+        this.swap(main, gone); this.focused = this.grab(main); this.fence();
+      });
+    }).observe(main, { childList: true, subtree: true });
   },
   // ambient: the sea is the map; focus: a screen is showing you photos; dim: a page of its own. In every mode the sea's
-  // photos keep out from under the screen's own things and fly in the space around them.
+  // photos continue behind its translucent controls.
   setMode(mode) {
     if (this.handlers && mode !== "live") {  // the Groups page let go of the sea: back to the plain world
       this.handlers = null;
-      Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null }, this.plain);
+      Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null, onSelectMatches:null }, this.plain);
       this.sea.select([]);
       this.sea.highlight(null);
       this.stale = true;
     }
     this.mode = mode;
     document.body.dataset.world = mode;
-    if (this.sea) this.sea.lassos_on = mode === "live" || mode === "ambient";  // bubbles where there's open sea for them
+    document.body.classList.remove("world-calm");
+    document.body.classList.toggle('sea-focus',!!this.sea?.el.classList.contains('has-focus'));
+    const body=$('#main .screen-body');if(body)body.inert=mode==='ambient'&&!!this.sea?.el.classList.contains('has-focus');
+    if (this.sea) {
+      // The map and the editors are explorable (pan and zoom); a comparison or a page uses the whole sea at rest.
+      this.sea.enableCamera(mode==='ambient'||mode==='live');
+      // The tag shelf belongs to the editors (Groups, Filter): reading and comparison screens keep the bottom edge clear.
+      this.sea.catalogSuppressed=mode!=='live';
+      if(mode!=='live'){
+        this.sea.releaseFocus();
+        for(const c of this.sea.circles.values())if(c.tag.parentElement!==this.sea.tagRow)this.sea.tagRow.append(c.tag);
+      }
+      this.sea.highlight(null);
+      for(const l of this.sea.lassos.values())l.docked=false;
+      this.sea.lassos_on=mode!=='hidden'&&this.sea.outlines!==false;this.sea.paused=mode==='hidden'||S.pause?.view===S.view;
+      if(mode==='hidden'){
+        cancelAnimationFrame(this.sea.raf);this.sea.raf=0;
+        this.sea.dock?.classList.remove('tag-dock');this.sea.dock=null;this.sea.el.append(this.sea.tray);this.sea.tray.hidden=true;
+      }else{this.sea.last=0;this.sea.layout();this.sea.kick();}
+    }
     if (mode !== "hidden" && mode !== "live" && this.stale) this.sync();
     clearInterval(this.watch);
     if (mode !== "hidden") { this.watch = setInterval(() => this.fence(), 700); setTimeout(() => this.fence(), 60); }
@@ -5465,19 +6105,13 @@ const World = {
     this.setMode("live");
     return this.sea;
   },
-  // what the screen has on it: the sea flows around these (head and bar strips, panels, the photos in focus)
+  // A reward or reading moment dims the sea behind the words; the next route or card brings it back.
+  calm(on) { document.body.classList.toggle("world-calm", !!on); },
+  // Older views still request a fence update; chrome no longer changes the sea physics.
   fence() {
-    if (!this.sea || !this.el) return;
-    const base = this.el.getBoundingClientRect();
-    const list = [];
-    for (const el of document.querySelectorAll(WORLD_SOLID)) {
-      if (el.closest("[hidden]") || el.closest("dialog")) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width < 4 || r.height < 4 || r.bottom < base.top || r.top > base.bottom) continue;
-      list.push({ x0: r.left - base.left, y0: r.top - base.top, x1: r.right - base.left, y1: r.bottom - base.top });
-    }
-    const sig = list.map((o) => [o.x0, o.y0, o.x1, o.y1].map(Math.round).join(",")).join("|");
-    if (sig !== this.fenced) { this.fenced = sig; this.sea.obstacles = list; this.sea.layout(); this.sea.stir(120); }
+    // Controls float over the world. Only photos participate in its collision avoidance.
+    if(!this.sea||!this.sea.obstacles?.length)return;
+    this.fenced='';this.sea.obstacles=[];this.sea.layout();
   },
   // the top of the leaderboard wear their rank in the sea (the map shows them there instead of a strip of its own)
   ranks(ids) {
@@ -5492,154 +6126,457 @@ const World = {
     b.textContent = r;
     b.classList.toggle("gold", r <= 3);
   },
+  groupSelection(ids,cup=S.journey?.cup || "all") {
+    return [...new Set(ids.map((id)=>{const p=this.photos?.get(Number(id)),rep=p?.rep || Number(id),r=this.photos?.get(rep) || p;
+      return r && (r.cut || (cup!=="all" && r.category!==cup)) ? null : rep;}).filter((id)=>id!=null))];
+  },
+  async drop(ids,target) {
+    let path,body;
+    if(target.kind==="photo"){path="/api/groups/merge";body={photos:[...ids,target.id]};}
+    else if(target.kind==="tags" && (target.on.length || target.off.length)) {
+      path="/api/tags/set";body={photos:ids,on:target.on,off:target.off};
+    } else if(target.kind==="bin") {
+      const photos=this.groupSelection(ids);if(!photos.length)return;
+      path=target.id==="new"?"/api/draw/new":"/api/draw/move";body={photos,...(target.id==="new"?{}:{theme:Number(target.id)})};
+    } else if(target.kind==="group") {  // dropped inside a group's lasso on the map
+      const photos=this.groupSelection(ids);if(!photos.length)return;
+      path="/api/draw/move";body={photos,theme:target.id};
+    } else return;
+    const view=S.view;
+    try {const r=await api(path,body);if(left(view))return;updateHudQuiet(r.game);paintSaveChip();
+      if(path==="/api/groups/merge"){toastOnce("stacked","Stacked. Z undoes it.");this.sync();}
+      else toast("Saved. Z undoes it.");this.sea.select([]);refreshHud(true);
+    } catch(e){if(!left(view))toast(e.message);}
+  },
   dirty() {
-    this.stale = true;
+    this.stale = true; this.photosSource = null;
     if (this.mode !== "hidden") setTimeout(() => this.sync(), Math.max(0, 1200 - (performance.now() - this.last)));
+  },
+  async allPhotos(onPage) {
+    const source = S.lib?.source;
+    if (this.photoLoading && this.photoSource === source) { await this.photoLoading; if(source===S.lib?.source)onPage?.(); return; }
+    if (this.photosSource === source && this.photos?.size === this.total) { onPage?.(); return; }
+    const retain=this.photoSource===source;this.photoSource = source;
+    const loading = (async () => {
+      let after = 0, more = true;
+      const fromAnalysis=this.sea.source===source;
+      const seed=fromAnalysis?[...this.sea.items.values()].map(it=>[it.id,{id:it.id,rep:it.stack,members:it.take?[it.id]:it.members,tags:it.tags,theme:typeof it.group==='number'?it.group:-1,category:it.category,cut:it.cut,visual:it.visual}]):[];
+      const photos = new Map(retain?this.photos:seed),seen=new Set();this.photos = photos;
+      this.sprites=retain?this.sprites||new Map():fromAnalysis?this.sea.sprites||new Map():new Map();this.sea.sprites=this.sprites;
+      if(!retain){this.recycled=new Map();this.lifted.clear();}
+      if(!fromAnalysis&&!retain)this.sea.syncItems([]);this.sea.source=source;
+      while (more && source === S.lib?.source) {
+        const before = after;
+        const page = await api(`/api/world?per=1000&after=${after}`);
+        if (source !== S.lib?.source) return;
+        const sheet = new Image(),key=imageKey();
+        sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;page.photos.forEach((p,i)=>this.sprites.set(p.id,{img:sheet,x:(i%50)*16,y:Math.floor(i/50)*16}));this.sea.densityDirty=this.sea.spritesDirty=true;this.sea.kick(); };
+        // A sheet that fails to arrive is asked for again (a few times): without it a thousand prints would stay blank.
+        sheet.onerror = () => { if(source!==S.lib?.source||key!==imageKey()||(sheet.tries=(sheet.tries||0)+1)>3)return;setTimeout(()=>{if(source===S.lib?.source)sheet.src=`${sheet.src.split('&t=')[0]}&t=${Date.now()}`;},2000*sheet.tries); };
+        page.photos.forEach(p=>{photos.set(p.id,p);seen.add(p.id);});
+        sheet.src = `/img/atlas.jpg?per=1000&after=${before}&v=${imageKey()}`;
+        this.total = page.total; after = page.after; more = page.more;
+        onPage?.(page); await sleep(0);
+      }
+      if(source!==S.lib?.source)return;
+      for(const id of photos.keys())if(!seen.has(id)){photos.delete(id);this.sprites.delete(id);}
+      this.photosSource = source;
+      onPage?.();
+    })();
+    this.photoLoading=loading;
+    try { await loading; } finally { if(this.photoLoading===loading)this.photoLoading = null; }
+  },
+  extras(items) {
+    for(const it of items)it.visual ||= this.photos?.get(it.photo||it.id)?.visual;
+    const have = new Set(items.map((x) => x.id)), covers=new Map(items.map((x)=>[x.id,x]));
+    for (const p of this.photos?.values() || []) if (!have.has(p.id)) {
+      const rep=covers.get(p.rep), group=p.cut?"cut":p.theme>=0?p.theme:p.category?`cup:${p.category}`:null;
+      const it={id:p.id,photo:p.id,tags:p.tags||[],group:rep?rep.group:group,sugg:rep?.sugg,
+        n:p.members.length,members:p.members,rep:p.rep,category:p.category,cut:!!p.cut,take:p.rep!==p.id,box:p.box,visual:p.visual};
+      items.push(it);if(p.rep===p.id)covers.set(p.id,it);
+    }
+    return items;
+  },
+  categories(items) {
+    const counts=new Map();for(const it of items)if(typeof it.group==="string"&&it.group.startsWith("cup:"))counts.set(it.group,(counts.get(it.group)||0)+1);
+    return [...counts].map(([key,n])=>({id:`g${key}`,kind:"group",html:`${esc(KINDS[key.slice(4)]?.[0]||"🗂️")} <span class="ps-count">${fmt(n)}</span>`}));
   },
   sync() {
     if (!this.sea || this.loading || this.mode === "live" || !S.lib || !S.lib.analyzed || S.lib.analyzing) return this.loading;
     this.stale = false;
     this.last = performance.now();
-    this.loading = api("/api/draw/board?per=80&uper=500&tags=1").then((b) => {
-      const T = b.tagging || { shot_tags: {}, suggestions: [], tags: [] };
+    const source = S.lib.source;let failed=false;
+    this.loading = (async () => {
+      const [b,tags] = await Promise.all([api("/api/draw/board?per=4&uper=4&tags=1"),api("/api/tags?all=1")]);
+      if (source !== S.lib?.source || this.mode === "live" || this.mode==='hidden') return;
       this.board = b;
-      this.tagMeta = new Map((T.tags || []).map((t) => [t.key, t]));
-      const suggOf = new Map();
-      (T.suggestions || []).forEach((sg) => sg.shots.forEach((r) => suggOf.set(r, sg.key)));
-      const items = [];
-      b.groups.forEach((g) => g.shots.forEach((x) => items.push({ id: x.rep, photo: x.rep, tags: T.shot_tags[x.rep] || [], group: g.id, n: x.members.length })));
-      b.unsorted.shots.forEach((x) => items.push({ id: x.rep, photo: x.rep, tags: T.shot_tags[x.rep] || [], sugg: suggOf.get(x.rep) ?? null, n: x.members.length }));
-      this.sea.setVenn([], items, b.groups.map((g) => ({ id: `g${g.id}`, kind: "group", html: `${esc(g.emoji || "🗂️")} ${esc(g.name)}` })));
-      for (const pid of this.lifted) this.tileOf(pid)?.classList.add("lifted");
-      for (const it of this.sea.items.values()) this.badge(it);
-      this.fence();
-    }).catch(() => { this.stale = true; }).finally(() => { this.loading = null; });
+      this.tagMeta = new Map(tags.tags.map((t) => [t.key, t]));
+      await this.allPhotos(() => {
+        if (source !== S.lib?.source || this.mode === "live" || this.mode==='hidden') return;
+        const items = this.extras([]);
+        this.sea.setVenn(tags.tags.filter((t)=>t.count||t.user).map((t)=>({id:t.key,label:t.label,emoji:t.emoji,catchy:t.catchy,ring:tags.visible.includes(t.key),
+          html:`${esc(t.emoji||"🏷️")} ${esc(t.label)} <span class="ps-count">${fmt(t.count)}</span>`})), items, [...b.groups.map((g) => ({ id: `g${g.id}`, kind: "group",bin:g.id,
+          html: `${esc(g.emoji || "🗂️")} ${esc(g.name)} · ${g.adv || 0} through` })),
+          ...this.categories(items), { id: "gcut", kind: "group", html: "🫙 Set aside" }]);
+        for (const pid of this.lifted) this.tileOf(pid)?.classList.add("lifted");
+        for (const it of this.sea.items.values()) this.badge(it);
+        this.fence();
+      });
+    })().catch((e) => { failed=true;this.stale = true; toast(e.message); }).finally(() => {
+      this.loading = null;
+      if(this.stale){this.photosSource=null;if(!failed && this.mode!=="hidden" && this.mode!=="live")setTimeout(()=>this.sync(),1200);}
+    });
     return this.loading;
   },
-  tileOf(pid) { const it = this.sea && this.sea.items.get(Number(pid)); return it ? it.el : null; },
-  fly(src, from, to, { ms = 360, cls = "" } = {}) {
-    const img = document.createElement("img");
-    img.src = src;
-    img.className = `world-fly ${cls}`;
-    img.alt = "";
-    Object.assign(img.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px` });
+  tileOf(pid) { const it = this.sea?.promote(Number(pid)); return it ? it.el : null; },
+  rect(img) {
+    if (!img?.isConnected) return null;
+    // Every photo is a polaroid and a flight carries the whole card, so the rectangle is the card's box: a pane's
+    // picture sits in a `.window` inside its `.print`, a bare image carries its own paper.
+    const card=img.closest?.('.print')||img;
+    const box=card.getBoundingClientRect();if(!box.width||!box.height)return null;
+    const style=getComputedStyle(img),bare=card===img&&!(parseFloat(style.paddingBottom)>0);let a=1,b=0,c=0,d=1;
+    // Keep the actual wobble/scale as well as contain's letterboxing. The element's outer rectangle includes both.
+    for(let el=card;el;el=el.parentElement){
+      const computed=getComputedStyle(el),transform=computed.transform,scale=computed.scale;
+      if(transform==='none'&&(!scale||scale==='none'))continue;
+      const [sx=1,sy=sx]=(scale&&scale!=='none'?scale:'1').split(/\s+/).map(Number);
+      const m=new DOMMatrixReadOnly(transform==='none'?undefined:transform),aa=sx*(m.a*a+m.c*b),bb=sy*(m.b*a+m.d*b),cc=sx*(m.a*c+m.c*d),dd=sy*(m.b*c+m.d*d);
+      a=aa;b=bb;c=cc;d=dd;
+    }
+    let width=box.width,height=box.height,cx=box.left+width/2,cy=box.top+height/2;
+    if(bare&&img.naturalWidth&&style.objectFit==='contain'&&img.clientWidth&&img.clientHeight){
+      const w=img.clientWidth,h=img.clientHeight,k=Math.min(w/img.naturalWidth,h/img.naturalHeight);
+      const pw=img.naturalWidth*k,ph=img.naturalHeight*k,[px='50%',py='50%']=style.objectPosition.split(' ');
+      const offset=(value,space)=>value.endsWith('%')?parseFloat(value)*space/100:parseFloat(value)||0;
+      const dx=offset(px,w-pw)+(pw-w)/2,dy=offset(py,h-ph)+(ph-h)/2;
+      cx+=a*dx+c*dy;cy+=b*dx+d*dy;width=Math.abs(a)*pw+Math.abs(c)*ph;height=Math.abs(b)*pw+Math.abs(d)*ph;
+    }
+    const clip=bare?img.dataset.frameClip?.split(',').map(Number):null;
+    return {left:cx-width/2,top:cy-height/2,width,height,angle:Math.atan2(b,a),position:style.objectPosition,filter:style.filter,
+      clip:clip?.length===4&&clip.every(Number.isFinite)?clip:[0,0,0,0],mask:bare?style.maskImage:'none',maskComposite:style.maskComposite};
+  },
+  animateFlights() {
+    if(this.flightRaf)return;
+    this.flightRaf=requestAnimationFrame(now=>{
+      this.flightRaf=0;
+      // A roster can lift many photos at once. Read all their destinations before any write forces layout again.
+      const frame=[...(this.activeFlights||[])].map(flight=>[flight,flight.measure()]);
+      for(const [flight,to]of frame)flight.tick(now,to);
+      if(this.activeFlights?.size)this.animateFlights();
+    });
+  },
+  // How a pane shows its picture, as fractions of its window: where the framing (a crop, a turn) has put it. A bare
+  // card (a sea print, a tile) contains the whole picture, which is `null` here.
+  frameOf(img) {
+    const win = img?.closest?.(".window");
+    if (!win) return null;
+    const r = img.getBoundingClientRect(), w = win.getBoundingClientRect();
+    if (!w.width || !w.height || !r.width) return null;
+    return { x: (r.left - w.left) / w.width, y: (r.top - w.top) / w.height, w: r.width / w.width, h: r.height / w.height };
+  },
+  // A flight is a whole polaroid: paper, window and the picture framed inside it. The framing travels too, from how
+  // the origin showed the picture to how the destination will (a crop is there from the first frame, so nothing
+  // lands and then snaps into it).
+  fly(src, from, target, { ms = 360, cls = "", pid, kind, valid = () => true, finish = () => {}, frameFrom = null, frameTo = null } = {}) {
+    this.flights ||= new Map();
+    const replaced=pid!=null?this.flights.get(pid):null;
+    const img = document.createElement("div");
+    img.className = `world-fly print ${cls}`;
+    img.innerHTML = `<div class="paper"><div class="window"><img src="${src}" alt=""></div></div>`;
+    const picture = img.querySelector("img");
+    let resolve,ended=false,current={...from,angle:from.angle||0,clip:[...(from.clip||[0,0,0,0])]},previous=null,start=null,end=null,progress=0;
+    const promise=new Promise(ok=>resolve=ok),flight={img,picture,kind,rect:current,promise,cancel:()=>done(false)};
+    const contain=(W,H)=>{const iw=picture.naturalWidth,ih=picture.naturalHeight;if(!iw||!ih)return null;const k=Math.min(W/iw,H/ih);return {x:(W-iw*k)/2/W,y:0,w:iw*k/W,h:ih*k/H};};
+    const paint=()=>{
+      const co=Math.abs(Math.cos(current.angle)),si=Math.abs(Math.sin(current.angle)),den=Math.max(.1,co*co-si*si);
+      const width=Math.max(1,(co*current.width-si*current.height)/den),height=Math.max(1,(co*current.height-si*current.width)/den);
+      Object.assign(img.style,{left:`${current.left+(current.width-width)/2}px`,top:`${current.top+(current.height-height)/2}px`,
+        width:`${width}px`,height:`${height}px`,transform:`rotate(${current.angle}rad)`,
+        clipPath:current.clip.some(v=>v>0)?`inset(${current.clip.map(v=>`${v*100}%`).join(' ')} round var(--radius))`:'none',
+        maskImage:current.mask||'none',maskComposite:current.maskComposite||'add'});
+      // The picture inside the window: the origin's framing blended into the destination's as the card travels.
+      const W=width*.89,H=height*.83125,a=frameFrom||contain(W,H),b=(typeof frameTo==='function'?frameTo():frameTo)||contain(W,H);
+      const f=a&&b?{x:a.x+(b.x-a.x)*progress,y:a.y+(b.y-a.y)*progress,w:a.w+(b.w-a.w)*progress,h:a.h+(b.h-a.h)*progress}:a||b;
+      if(f)Object.assign(picture.style,{left:`${f.x*W}px`,top:`${f.y*H}px`,width:`${f.w*W}px`,height:`${f.h*H}px`,objectFit:'fill'});
+      else Object.assign(picture.style,{left:'0px',top:'0px',width:'100%',height:'100%',objectFit:'contain'});
+    };
+    const done=arrived=>{
+      if(ended)return;ended=true;this.activeFlights?.delete(flight);
+      finish(arrived,flight);img.remove();if(pid!=null&&this.flights.get(pid)===flight)this.flights.delete(pid);resolve(arrived);
+    };
+    if(pid!=null)this.flights.set(pid,flight);
+    replaced?.cancel();
+    paint();
     document.body.append(img);
-    return new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => {
-      img.style.transition = `left ${ms}ms cubic-bezier(.2,.9,.3,1), top ${ms}ms cubic-bezier(.2,.9,.3,1), width ${ms}ms cubic-bezier(.2,.9,.3,1), height ${ms}ms cubic-bezier(.2,.9,.3,1), opacity ${ms}ms, border-radius ${ms}ms`;
-      Object.assign(img.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px` });
-      img.classList.add("flying");
-      setTimeout(() => { img.remove(); ok(); }, ms + 40);
-    })));
+    flight.measure=()=>valid()&&(typeof target==='function'?target():target);
+    flight.tick=(now,to)=>{
+      if(ended)return;
+      if(!to?.width||!to.height){done(false);return;}
+      if(start==null){start=now;end=now+(reduceMotion?0:ms);}
+      // Follow the live destination. A dock, decoded image or resized viewport may move it during the flight.
+      if(previous&&Math.max(...['left','top','width','height'].map(k=>Math.abs(to[k]-previous[k])))>6)
+        end=Math.min(start+ms+700,Math.max(end,now+180));
+      const remaining=Math.max(0,end-now),elapsed=previous?Math.max(0,now-previous.time):0;
+      const blend=remaining?1-Math.pow(remaining/(remaining+elapsed),3):1;
+      progress+=(1-progress)*blend;
+      for(const key of ['left','top','width','height'])current[key]+=(to[key]-current[key])*blend;
+      current.angle+=((to.angle||0)-current.angle)*blend;
+      const clip=to.clip||[0,0,0,0];current.clip=current.clip.map((v,i)=>v+(clip[i]-v)*blend);
+      current.mask=to.mask;current.maskComposite=to.maskComposite;
+      picture.style.filter=[to.filter==='none'?'':to.filter,cls==='lose'?'grayscale(.5)':''].filter(Boolean).join(' ');
+      paint();previous={...to,time:now};img.classList.add('flying');
+      if(!remaining){done(true);return;}
+    };
+    this.activeFlights ||= new Set();this.activeFlights.add(flight);this.animateFlights();
+    return flight;
+  },
+  // A photo can also appear in a roster or a pile. Its largest main copy is the one that flies and gets recycled.
+  images(root) {
+    const best=new Map();
+    for(const img of root?.querySelectorAll('img[src*="/img/"]') || []) {
+      const match=img.getAttribute("src").match(/\/img\/[pt]\/(\d+)\.jpg/);
+      if(!match||img.closest(".under, .screen-rail, .board-card"))continue;  // the Leaderboard's card slides instead
+      const pid=Number(match[1]),rect=img.getBoundingClientRect(),area=rect.width*rect.height,old=best.get(pid);
+      if(!old||area>old.area)best.set(pid,{pid,img,rect,area});
+    }
+    return [...best.values()];
   },
   // the photos on show in `root` now (call it before `root` re-renders)
   grab(root) {
     if (!root || this.mode === "hidden" || reduceMotion) return [];
-    return [...root.querySelectorAll("[data-photo]:not(.under)")].map((el) => {
-      const img = el.querySelector(":scope > img");
-      return img && { pid: Number(el.dataset.photo), rect: img.getBoundingClientRect(), fate: el.classList.contains("won") ? "win" : el.classList.contains("lost") ? "lose" : "back" };
-    }).filter((x) => x && x.rect.width);
+    return this.images(root).map(({pid,img})=>({pid,rect:this.flights?.get(pid)?.rect||this.arrivals?.get(pid)?.from||this.rect(img),frame:this.frameOf(img),
+      fate:img.closest(".won")?"win":img.closest(".lost")?"lose":"back"})).filter(x=>x.rect?.width&&x.rect.height);
   },
   // after `root` re-rendered: the photos that left sink back to the sea, the new ones rise out of it
   swap(root, gone) {
     if (this.mode === "hidden" || reduceMotion || !this.sea) return;
-    const now = root ? [...root.querySelectorAll("[data-photo]:not(.under)")] : [];
-    const here = new Set(now.map((el) => Number(el.dataset.photo)));
-    for (const g of gone) if (!here.has(g.pid)) this.sink(g.pid, g.rect, g.fate);
+    const now = this.images(root).map(x=>x.img);
+    const pidOf = (img) => Number(img.getAttribute("src").match(/\/img\/[pt]\/(\d+)\.jpg/)[1]);
+    const here = new Set(now.map(pidOf));
+    for (const g of gone) if (!here.has(g.pid)) this.sink(g.pid, g.rect, g.fate, g.frame);
     const had = new Set(gone.map((g) => g.pid));
-    for (const el of now) {
-      const pid = Number(el.dataset.photo);
-      if (had.has(pid)) continue;
-      const img = el.querySelector(":scope > img"), tile = this.tileOf(pid);
+    for (const img of now) {
+      const pid = pidOf(img);
+      const arrival=this.arrivals?.get(pid);
+      // Recycling replaces nodes while the same photo is flying. Transfer its live endpoint and reveal ownership.
+      if(arrival&&arrival.img!==img){
+        if(arrival.img.worldFlight===arrival.token){delete arrival.img.worldFlight;arrival.img.style.opacity='';}
+        arrival.img=img;img.worldFlight=arrival.token;img.style.opacity='0';
+      }
+      if (had.has(pid) || this.lifted.has(pid)&&this.flights?.get(pid)?.kind!=='sink') continue;
+      const tile = this.tileOf(pid);
       if (!img || !tile) continue;
-      const from = tile.getBoundingClientRect(), to = img.getBoundingClientRect();
-      if (!to.width || !from.width) continue;
-      tile.classList.add("lifted");  // its spot waits for it
+      const view=S.view,token={},from={...(this.flights?.get(pid)?.rect||this.rect(tile.querySelector('.pile-cover')||tile))};
+      if (!from?.width) continue;
+      this.flights?.get(pid)?.cancel();
       this.lifted.add(pid);
-      img.style.opacity = "0";
-      this.fly(T(pid), from, to).then(() => (img.style.opacity = ""));
+      const incoming={img,token,from};this.arrivals ||= new Map();this.arrivals.set(pid,incoming);
+      img.worldFlight=token;img.style.opacity = "0";
+      const valid=()=>!left(view)&&incoming.img.isConnected&&incoming.img.worldFlight===token;
+      const reveal=()=>{const current=incoming.img;if(current.worldFlight===token){delete current.worldFlight;current.style.opacity='';}
+        if(this.arrivals.get(pid)===incoming)this.arrivals.delete(pid);};
+      // Decode before measuring contain, then let the live destination absorb later layout and wobble changes.
+      img.decode().catch(()=>{}).then(()=>{
+        if(!valid()){reveal();return;}
+        this.lifted.add(pid);tile.classList.add('lifted');
+        this.fly(incoming.img.currentSrc||incoming.img.src,from,()=>this.rect(incoming.img),{pid,kind:'rise',valid,finish:reveal,frameTo:()=>this.frameOf(incoming.img)});
+      });
     }
   },
-  sink(pid, rect, fate) {
+  sink(pid, rect, fate, frame = null) {
     const tile = this.tileOf(pid);
-    this.lifted.delete(pid);
-    if (!tile) return;
-    const to = tile.getBoundingClientRect();
-    this.fly(T(pid), rect, to, { ms: 440, cls: fate === "win" ? "win" : fate === "lose" ? "lose" : "" }).then(() => {
-      tile.classList.remove("lifted");
-      if (fate === "win") { tile.classList.remove("ps-won"); void tile.offsetWidth; tile.classList.add("ps-won"); }
-    });
+    if (!tile) {this.flights?.get(pid)?.cancel();this.lifted.delete(pid);return;}
+    const from=this.flights?.get(pid)?.rect||rect;
+    this.lifted.add(pid);tile.classList.add('lifted');
+    this.fly(P(pid),from,()=>this.rect(tile.querySelector('.pile-cover')||tile),{pid,kind:'sink',ms:440,frameFrom:frame,
+      cls:fate==='win'?'win':fate==='lose'?'lose':'',valid:()=>tile.isConnected&&this.mode!=='hidden',finish:(arrived,flight)=>{
+        if(this.flights.get(pid)!==flight)return;
+        this.lifted.delete(pid);tile.classList.remove('lifted');
+        if(arrived&&fate==='win'){tile.classList.remove('ps-won');void tile.offsetWidth;tile.classList.add('ps-won');}
+      }});
   },
   // The grab: any photo in the sea comes up to the middle, bigger, with everything about it and what you can do with
   // it; Esc (or a click outside) shrinks it back to its spot.
-  async inspect(pid) {
+  tagMenu(key, anchor) {
+    const tag=this.tagMeta?.get(key);if(!tag)return;
+    $(".island-pop")?.remove();
+    const photos=[...this.photos.values()].filter((p)=>p.tags.includes(key)),pop=document.createElement("div");
+    pop.className="pop-card island-pop sea-tag-pop";
+    pop.innerHTML=`<form><button class="btn" type="button" data-tag-emoji>${esc(tag.emoji||"🏷️")}</button><input class="hint-input" aria-label="Tag name" name="label" value="${esc(tag.label)}" maxlength="40" required><button class="btn">Save</button></form>
+      <p class="muted small">${plural(photos.length,"photo")} · includes takes and photos set aside</p>
+      <div class="sea-tag-photos">${photos.slice(0,12).map((p)=>`<button data-tag-photo="${p.id}" aria-label="Open photo"><img src="${T(p.id)}" alt="" loading="lazy"></button>`).join("")}</div>
+      <div class="row"><button class="btn" data-tag-select ${photos.length?"":"hidden"}>Select its photos</button><a class="btn" href="#tags?key=${encodeURIComponent(key)}">Edit tag & roster</a><a class="btn primary" href="#tags?play=${encodeURIComponent(key)}">Check tag →</a></div>`;
+    document.body.append(pop);const r=anchor.getBoundingClientRect();
+    pop.style.left=`${Math.max(8,Math.min(r.left,innerWidth-pop.offsetWidth-8))}px`;
+    pop.style.top=`${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
+    const close=()=>{pop.remove();this.sea.highlight(null);document.removeEventListener("pointerdown",away,true);};
+    const away=(e)=>{if(!pop.contains(e.target)&&!e.target.closest(".emoji-pop"))close();};
+    setTimeout(()=>document.addEventListener("pointerdown",away,true),0);
+    const save=async(body)=>{try{const result=await api("/api/tags/meta",{key,...body});updateHudQuiet(result.game);close();toast("Saved. Z undoes it.");}catch(e){toast(e.message);}};
+    $("form",pop).onsubmit=(e)=>{e.preventDefault();save({label:new FormData(e.target).get("label")});};
+    $("[data-tag-emoji]",pop).onclick=(e)=>emojiPicker(e.currentTarget,(emoji)=>save({emoji}));
+    $("[data-tag-select]",pop).onclick=()=>{close();this.sea.select(photos.map((p)=>p.id));this.sea.highlight(photos.map((p)=>p.id));toast(`${plural(photos.length,"photo")} selected. Click one to work with them.`);};
+    $$("[data-tag-photo]",pop).forEach((button)=>button.onclick=()=>{close();this.inspect(Number(button.dataset.tagPhoto));});
+    $$("a",pop).forEach((link)=>link.onclick=close);
+    pop.onkeydown=(e)=>{e.stopPropagation();if(e.key==="Escape")close();};
+  },
+  async stackPick(pid) {
+    const first = this.stackWith; this.stackWith = null;
+    if (!first || first === Number(pid)) return;
+    try { const r = await api("/api/groups/merge", {photos:[first,Number(pid)]}); updateHudQuiet(r.game); paintSaveChip(); toastOnce("stacked", "Stacked. Z undoes it."); }
+    catch(e) {toast(e.message);}
+  },
+  async inspect(pid, selection, changed) {
+    if (this.stackWith) return this.stackPick(pid);
     const tile = this.tileOf(pid), it = this.sea && this.sea.items.get(Number(pid));
     if (!tile || !it || this.inspecting) return;
     this.inspecting = true;
-    const b = this.board || { groups: [] }, g = it.group != null ? b.groups.find((x) => x.id === it.group) : null;
+    const view = S.view, chosen = selection || (it.selected ? [...this.sea.items.values()].filter((x)=>x.selected).map((x)=>x.id) : [Number(pid)]);
+    let b, meta, stack;
+    try { [b,meta,stack] = await Promise.all([api("/api/draw/board?per=1&uper=1"),api("/api/tags?all=1"),api(`/api/group/${pid}`)]); }
+    catch(e) { this.inspecting=false; if(!left(view))toast(e.message);return; }
+    if(left(view)){this.inspecting=false;return;}
+    const g = b.groups.find((x) => x.id === it.group);
     const rank = this.top && this.top.get(it.id);
-    const tags = (it.tags || []).map((k) => this.tagMeta && this.tagMeta.get(k)).filter(Boolean);
+    const tags = meta.tags.filter((t)=>(it.tags||[]).includes(t.key));
+    const movable=this.groupSelection(chosen,b.cup);
     const ov = document.createElement("div");
     ov.className = "inspect";
     ov.innerHTML = `<div class="inspect-card">
-        <img class="inspect-photo" src="${P(pid)}" alt="">
+        <div class="inspect-pictures">${chosen.slice(0,4).map((p)=>`<div class="print"><img class="inspect-photo" src="${P(p)}" alt=""></div>`).join("")}</div>
         <div class="inspect-chrome">
           <div class="inspect-line">${g ? `<span class="team-chip static">${esc(g.emoji || "🗂️")} ${esc(g.name)}</span>` : `<span class="muted">Not in a group yet</span>`}
-            ${rank ? `<span class="stat-chip good">#<b>${rank}</b> on the board</span>` : ""}${it.n > 1 ? `<span class="stat-chip">⧉ <b>${it.n}</b> takes</span>` : ""}</div>
+            ${rank ? `<span class="stat-chip good">#<b>${rank}</b> on the board</span>` : ""}${chosen.length>1?`<span class="stat-chip">${plural(chosen.length,"photo")} selected</span>`:""}
+            ${stack.members.length > 1 ? `<button class="btn ghost" data-in="stack">⧉ Open ${plural(stack.members.length,"take")}</button>` : ""}</div>
           ${tags.length ? `<div class="inspect-tags">${tags.map((t, i) => `<span class="tag-chip on" style="--i:${i}">${esc(t.emoji || "🏷️")} ${esc(t.label)}</span>`).join("")}</div>` : ""}
-          <div class="inspect-actions"><button class="btn ghost" data-in="full">⤢ Full size</button><a class="btn ghost" href="#draw">🗂️ In Groups</a>
-            <button class="btn ghost danger" data-in="toss" title="Out of the running: it goes to Set aside">Toss</button>
+          <div class="inspect-edit">${movable.length?`<details><summary>Move ${plural(movable.length,"shot")} to a group</summary><div class="inspect-bins">${binsHtml(b.bins,null,null)}</div></details>`:""}
+            <details><summary>Edit tags</summary><div class="inspect-tag-edit">${meta.tags.map((t)=>`<button class="tag-chip ${(it.tags||[]).includes(t.key)?"on":""}" data-in-tag="${esc(t.key)}">${esc(t.emoji||"🏷️")} ${esc(t.label)}</button>`).join("")}</div>
+              <form id="inspect-new-tag"><input class="hint-input" name="label" maxlength="40" placeholder="New tag" aria-label="New tag" required><button class="btn">Add tag</button></form></details></div>
+          <div class="inspect-fan" hidden></div>
+          <div class="inspect-actions"><button class="btn ghost" data-in="full">⤢ Full size</button>${photoPathButton(pid)}
+            <button class="btn ghost" data-in="merge">${chosen.length>1?"Stack these photos":"Stack with another photo"}</button>
+            <button class="btn ghost ${it.cut?"":"danger"}" data-in="toss" title="${it.cut?"Back into the running":"Out of the running: it goes to Set aside"}">${it.cut?"Rescue":"Toss"}</button>
+            <button class="btn ghost" data-in="undo" ${b.undo?"":"hidden"}>Undo <kbd>Z</kbd></button>
             <button class="btn primary" data-in="close">Back to the sea <kbd>Esc</kbd></button></div>
         </div></div>`;
     document.body.append(ov);
     const img = $(".inspect-photo", ov);
-    try { await img.decode(); } catch (_) { /* shows anyway */ }
-    const to = img.getBoundingClientRect(), from = tile.getBoundingClientRect();
-    const at = (r) => `translate(${r.left - to.left}px, ${r.top - to.top}px) scale(${r.width / to.width}, ${r.height / to.height})`;
-    img.style.transform = at(from);
+    ov.style.visibility='hidden';img.style.opacity='0';
+    await Promise.all($$('.inspect-photo',ov).map(photo=>photo.decode().catch(()=>{})));
+    if(left(view)){ov.remove();this.inspecting=false;return;}
+    const from=this.rect(tile.querySelector('.pile-cover')||tile);
     tile.classList.add("lifted");
-    ov.getBoundingClientRect();
+    ov.style.visibility='';
     ov.classList.add("open");
-    img.style.transition = "transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1)";
-    img.style.transform = "none";
     const keys = S.onKey;
-    let done = false;
-    const close = () => {
+    let done = false, dirty = false, busy = false;
+    const close = (immediate=false) => {
       if (done) return;
       done = true;
-      S.onKey = keys;
+      if (S.onKey === handler) S.onKey = keys;
       const back = this.tileOf(pid);
+      const origin={...(this.flights?.get(pid)?.rect||this.rect(img))};
+      this.flights?.get(pid)?.cancel();
       ov.classList.remove("open");
-      if (back) img.style.transform = at(back.getBoundingClientRect());
-      setTimeout(() => { ov.remove(); back?.classList.remove("lifted"); this.inspecting = false; }, 430);
+      img.style.opacity='0';
+      const cleanup=()=>{ov.remove();back?.classList.remove('lifted');this.inspecting=false;
+        if(this.closeInspect===cancel)this.closeInspect=null;if(dirty&&!left(view))changed?.();};
+      if(immediate||!back||!origin.width){cleanup();return;}
+      this.fly(img.currentSrc||img.src,origin,()=>this.rect(back.querySelector('.pile-cover')||back),{
+        pid,kind:'inspect-sink',ms:420,valid:()=>ov.isConnected&&!left(view),finish:cleanup});
     };
-    S.onKey = (e) => { if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); close(); } };
+    const cancel=()=>close(true);this.closeInspect=cancel;
+    if(from?.width)this.fly(img.currentSrc||img.src,from,()=>this.rect(img),{pid,kind:'inspect-rise',ms:420,
+      valid:()=>ov.isConnected&&!done&&!left(view),finish:()=>{if(!done)img.style.opacity='';}});
+    else img.style.opacity='';
+    const act = async (path, body, exit=true) => {
+      if(busy || done)return;busy=true;
+      try {const r=await api(path,body);if(r.game){updateHudQuiet(r.game);paintSaveChip();}dirty=true;
+        $("[data-in=undo]",ov).hidden=false;toast("Saved. Z undoes it.");if(exit)close();return r;}
+      catch(e){if(!left(view))toast(e.message);}finally{busy=false;}
+    };
+    const handler = (e) => {const gi=groupKey(e); if(gi!=null && b.bins[gi] && movable.length) {e.preventDefault();act("/api/draw/move",{photos:movable,theme:b.bins[gi].id});}
+      else if(e.key==="z"||e.key==="Z"){e.preventDefault();act("/api/draw/undo",{});}
+      else if(e.key.toLowerCase()==="x"&&!it.cut){e.preventDefault();$("[data-in=toss]",ov).click();}
+      else if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); close(); } };
+    S.onKey = handler;
     ov.onclick = (e) => { if (e.target === ov) close(); };
-    $("[data-in=close]", ov).onclick = close;
+    $("[data-in=close]", ov).onclick = () => close();
     $("[data-in=full]", ov).onclick = () => { close(); openViewer(Number(pid)); };
-    $("a", ov).onclick = () => close();
+    $$("[data-bin]",ov).forEach((el)=>el.onclick=(e)=>{
+      const group=b.bins.find((g)=>g.id===Number(el.dataset.bin));
+      if(group&&binTools(e,el,group,()=>{}))return;
+      act(el.dataset.bin==="new"?"/api/draw/new":"/api/draw/move",{photos:movable,...(group?{theme:group.id}:{})});
+    });
+    $$("[data-in-tag]",ov).forEach((button)=>button.onclick=async()=>{
+      const k=button.dataset.inTag, on=button.classList.contains("on");
+      if(await act("/api/tags/set",{photos:chosen,on:on?[]:[k],off:on?[k]:[]},false))button.classList.toggle("on",!on);
+    });
+    $("#inspect-new-tag",ov).onsubmit=(e)=>{e.preventDefault();act("/api/tags/new",{photos:chosen,label:new FormData(e.target).get("label")});};
+    $("[data-in=undo]",ov).onclick=()=>act("/api/draw/undo",{});
+    $("[data-in=merge]",ov).onclick=()=>{if(chosen.length>1)act("/api/groups/merge",{photos:chosen});else{close();this.stackWith=Number(pid);toast("Choose another photo in the sea to stack with this one.");}};
+    const fan=$(".inspect-fan",ov), open=$("[data-in=stack]",ov);
+    if(open)open.onclick=()=>{fan.hidden=!fan.hidden;if(!fan.hidden){
+      fan.classList.add("photo-fan");fan.style.setProperty("--takes",stack.members.length);
+      fan.innerHTML=stack.members.map((p,i)=>`<div class="ftile" tabindex="0" style="${fanStyle(i,stack.members.length)}"><img src="${T(p)}" alt="Take" loading="lazy"><div class="ftile-actions">
+        ${p===stack.rep?"👑 Kept":`<button data-in-keep="${p}">Keep</button>`}<button data-in-split="${p}">Split out</button>${photoPathButton(p)}</div></div>`).join("");
+      $$("[data-in-keep]",fan).forEach((x)=>x.onclick=()=>act("/api/frame",{photo:Number(x.dataset.inKeep)}));
+      $$("[data-in-split]",fan).forEach((x)=>x.onclick=()=>act("/api/groups/split",{photo:Number(x.dataset.inSplit)}));
+    }};
     $("[data-in=toss]", ov).onclick = async () => {
-      try { await api("/api/draw/toss", { photo: Number(pid) }); toast("Tossed: it's under Set aside. Z on the Groups page undoes it."); Sound.play("toss"); }
-      catch (err) { toast(err.message); }
-      close();
+      if(it.cut)return act("/api/rescue",{ids:chosen,on:true});
+      if(await act("/api/draw/toss",{photos:chosen}))Sound.play("toss");
     };
   },
-  release() {  // a screen ended without handing its photos back: they just reappear in the sea
-    for (const pid of this.lifted) this.tileOf(pid)?.classList.remove("lifted");
-    this.lifted.clear();
+  release(root) {
+    // Focus is an activity, not library state. Carrying it into the next stage grows unrelated photos over play.
+    this.sea?.releaseFocus();
+    if(this.sea){this.sea.mouse.x=this.sea.mouse.y=-1e5;this.sea.hold(null);this.sea.select([]);}
+    const gone = this.grab(root || $("#main"));
+    this.recycled = this.recycled || new Map();
+    const outgoing=root || $("#main");
+    for (const {pid,img} of this.images(outgoing)) {
+      const old=this.recycled.get(pid);
+      this.recycled.set(pid,old&&outgoing.contains(old)&&!old.closest(".under")?old:img);
+    }
+    this.closeInspect?.();
+    for (const pid of [...this.lifted]) {
+      const photo = gone.find((x) => x.pid === pid);
+      if (photo) this.sink(pid, photo.rect, "back"); else {this.flights?.get(pid)?.cancel();this.lifted.delete(pid);this.tileOf(pid)?.classList.remove("lifted");}
+    }
+    this.focused = [];
+  },
+  handover(sea) {
+    this.sea.destroy(); this.el.remove();
+    this.el = sea.el; this.sea = sea;
+    this.el.id = "world"; this.el.classList.remove("an-field", "ps-field");
+    this.el.removeAttribute("aria-hidden"); sea.catalog=true;sea.highlight(null);document.body.prepend(this.el);
+    Object.assign(sea, this.plain); this.stale = true;
   },
 };
 const WORLD_SOLID = ["#main .screen-head", "#main .screen-bar", "#main .screen-rail > *", "#main .duel-head", "#main .controls:not([hidden])",
-  "#main #stage", "#main #done-slot > *", "#main .group-table:not([hidden])", "#main .deck", "#main .twin-arena", "#main .screen-body > .empty",
-  "#main .card", "#main ol.world", "#main .grid", "#main .podium", "#main .reveal-strip", "#main .bracket", "#main .finals-arena",
+  "#main #stage", "#main #done-slot > *", "#main .group-table:not([hidden])", "#main .deck", "#main .twin-arena", "#main .screen-body > .empty:not(.loading)",
+  "#main .card", "#main .grid", "#main .podium", "#main .reveal-strip", "#main .bracket", "#main .finals-arena",
   "#main .finals-done", "#main .an-panel", "#main .save-grid", "#main .onboard-body > *", "#main .sections", "#main .tb-section",
-  "#main .people", "#main [data-solid]"].join(", ");
+  "#main .people", "#main .screen-body > h2", "#main .map-note", "#main .title-road", "#main .tag-call", "#main .stage-results", "#main .vn-catalog",
+  "#game-help", "#game-help-hint", "#main .shot-select", "#main .tile-frames-bar", "#main .photo-fan > .ftile", "#main [data-solid]"].join(", ");
 const WORLD_MODES = { home: "ambient", ready: "ambient", duel: "focus", sweep: "focus", finals: "focus", stacks: "dim", shortlist: "dim",
   leaderboard: "dim", reveal: "dim", cuts: "dim", people: "dim" };
 
 // ---------------------------------------------------------------- boot
 (async () => {
-  try { await loadState(); } catch (e) { $("#main").innerHTML = `<div class="page"><p class="error">Can't reach MatchER: ${esc(e.message)}</p></div>`; return; }
+  let state;
+  try { state = await loadState(); } catch (e) { $("#main").innerHTML = `<div class="page"><p class="error">Can't reach MatchER: ${esc(e.message)}</p></div>`; return; }
   World.init();
+  document.addEventListener("click", (e) => { if (e.target.closest?.("#journey-title")) location.hash = "#home"; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "journey-title") location.hash = "#home"; });
+  // Developer mode: --debug on the server, ?debug=1 once in the address bar (remembered), or debug=0 to forget it.
+  const asked = new URLSearchParams(location.search).get("debug");
+  try { if (asked === "1") localStorage.setItem("matcher-debug", "1"); else if (asked === "0") localStorage.removeItem("matcher-debug"); } catch (_) { /* private mode */ }
+  let remembered = false; try { remembered = localStorage.getItem("matcher-debug") === "1"; } catch (_) { /* private mode */ }
+  S.debug = !!state?.debug || remembered;
+  if (S.debug && typeof DevPanel !== "undefined") DevPanel.init();
   route();
   Sea.init();
 })();

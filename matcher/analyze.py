@@ -9,17 +9,18 @@ Every result lands in SQLite as it arrives, so an interrupted scan resumes where
 from __future__ import annotations
 
 import multiprocessing
+import json
 import os
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image
 
-from . import imageio
+from . import imageio, visual
 from .config import PHOTO_EXTS, PREVIEW_EDGE, THUMB_EDGE
 from .store import Store, f16, unblob, f32
 
@@ -31,6 +32,14 @@ def _init_worker() -> None:
     from .vision import FaceDetector, FaceEmbedder, FaceMesh
 
     _W["det"], _W["emb"], _W["mesh"] = FaceDetector(), FaceEmbedder(), FaceMesh()
+    # Native models reserve address space first. Bound the decoder's additional working memory afterwards.
+    try:
+        import resource
+        pages = int(Path("/proc/self/statm").read_text().split()[0])
+        ceiling = pages * os.sysconf("SC_PAGE_SIZE") + 1024 * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (ceiling, ceiling))
+    except (OSError, ValueError, ImportError):
+        pass
 
 
 def phash(gray: np.ndarray) -> str:
@@ -79,6 +88,8 @@ def analyze_one(task: tuple[int, str, str, str, str]) -> dict:
             phash=phash(gray), luma=float(ycc[..., 0].mean()), luma_lo=float(lo), luma_hi=float(hi),
             sharp=lap_var(gray, 800),
             chroma=float(np.abs(ycc[..., 1] - 128).mean() + np.abs(ycc[..., 2] - 128).mean()),
+            **visual.colour_metrics(small),
+            salient=json.dumps(visual.salient_box(small)),  # what to frame when no face is found (refresh() decides)
         )
 
         faces = _W["det"].detect(bgr)
@@ -131,7 +142,8 @@ def list_photos(root: Path, limit: int = MAX_PHOTOS) -> list[tuple[str, Path]]:
 _FACE_COLS = ("idx", "x", "y", "w", "h", "score", "lm", "emb", "sharp", "luma",
               "blink_l", "blink_r", "smile", "jaw", "squint", "yaw", "pitch", "roll")
 _PHOTO_COLS = ("status", "error", "size", "mtime_ns", "sha256", "width", "height", "fmt", "make", "model",
-               "taken", "taken_ts", "taken_src", "phash", "luma", "luma_lo", "luma_hi", "sharp", "chroma", "n_faces")
+               "taken", "taken_ts", "taken_src", "phash", "luma", "luma_lo", "luma_hi", "sharp", "chroma", "saturation", "hue", "n_faces",
+               "salient")
 
 
 def _save_phase1(store: Store, results: list[dict]) -> None:
@@ -150,6 +162,44 @@ def _save_phase1(store: Store, results: list[dict]) -> None:
                 c.execute(f"INSERT INTO faces(photo_id, {', '.join(_FACE_COLS)}) "
                           f"VALUES(?, {', '.join('?' for _ in _FACE_COLS)})",
                           (r["id"], *[fr.get(k) for k in _FACE_COLS]))
+
+
+def _process_results(fn, tasks: list, workers: int, cancel: threading.Event, initializer=None):
+    """Drain a bounded generation before replacing workers, keeping the submitted queue small."""
+    # max_tasks_per_child can deadlock on Python 3.11–3.13 when all workers retire with jobs pending
+    # (CPython #115634). Whole generations avoid that path while still releasing native model memory.
+    generation = workers * 400
+    ctx = multiprocessing.get_context("spawn")  # forking a multithreaded server process is unsafe
+    for start in range(0, len(tasks), generation):
+        if cancel.is_set():
+            return
+        batch = iter(tasks[start:start + generation])
+        with ProcessPoolExecutor(max_workers=workers, initializer=initializer, mp_context=ctx) as pool:
+            pending = set()
+
+            def submit():
+                try:
+                    task = next(batch)
+                except StopIteration:
+                    return
+                pending.add(pool.submit(fn, task))
+
+            try:
+                for _ in range(workers * 2):
+                    submit()
+                while pending:
+                    if cancel.is_set():
+                        return
+                    finished, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                    for future in finished:
+                        if cancel.is_set():
+                            return
+                        yield future.result()
+                        if not cancel.is_set():
+                            submit()
+            finally:
+                for future in pending:
+                    future.cancel()
 
 
 def crop_box(face: dict) -> list[float]:
@@ -184,10 +234,15 @@ class Analyzer:
                          "faces": 0, "smiles": 0, "blinks": 0, "recent_faces": [], "cats": {}, "recent_cats": [],
                          "me": None, "found": None, "recent_crops": [], "org": {}, "listed": 0, "new": 0}
         # ...and everything it found, photo by photo, in order (the screen reads it from where it left off, so no
-        # photo is skipped however fast they go): read [id, face boxes, smiles, blinks]; kinds [id, kind, themes];
+        # photo is skipped however fast they go): read [id, face boxes, smiles, blinks, visual]; kinds [id, kind, themes];
         # a closer look [id, head-and-shoulders box, what it found]
-        self.feed: dict[str, list] = {"read": [], "cats": [], "seen": []}
+        self.feed: dict[str, list] = {"read": [], "cats": [], "seen": [], "identity": [], "org": []}
         self.cancel = threading.Event()
+        self._start_lock = threading.Lock()
+        self._restart = False
+        self._finished = True
+        self.closed = False
+        self.started = None
         self.thread: threading.Thread | None = None
         self.on_finished = None
 
@@ -200,15 +255,51 @@ class Analyzer:
         return self.workdir / "thumbs"
 
     def start(self) -> None:
-        if self.thread and self.thread.is_alive():
-            return
+        with self._start_lock:
+            if self.closed:
+                return
+            if self.thread and self.thread.is_alive() and not self._finished:
+                # A reopening can arrive while canceled process workers are still draining. Resume only
+                # after that run has finished, so its cancellation stays effective and runs never overlap.
+                if self.cancel.is_set():
+                    self._restart = True
+                return
+            self._prepare()
+            self.thread = threading.Thread(target=self._work, name="analyzer", daemon=True)
+            self.thread.start()
+
+    def stop(self) -> None:
+        with self._start_lock:
+            self._restart = False
+            self.cancel.set()
+
+    def _prepare(self) -> None:
+        self._finished = False
         self.cancel.clear()
-        self.feed = {"read": [], "cats": [], "seen": []}
-        self.thread = threading.Thread(target=self._run, name="analyzer", daemon=True)
-        self.thread.start()
+        self.started = time.time()
+        self.progress.update(phase="models", done=0, total=0, started=self.started, recent=[], error=None,
+                             faces=0, smiles=0, blinks=0, recent_faces=[], cats={}, recent_cats=[], me=None,
+                             found=None, recent_crops=[], org={}, listed=0, new=0)
+        self.progress.pop("detail", None)
+        self.feed = {"read": [], "cats": [], "seen": [], "identity": [], "org": []}
+
+    def _work(self) -> None:
+        while True:
+            try:
+                self._run()
+            finally:
+                with self._start_lock:
+                    again = self._restart and not self.closed
+                    self._restart = False
+                    if again:
+                        self._prepare()
+                    else:
+                        self._finished = True
+            if not again:
+                return
 
     def running(self) -> bool:
-        return bool(self.thread and self.thread.is_alive())
+        return bool(self.thread and self.thread.is_alive() and not self._finished)
 
     def _set(self, phase: str, done: int = 0, total: int = 0) -> None:
         self.progress.update(phase=phase, done=done, total=total, started=time.time())
@@ -261,6 +352,8 @@ class Analyzer:
             "SELECT me_face FROM photos WHERE me_face IS NOT NULL ORDER BY RANDOM() LIMIT 12")]
         others = self.store.one("SELECT COUNT(*) AS n FROM people WHERE is_me=0")
         self.progress["me"] = {"photos": len(me), "faces": sample, "people": others["n"] if others else 0}
+        self.feed["identity"].extend([[r["id"], r["me_sim"], r["me_face"], r["n_faces"]] for r in self.store.q(
+            "SELECT id, me_sim, me_face, n_faces FROM photos WHERE status='analyzed' ORDER BY id")])
 
     def _found_all(self) -> None:
         """For the analysis screen's reveal: what the whole run found."""
@@ -269,11 +362,16 @@ class Analyzer:
             "SELECT category, COUNT(*) AS n FROM photos WHERE category IS NOT NULL AND category != '' AND cut IS NULL GROUP BY category")}
         stacked = [r["id"] for r in self.store.q("SELECT rep AS id FROM groups WHERE members LIKE '%,%' LIMIT 6")]
         cut = [r["id"] for r in self.store.q("SELECT id FROM photos WHERE cut IS NOT NULL AND status='analyzed' LIMIT 6")]
+        self.feed["org"].extend([[r["id"], r["group_id"], r["rep"], r["cut"], json.loads(r["members"] or "[]")]
+                                for r in self.store.q("SELECT p.id, p.group_id, p.cut, g.rep, g.members FROM photos p "
+                                                      "LEFT JOIN groups g ON g.id=p.group_id WHERE p.status='analyzed' ORDER BY p.id")])
         self.progress["found"] = {**summary, "cats": cats, "stacked": stacked, "cut_photos": cut,
                                   "faces": self.progress["faces"], "me": self.progress["me"]}
 
     def _sync_files(self) -> None:
         on_disk = list_photos(self.source)
+        if not on_disk:
+            raise ValueError("No photos in that folder (or its subfolders).")
         self.progress["listed"] = len(on_disk)
         known = {r["rel"]: r for r in self.store.q("SELECT id, rel, size, mtime_ns, status FROM photos")}
         with self.store.tx() as c:
@@ -286,7 +384,7 @@ class Analyzer:
                 if r is None:
                     c.execute("INSERT INTO photos(rel, size, mtime_ns) VALUES(?,?,?)", (rel, st.st_size, st.st_mtime_ns))
                 elif (r["size"], r["mtime_ns"]) != (st.st_size, st.st_mtime_ns) and r["status"] != "new":
-                    c.execute("UPDATE photos SET status='new', size=?, mtime_ns=? WHERE id=?",
+                    c.execute("UPDATE photos SET status='new', recognized_tags=NULL, size=?, mtime_ns=? WHERE id=?",
                               (st.st_size, st.st_mtime_ns, r["id"]))
             present = {rel for rel, _ in on_disk}
             for rel, r in known.items():
@@ -305,38 +403,35 @@ class Analyzer:
         tasks = [(r["id"], str(self.source / r["rel"]), r["rel"], str(self.previews / f"{r['id']}.jpg"),
                   str(self.thumbs / f"{r['id']}.jpg")) for r in todo]
         buf, done = [], 0
-        ctx = multiprocessing.get_context("spawn")  # forking a multithreaded server process is unsafe
-        with ProcessPoolExecutor(max_workers=self.workers, initializer=_init_worker, mp_context=ctx,
-                                 max_tasks_per_child=400) as pool:  # recycled now and then: no slow leaks
-            futures = [pool.submit(analyze_one, t) for t in tasks]
+        results = _process_results(analyze_one, tasks, self.workers, self.cancel, _init_worker)
+        try:
+            for res in results:
+                buf.append(res)
+                done += 1
+                if res["status"] == "analyzed":
+                    self.progress["recent"] = (self.progress["recent"] + [res["id"]])[-24:]
+                    fs = res.get("faces") or []
+                    self.feed["read"].append([res["id"], [[round(f["x"], 3), round(f["y"], 3), round(f["w"], 3), round(f["h"], 3)] for f in fs[:6]],
+                                              sum(1 for f in fs if (f.get("smile") or 0) > 0.5),
+                                              sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) >= 0.55),
+                                              visual.descriptor(*(res.get(key) for key in ("luma", "chroma", "saturation", "hue")))])
+                    self.progress["faces"] += len(fs)
+                    self.progress["smiles"] += sum(1 for f in fs if (f.get("smile") or 0) > 0.5)
+                    self.progress["blinks"] += sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) >= 0.55)
+                    if fs:
+                        boxes = [[round(f["x"], 3), round(f["y"], 3), round(f["w"], 3), round(f["h"], 3)] for f in fs[:6]]
+                        self.progress["recent_faces"] = (self.progress["recent_faces"] + [[res["id"], boxes]])[-8:]
+                if len(buf) >= 16:
+                    _save_phase1(self.store, buf)
+                    buf = []
+                self.progress.update(done=done)
+        finally:
+            # Keep even a partial batch if a worker fails, so a resumed scan does not repeat completed work.
             try:
-                for fut in as_completed(futures):
-                    if self.cancel.is_set():
-                        break
-                    res = fut.result()
-                    buf.append(res)
-                    done += 1
-                    if res["status"] == "analyzed":
-                        self.progress["recent"] = (self.progress["recent"] + [res["id"]])[-24:]
-                        fs = res.get("faces") or []
-                        self.feed["read"].append([res["id"], [[round(f["x"], 3), round(f["y"], 3), round(f["w"], 3), round(f["h"], 3)] for f in fs[:6]],
-                                                  sum(1 for f in fs if (f.get("smile") or 0) > 0.5),
-                                                  sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) > 0.5)])
-                        self.progress["faces"] += len(fs)
-                        self.progress["smiles"] += sum(1 for f in fs if (f.get("smile") or 0) > 0.5)
-                        self.progress["blinks"] += sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) > 0.5)
-                        if fs:
-                            boxes = [[round(f["x"], 3), round(f["y"], 3), round(f["w"], 3), round(f["h"], 3)] for f in fs[:6]]
-                            self.progress["recent_faces"] = (self.progress["recent_faces"] + [[res["id"], boxes]])[-8:]
-                    if len(buf) >= 16:
-                        _save_phase1(self.store, buf)
-                        buf = []
-                    self.progress.update(done=done)
+                if buf:
+                    _save_phase1(self.store, buf)
             finally:
-                for fut in futures:
-                    fut.cancel()
-        if buf:
-            _save_phase1(self.store, buf)
+                results.close()
 
     def _siglip(self):
         from .vision import SigLIP
@@ -351,36 +446,9 @@ class Analyzer:
         if not total:
             return
         sig, bs = self._siglip(), 8
-        T, edges, keys = None, None, []
-        if kinds:  # show each photo's kind as it's recognized (the same prompts the cups use), and the themes it shows
+        if kinds or closer:
             from . import library
             from . import tags as tagmod
-            from . import themes
-
-            keys = list(library.CATEGORIES)
-            T = library._prompt_embeddings([q for k in keys for q in library.CATEGORIES[k]])
-            edges = np.cumsum([0] + [len(library.CATEGORIES[k]) for k in keys])[:-1]
-            CT, cstarts = themes._prompts()
-            cmeta = {**tagmod.concept_meta(), **tagmod.FIXED}
-            ckeys = [tagmod.ALIAS.get(k, k) for k, _, _, _ in themes.CONCEPTS]
-        looks = None
-        if closer:  # everything it can tell about each photo, read off as its crop is embedded (the screen shows it):
-            from . import library  # the same things that become its tags
-            from . import tags as tagmod
-            from . import themes
-            from .models import SIGLIP_LOGIT_SCALE
-
-            looks = [(name, *library.ATTRS[name]) for name in library.ATTRS]
-            prompts = sorted({q for _, _, pos, neg in looks for q in pos + neg})
-            P = library._prompt_embeddings(prompts)
-            col = {q: i for i, q in enumerate(prompts)}
-            CT, starts = themes._prompts()  # the concepts, against what's usual in this library
-            allE = [unblob(r_["emb"]) for r_ in self.store.q("SELECT emb FROM photos WHERE emb IS NOT NULL")]
-            M = np.stack(allE).astype(np.float32) if allE else np.zeros((1, 768), np.float32)
-            M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
-            Cs = np.maximum.reduceat(M @ CT.T, starts, axis=1)
-            cmu, csd = Cs.mean(0), Cs.std(0) + 1e-6
-            ckeys = [tagmod.ALIAS.get(k, k) for k, _, _, _ in themes.CONCEPTS]
             tmeta = {**tagmod.concept_meta(), **tagmod.FIXED}
 
         def prep(chunk):
@@ -401,7 +469,8 @@ class Analyzer:
                     embs = sig.embed_images(np.stack([x[1] if isinstance(x, tuple) else x for _, x in ok]))
                     ids = [r["id"] for r, _ in ok]
                     self.progress["recent"] = (self.progress["recent"] + ids)[-24:]
-                    if looks is not None:
+                    recognized = {}
+                    if closer:
                         q = ','.join('?' * len(ids))
                         full = {r_["id"]: unblob(r_["emb"]) for r_ in self.store.q(
                             f"SELECT id, emb FROM photos WHERE id IN ({q})", ids) if r_["emb"] is not None}
@@ -409,24 +478,9 @@ class Analyzer:
                         for f_ in self.store.q(f"SELECT photo_id, smile, blink_l, blink_r FROM faces WHERE photo_id IN ({q})", ids):
                             fcs.setdefault(f_["photo_id"], []).append(f_)
                         seen = []
-                        for (r, x), e in zip(ok, embs):
-                            found: dict[str, float] = {}
-                            v_full = full.get(r["id"])
-                            for name, src, pos, neg in looks:
-                                v = e if src == "crop" else v_full
-                                if v is None or name not in tagmod.ATTR_TAGS:
-                                    continue
-                                lg = SIGLIP_LOGIT_SCALE * (P[[col[q_] for q_ in pos + neg]] @ (v / (np.linalg.norm(v) + 1e-9)))
-                                pr = np.exp(lg - lg.max())
-                                prob = float(pr[:len(pos)].sum() / pr.sum())
-                                tag, t = tagmod.ATTR_TAGS[name]
-                                if prob >= t:
-                                    found[tag] = max(found.get(tag, 0.0), prob)
-                            if v_full is not None:  # the concepts it stands out for in this library
-                                z = (np.maximum.reduceat((v_full / (np.linalg.norm(v_full) + 1e-9)) @ CT.T, starts) - cmu) / csd
-                                for j in np.argsort(-z)[:4]:
-                                    if z[j] >= 1.5:
-                                        found.setdefault(ckeys[j], min(1.0, float(z[j]) / 4))
+                        batch_full = np.stack([full.get(r["id"], np.zeros_like(e)) for (r, x), e in zip(ok, embs)])
+                        discoveries = tagmod.recognize(batch_full, embs)
+                        for (r, x), found in zip(ok, discoveries):
                             fs = fcs.get(r["id"], [])
                             if fs and max((f_["smile"] or 0) for f_ in fs) > 0.5:
                                 found.setdefault("smiling", max(f_["smile"] or 0 for f_ in fs))
@@ -435,23 +489,32 @@ class Analyzer:
                             if len(fs) >= 3:
                                 found.setdefault("group_shot", 1.0)
                             top = sorted(found.items(), key=lambda kv: -kv[1])[:7]
-                            seen.append([r["id"], crop_box(dict(r)), [[*(tmeta.get(k, ("🏷️", k, ""))[:2]), round(c_, 2)] for k, c_ in top]])
+                            recognized[r["id"]] = dict(top)
+                            seen.append([r["id"], (crop_box(dict(r)) if r["me_face"] else [0, 0, 1, 1]), [[*(tmeta.get(k, ("🏷️", k, ""))[:2]), round(c_, 2), k] for k, c_ in top]])
                         self.progress["recent_crops"] = (self.progress["recent_crops"] + seen)[-12:]
                         self.feed["seen"].extend(seen)
-                    if T is not None:
-                        kind = np.maximum.reduceat(embs @ T.T, edges, axis=1).argmax(1)
+                    if kinds:
+                        names = library.category_names(embs)
+                        discoveries = tagmod.recognize(embs)
                         cats = self.progress["cats"]
-                        for pid, k in zip(ids, kind):
-                            cats[keys[k]] = cats.get(keys[k], 0) + 1
-                        self.progress["recent_cats"] = (self.progress["recent_cats"] + [[pid, keys[k]] for pid, k in zip(ids, kind)])[-240:]
-                        En = embs / np.maximum(np.linalg.norm(embs, axis=1, keepdims=True), 1e-9)
-                        C = np.maximum.reduceat(En @ CT.T, cstarts, axis=1)
-                        Z = (C - C.mean(1, keepdims=True)) / (C.std(1, keepdims=True) + 1e-6)  # what stands out in each photo
-                        for row, (pid, k) in enumerate(zip(ids, kind)):
-                            top = [j for j in np.argsort(-Z[row])[:4] if Z[row, j] >= 2.2]
-                            self.feed["cats"].append([pid, keys[k], [list(cmeta.get(ckeys[j], ("🏷️", ckeys[j]))[:2]) for j in top]])
+                        for pid, kind, found in zip(ids, names, discoveries):
+                            if kind:
+                                cats[kind] = cats.get(kind, 0) + 1
+                            recognized[pid] = found
+                            top = sorted(found.items(), key=lambda kv: -kv[1])
+                            self.feed["cats"].append([pid, kind, [[*tmeta.get(key, ("🏷️", key))[:2], None, key]
+                                                                 for key, score in top], []])
+                        self.progress["recent_cats"] = (self.progress["recent_cats"] + list(zip(ids, names)))[-240:]
                     with self.store.tx() as c:
                         for (r, x), e in zip(ok, embs):
+                            if r["id"] in recognized:
+                                old = c.execute("SELECT recognized_tags FROM photos WHERE id=?", (r["id"],)).fetchone()
+                                found, current = tagmod.discovery(old[0])
+                                if not current:
+                                    found = {k: v for k, v in found.items() if k in recognized[r["id"]]}
+                                for key, score in recognized[r["id"]].items():
+                                    found[key] = max(found.get(key, 0.0), score)
+                                c.execute("UPDATE photos SET recognized_tags=? WHERE id=?", (tagmod.discovery_json(found), r["id"]))
                             if isinstance(x, tuple):
                                 c.execute(f"UPDATE photos SET {column}=?, crop_face=? WHERE id=?", (f16(e), x[0], r["id"]))
                             else:
@@ -480,13 +543,16 @@ class Analyzer:
         from .vision import SigLIP
 
         rows = self.store.q(
-            "SELECT p.id, p.me_face, p.width, p.height, f.x, f.y, f.w, f.h FROM photos p JOIN faces f ON f.id = p.me_face "
-            "WHERE p.status='analyzed' AND (p.crop_emb IS NULL OR p.crop_face IS NOT p.me_face) ORDER BY p.id")
+            "SELECT p.id, p.me_face, p.width, p.height, f.x, f.y, f.w, f.h FROM photos p LEFT JOIN faces f ON f.id = p.me_face "
+            "WHERE p.status='analyzed' AND (p.me_face IS NOT NULL OR ?=1) "
+            "AND (p.crop_emb IS NULL OR p.crop_face IS NOT p.me_face OR p.recognized_tags IS NULL) ORDER BY p.id",
+            ((self.store.get_meta("settings", {}) or {}).get("mode") == "gallery",))
 
         def load(r):
             try:
                 with Image.open(self.previews / f"{r['id']}.jpg") as im:
-                    return r["me_face"], SigLIP.preprocess(upper_body_crop(im.convert("RGB"), dict(r)))
+                    rgb = im.convert("RGB")
+                    return r["me_face"], SigLIP.preprocess(upper_body_crop(rgb, dict(r)) if r["me_face"] else rgb)
             except OSError:
                 return None
 

@@ -1,0 +1,10 @@
+include README.md requirements.txt requirements.lock LICENSE THIRD_PARTY_NOTICES.md SOURCE.md
+recursive-include matcher/static *.js *.css *.html *.svg *.woff2 *.txt
+recursive-include matcher/demo *.jpg *.json
+prune data
+prune models
+prune original chats
+prune sample_screenshots
+prune tests
+prune desktop/node_modules
+global-exclude __pycache__ *.py[cod]

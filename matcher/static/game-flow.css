@@ -1,0 +1,123 @@
+/* The campaign and its side quests share a game frame, without covering the sea. */
+.track { max-width: 1200px; }
+.track-stages { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+.tnode.here .tico { box-shadow: 0 0 18px #ffd86b25; }
+.action-bar .btn.primary { border-color: #ffbaa170; box-shadow: 0 3px 0 #8c34294d, 0 0 20px #ff775b18; }
+.action-bar .btn:focus-visible, .mission-actions a:focus-visible { outline: 2px solid #ffd86b; outline-offset: 3px; }
+.action-bar .btn:active { transform: translateY(1px); }
+.activity-deck { padding: 12px; }
+.activity-deck h2 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #ffd86b; margin: 0 0 9px; }
+.mission-list { display: grid; gap: 7px; }
+.mission { display: grid; grid-template-columns: 26px minmax(0,1fr); align-items: center; gap: 2px 7px;
+  border: 1px solid #ffffff17; border-radius: 12px; background: linear-gradient(110deg,#ffd86b09,transparent); padding: 8px; }
+.mission-icon { font-size: 21px; grid-row: span 2; align-self: start; }
+.mission-name { display: grid; min-width: 0; gap: 2px; }
+.mission-name b { color: var(--text); font-size: 13px; }
+.mission-name small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.mission-actions { grid-column: 2; display: flex; gap: 5px; margin-top: 3px; }
+.mission-actions .btn { flex: 1; min-height: 36px; padding: 6px 8px; font-size: 12px; text-align: center; }
+.mission-actions .btn:last-child { border-color: #ffd86b38; }
+.quest-clear.empty { height: auto; margin: auto; max-width: calc(100% - 32px); gap: 12px; padding: 28px;
+  border: 1px solid #74ffc22d; border-radius: 22px; background: #10151be6; box-shadow: 0 0 40px #74ffc20b; }
+.quest-clear .big-emoji { font-size: 44px; }
+.quest-clear h2 { margin: 0; color: var(--text); font-size: 22px; }
+.quest-clear .clear-stamp { font-size: 13px; margin: 0; padding: 5px 12px; }
+.finals-bracket-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.finals-bracket-head h3 { margin:0; }
+.finals-bracket-toggle { display:none; }
+.phone-label { display:none; }
+.help-pop { max-height:calc(100dvh - 76px); overflow:auto; }
+.screen.sorter .screen-bar { align-items:end; }
+@media (max-width: 980px) {
+  .screen.map .screen-rail > .activity-deck, .mission-list { display: contents; }
+  .activity-deck h2 { display: none; }
+  .mission { flex: 0 0 160px; min-width: 0; padding: 6px; gap: 0 5px; grid-template-columns: 20px minmax(0,1fr); scroll-snap-align: start; }
+  .mission-icon { font-size: 17px; }
+  .mission-actions .btn { min-height: 44px; padding: 5px; }
+}
+@media (max-width: 360px) {
+  #journey-dock { padding-left: 1px; padding-right: 1px; }
+  .track-stages { gap: 2px; }
+  .tnode { padding: 2px; }
+  .tico { width: 28px; height: 28px; font-size: 17px; }
+  .screen.map .screen-bar .btn { padding-left: 7px; padding-right: 7px; }
+}
+/* Editing and judging reserve the same small phone controls, leaving the photos the middle. */
+@media (max-width:760px) {
+  body[data-world] .screen.sorter, body[data-world] .screen.finals { padding:6px 16px; gap:6px; }
+  .screen.sorter .screen-head, .screen.finals .screen-head { display:grid; grid-template-columns:auto minmax(0,1fr) 44px; gap:4px 6px; overflow:visible; padding:4px 6px; }
+  .screen.sorter .screen-head h1, .screen.finals .screen-head h1 { grid-column:1; grid-row:1; font-size:18px; }
+  .screen.sorter .screen-head > .stat-chip:first-of-type, .screen.finals .screen-head > .match-title { grid-column:2; grid-row:1; }
+  .screen.sorter .screen-head .stat-chip, .screen.finals .screen-head .stat-chip { min-width:0; padding:3px 5px; gap:3px; font-size:10px; white-space:normal; line-height:1.25; }
+  .screen.sorter .screen-head .stat-chip b, .screen.finals .screen-head .stat-chip b { font-size:11px; }
+  .screen.sorter .screen-head .ring { width:18px; height:18px; flex:none; }
+  .screen.sorter .screen-head .help-btn, .screen.finals .screen-head .help-btn { grid-column:3; grid-row:1; width:44px; height:44px; }
+  .screen.sorter .screen-head .seg { grid-column:1; grid-row:2; }
+  .screen.sorter .screen-head .seg-btn, .screen.sorter .screen-head > .btn { min-height:44px; padding:6px; font-size:11px; }
+  .screen.sorter .screen-head #d-auto { grid-column:2 / 4; grid-row:2; }
+  .screen.stacker .screen-head > .stat-chip:nth-of-type(2) { grid-column:2 / 4; grid-row:2; align-self:center; justify-self:end; }
+  .screen.sorter #sea-head > a[href="#tags"], .screen.sorter #more-circles, .screen.sorter #tag-tray { grid-row:3; }
+  .screen.sorter #sea-head > a[href="#tags"] { grid-column:1; }
+  .screen.sorter #more-circles { grid-column:2; }
+  .screen.sorter #tag-tray { grid-column:3; min-height:44px; justify-content:center; font-size:0; }
+  .screen.sorter #tag-tray b { font-size:12px; }
+  .screen.sorter #tag-tray::before { content:'🏷️'; font-size:12px; }
+  .screen.sorter .screen-rail { max-height:132px; }
+  /* One phone scrollport keeps the roster usable instead of squeezing two lists to their headings. */
+  .screen.sorter #venn-rail { overflow-x:hidden; overflow-y:auto; scroll-padding-block:6px; overscroll-behavior:contain; }
+  .screen.sorter #venn-rail > .rail-card { flex:0 0 auto; max-height:none; overflow:visible; padding:8px; }
+  .screen.sorter #venn-rail .bins { flex:none; grid-auto-flow:row; grid-template-columns:minmax(0,1fr); grid-auto-columns:auto; overflow:visible; padding:0; }
+  .screen.sorter #venn-rail .sugg { grid-template-columns:24px minmax(0,1fr) auto; gap:5px; }
+  .screen.sorter #venn-rail .sugg-card h3 { margin-bottom:6px; font-size:12px; }
+  .screen.sorter #venn-rail .btn, .screen.sorter #venn-rail .bin-place, .screen.sorter #venn-rail .bin-emoji,
+  .screen.sorter #venn-rail .bin-edit, .screen.sorter #venn-rail .bin.new { min-height:44px; }
+  .screen.sorter #venn-rail .bin-emoji, .screen.sorter #venn-rail .bin-edit { min-width:44px; }
+  .screen.sorter .vn-tags { height:38px; }
+  .screen.sorter .screen-bar { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:5px; min-height:0; padding:6px; }
+  .screen.sorter .screen-bar > .bar-left { grid-column:1; grid-row:1; min-width:0; }
+  .screen.sorter .screen-bar > .bar-mid { grid-column:2; grid-row:1; min-width:0; }
+  .screen.sorter .screen-bar > .bar-right { grid-column:3; grid-row:1; min-width:0; }
+  .screen.sorter .screen-bar .btn, .screen.sorter .screen-bar .btn.big { min-height:44px; padding:6px 8px; font-size:12px; white-space:nowrap; }
+  .screen.sorter .screen-bar .btn-sub, .screen.sorter #sel-count:not(:has(b)) { display:none; }
+  .screen.sorter .screen-bar:has([data-sel-act]:not([hidden])) > .bar-mid { grid-column:1/-1; grid-row:1; justify-content:flex-start; }
+  .screen.sorter .screen-bar:has([data-sel-act]:not([hidden])) > .bar-left { grid-row:2; }
+  .screen.sorter .screen-bar:has([data-sel-act]:not([hidden])) > .bar-right { grid-column:2/4; grid-row:2; }
+  .screen.sorter .screen-bar #sel-count:has(b) { display:block; font-size:11px; }
+  .screen.sorter .selection-help { display:none; }
+  .screen.sorter .desktop-label { display:none; }
+  .screen.sorter .phone-label { display:inline; }
+  .screen.finals:not(.no-rail) .screen-head > .stat-chip:not(.match-title) { display:none; }
+  .screen.finals.no-rail .screen-head > .stat-chip { grid-column:1 / 3; }
+  .screen.finals .finals-arena { grid-template-columns:minmax(0,1fr); grid-template-rows:repeat(2,minmax(0,1fr)); gap:8px; }
+  .screen.finals .screen-rail { max-height:none; overflow:visible; }
+  .screen.finals .finals-bracket { padding:0 8px; }
+  .finals-bracket-head h3 { display:none; }
+  .finals-bracket-toggle { display:flex; align-items:center; justify-content:space-between; gap:8px; flex:1; min-height:44px; padding:6px 0; border:0; background:none; color:var(--text); font-size:12px; text-align:left; cursor:pointer; }
+  .finals-bracket-toggle span { color:var(--muted); font-size:11px; }
+  .finals-bracket-toggle i { font-style:normal; }
+  .finals-bracket.expanded .finals-bracket-toggle i { transform:rotate(180deg); }
+  .screen.finals .finals-bracket:not(.expanded) > .bracket { display:none; }
+  .screen.finals .finals-bracket > .bracket { max-height:108px; padding-bottom:6px; align-items:flex-start; }
+  .screen.finals #f-reset { min-height:44px; padding:6px 8px; font-size:11px; }
+  .screen.finals .screen-bar { min-height:0; gap:4px; padding:6px; }
+  .screen.finals .screen-bar .btn { min-height:44px; padding:6px 10px; font-size:12px; }
+  .screen.finals .screen-bar .bar-left, .screen.finals .screen-bar .bar-right { width:100%; }
+  .screen.finals .screen-bar .bar-left .btn, .screen.finals .screen-bar .bar-right .btn { width:100%; }
+  .screen.finals .lbl-wide { display:none; }
+  .screen.finals .lbl-narrow { display:inline; }
+  .screen.finals .vn-tags { height:38px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .action-bar .btn:active { transform: none; }
+}
+
+/* A compact phone title leaves the game exits reachable. */
+@media (max-width:760px) {
+  .twins .screen-head { gap:5px; padding:5px; overflow:visible; }
+  .twins .screen-head h1 { font-size:17px; white-space:nowrap; }
+  .twins .screen-head .stat-chip { padding:4px 6px; font-size:11px; }
+  .twins .screen-head .stat-chip b { font-size:11px; }
+  .twins .screen-head .twin-evidence { display:none; }
+  .twins .screen-head .btn { min-height:44px; padding:6px 8px; font-size:11px; }
+  .twins .screen-head .help-btn { flex:none; width:32px; height:44px; }
+}

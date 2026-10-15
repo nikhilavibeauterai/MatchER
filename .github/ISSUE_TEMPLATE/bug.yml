@@ -1,0 +1,32 @@
+name: Bug report
+description: Something prevented you from sorting or playing.
+body:
+  - type: markdown
+    attributes:
+      value: "Please use the bundled sample to reproduce when possible. Don't attach personal photos, databases, previews, or private ?k= links."
+  - type: input
+    id: version
+    attributes:
+      label: MatchER version
+      placeholder: 0.1.0 desktop, or commit for source installs
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows 11, Windows 10, Linux AppImage, Linux deb, Source install]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, what you expected, and what appeared instead. Include Linux distribution or Windows version.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Relevant error or screenshot
+      description: "Desktop: Help → Open startup log. Remove private paths and links; screenshots should use sample photos."

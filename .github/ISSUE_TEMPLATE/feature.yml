@@ -1,0 +1,10 @@
+name: Idea
+description: Suggest a better way to sort or play.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the task that is awkward today and how your idea would help.
+    validations:
+      required: true

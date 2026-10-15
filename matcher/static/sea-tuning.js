@@ -1,0 +1,57 @@
+// The sea's tunable parameters: the macro order (where a print's home is), the micro order (how neighbours act
+// on each other), and the renderer and camera. One list feeds the worker, the renderer and the developer panel
+// (python -m matcher --debug). Change the defaults here once a tuning session has been handed back.
+var SEA_TUNING = [
+  // macro: the visual geography
+  { key: "spread", group: "macro", label: "Rank spread", hint: "0 places homes on absolute colour and brightness curves; 1 spreads them evenly by rank across the canvas", min: 0, max: 1, step: 0.05, value: 1 },
+  { key: "margin", group: "macro", label: "Edge margin", hint: "share of the canvas kept clear at each edge", min: 0, max: 0.25, step: 0.01, value: 0.25 },
+  { key: "jitter", group: "macro", label: "Home jitter", hint: "each photo's own small offset from its exact home, as a share of the canvas", min: 0, max: 0.1, step: 0.005, value: 0.02 },
+  { key: "homeRate", group: "macro", label: "Home pull per px", hint: "acceleration toward home per pixel of distance", min: 0, max: 0.01, step: 0.0002, value: 0.003 },
+  { key: "homeMax", group: "macro", label: "Home pull cap", min: 0, max: 0.8, step: 0.01, value: 0.57 },
+  // micro: the boid mechanics between neighbours
+  { key: "wander", group: "micro", label: "Wander", hint: "random drift in the calm world (the analysis sea keeps its own)", min: 0, max: 0.1, step: 0.005, value: 0 },
+  { key: "reachFactor", group: "micro", label: "Reach × print size", hint: "how far a print's tags act, as a multiple of the largest print", min: 1, max: 8, step: 0.25, value: 4 },
+  { key: "reachMin", group: "micro", label: "Reach min px", min: 10, max: 200, step: 5, value: 60 },
+  { key: "reachMax", group: "micro", label: "Reach max px", min: 40, max: 400, step: 5, value: 140 },
+  { key: "buffer", group: "micro", label: "Contact buffer", hint: "× (size a + size b): closer than this, prints repel", min: 0.4, max: 1.5, step: 0.02, value: 0.8 },
+  { key: "gap", group: "micro", label: "Resolve gap", hint: "× (size a + size b): overlaps closer than this are pushed apart outright", min: 0.4, max: 1.5, step: 0.02, value: 0.74 },
+  { key: "yield", group: "micro", label: "Resting print gives way", hint: "share of its size a resting print moves aside for a print dropped on it; the rest overlaps", min: 0, max: 1, step: 0.05, value: 0.15 },
+  { key: "repel", group: "micro", label: "Repulsion inside the buffer", min: 0, max: 100, step: 0.05, value: 100 },
+  { key: "affinity", group: "micro", label: "Tag affinity", hint: "scales the attraction and repulsion that shared tags produce", min: 0, max: 3, step: 0.05, value: 1 },
+  { key: "groupCohesion", group: "micro", label: "Group cohesion", hint: "extra pull between members of the same saved group", min: 0, max: 3, step: 0.05, value: 0.3 },
+  { key: "groupSeparation", group: "micro", label: "Group separation", hint: "extra push between members of different saved groups", min: 0, max: 3, step: 0.05, value: 3 },
+  { key: "geoDamping", group: "micro", label: "Geography damping", hint: "weakens attraction between far corners of the colour map", min: 0, max: 40, step: 1, value: 12 },
+  { key: "align", group: "micro", label: "Alignment", hint: "how much a print matches its neighbours' velocity", min: 0, max: 0.2, step: 0.005, value: 0.035 },
+  { key: "forceLimit", group: "micro", label: "Force limit", min: 0.02, max: 0.6, step: 0.01, value: 0.14 },
+  { key: "urgentLimit", group: "micro", label: "Urgent force limit", hint: "used while prints touch or leave the canvas", min: 0.05, max: 1.2, step: 0.01, value: 0.45 },
+  { key: "drag", group: "micro", label: "Drag", min: 0.02, max: 0.6, step: 0.01, value: 0.6 },
+  { key: "calmDrag", group: "micro", label: "Drag while settling", hint: "the calm world's drag: higher stops sooner", min: 0.02, max: 0.8, step: 0.01, value: 0.8 },
+  { key: "hurry", group: "micro", label: "Hurry far from home", hint: "extra speed (px/frame) allowed per px a print is from its home, so a long journey is not held to the cap; 0 keeps the cap everywhere", min: 0, max: 0.1, step: 0.005, value: 0.02 },
+  { key: "speedCap", group: "micro", label: "Speed cap px/frame", min: 0.5, max: 8, step: 0.1, value: 0.5 },
+  { key: "settleGrace", group: "micro", label: "Full motion frames", hint: "after a change, neighbours react at full strength for this many frames", min: 0, max: 600, step: 10, value: 120 },
+  { key: "coolFrames", group: "micro", label: "Cooling frames", hint: "then forces and corrections fade to nothing over this many frames", min: 10, max: 900, step: 10, value: 150 },
+  { key: "settleMove", group: "micro", label: "Settle threshold px", hint: "the field sleeps once no print moves more than this per frame", min: 0.01, max: 1, step: 0.01, value: 1 },
+  { key: "settleFrames", group: "micro", label: "Settle frames", hint: "for this many frames in a row", min: 4, max: 120, step: 1, value: 24 },
+  { key: "bankRate", group: "micro", label: "Filter current per px", hint: "Filter's push toward the right side of the divider", min: 0, max: 0.02, step: 0.0005, value: 0.004 },
+  { key: "bankMax", group: "micro", label: "Filter current cap", min: 0, max: 1, step: 0.01, value: 0.24 },
+  // render and camera
+  { key: "sizeShare", group: "render", label: "Print size share", hint: "share of the canvas area the prints may fill at zoom 1", min: 0.05, max: 0.8, step: 0.01, value: 0.26 },
+  { key: "sizeDivisor", group: "render", label: "Print size divisor", min: 0.8, max: 3, step: 0.05, value: 1.3 },
+  { key: "sizeMax", group: "render", label: "Print size max px", min: 24, max: 200, step: 2, value: 86 },
+  { key: "domLimit", group: "render", label: "Max live prints", hint: "prints with their own image element; the rest draw as sprites. At the default the device's memory sets the real cap; raise it and your number stands, up to every print", min: 40, max: 200000, step: 10, value: 1000 },
+  { key: "gpu", group: "render", label: "Sprites on the GPU", hint: "1 draws every small print as an instanced quad from the atlas on the GPU (a thumbnail at any size, free pans and zooms); 0 uses the 2D canvas. Takes effect when the sea is next built", min: 0, max: 1, step: 1, value: 1 },
+  { key: "liveMin", group: "render", label: "Live from px", hint: "a print at least this wide on screen gets an image element of its own (and the pyramid level its size needs); smaller prints are atlas sprites", min: 8, max: 80, step: 1, value: 22 },
+  { key: "promoteBudget", group: "render", label: "Promotions per pass", hint: "how many sprites may come up live in one pass of the camera cull (each is an element and a picture to fetch); the rest follow on the next pass", min: 10, max: 400, step: 10, value: 80 },
+  { key: "dotLod", group: "render", label: "Dot prints under (px)", hint: "past 4,000 prints, a sprite this many device pixels wide or less draws as a paper dot in the photo's colour", min: 0, max: 16, step: 1, value: 6 },
+  { key: "badgeMin", group: "render", label: "Badges from px", hint: "stack counts and badges appear on prints at least this big on screen", min: 16, max: 120, step: 2, value: 44 },
+  { key: "tinyMax", group: "render", label: "Tiny below px", hint: "below this size on screen a print loses its border and badges", min: 4, max: 40, step: 1, value: 18 },
+  { key: "wobblePeriod", group: "wobble", label: "Wobble period s", hint: "one full rock of a card; every card is offset from this", min: 2, max: 14, step: 0.1, value: 5.6 },
+  { key: "wobbleDeg", group: "wobble", label: "Wobble force °", hint: "how far a card turns each way", min: 0, max: 4, step: 0.05, value: 1 },
+  { key: "wobbleDelaySpread", group: "wobble", label: "Delay spread", hint: "share of the cycle a card's start may differ by (1 = anywhere in the cycle)", min: 0, max: 1, step: 0.05, value: 1 },
+  { key: "wobbleSpeedSpread", group: "wobble", label: "Speed spread ±", hint: "a card's period differs from the base by up to this fraction", min: 0, max: 1, step: 0.05, value: 0.25 },
+  { key: "wobbleForceSpread", group: "wobble", label: "Force spread ±", hint: "a card's force differs from the base by up to this fraction", min: 0, max: 1, step: 0.05, value: 0.35 },
+  { key: "zoomMax", group: "camera", label: "Max zoom", hint: "far enough to read the grain of one print; a zoomed-in print shows its full preview", min: 1.5, max: 2000, step: 0.5, value: 1000 },
+  { key: "wheelSpeed", group: "camera", label: "Wheel zoom speed", min: 0.0002, max: 0.004, step: 0.0001, value: 0.0012 },
+];
+function seaTuningDefaults() { const out = {}; for (const p of SEA_TUNING) out[p.key] = p.value; return out; }
+if (typeof module !== "undefined") module.exports = { SEA_TUNING, seaTuningDefaults };

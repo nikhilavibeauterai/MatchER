@@ -1,0 +1,45 @@
+name: Checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            packaging/requirements.lock
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Linux native libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libopengl0 libportaudio2
+      - name: Install
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r requirements.lock
+          python -m pip install --require-hashes -r packaging/requirements.lock
+      - name: Python and browser-engine logic
+        run: python -m pytest -q
+      - name: Desktop logic
+        run: node --test desktop/test/*.test.cjs

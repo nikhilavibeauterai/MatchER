@@ -101,4 +101,5 @@ def test_best_of_names_never_collide(tmp_path):
     for d in ("a", "b"):
         write_photo(src / d / "IMG_1.jpg", (10, 20, 30), datetime(2025, 1, 1))
     r = export.bestof(src, tmp_path / "out", [{"rel": "a/IMG_1.jpg", "rank": None}, {"rel": "b/IMG_1.jpg", "rank": None}])
-    assert r["count"] == 2 and len(list(Path(r["dir"]).iterdir())) == 2
+    assert r["count"] == 2 and len([p for p in Path(r["dir"]).iterdir() if p.is_file()]) == 2
+    assert sorted(p.name for p in (Path(r["dir"]) / "touched up").iterdir()) == ["++ - IMG_1 (2).jpg", "++ - IMG_1.jpg"]

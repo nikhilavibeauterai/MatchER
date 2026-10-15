@@ -21,7 +21,7 @@ import numpy as np
 SB = 1.0     # prior sd of a shot's individual deviation b_i
 ST = 1.0     # prior sd of the bar around its starting point
 W_DUEL, W_BAR, W_TOSS, W_FRAME = 1.0, 0.7, 0.5, 0.5
-BIG_NB = 1500  # past this many shots with calls, Newton steps go iterative and the covariance approximate
+BIG_NB = 256  # past this many shots with calls, Newton steps go iterative and the covariance approximate
 
 
 def _sigmoid(u):
@@ -216,6 +216,8 @@ class Ranker:
         np.add.at(diag_b, neg[hn], r[hn])
         m_inv = 1.0 / (np.concatenate([(Aw**2 * r[:, None]).sum(0), diag_b, [r @ (at * at)]]) + prec)
         x = np.zeros_like(rhs)
+        if not np.any(rhs):
+            return x
         res = rhs.copy()
         zv = m_inv * res
         pv = zv.copy()
@@ -287,7 +289,7 @@ class Ranker:
         k, cap = self.k, self.cap
         want = min(k, self.n_active)
         for r, row in enumerate(order.tolist()):
-            picks = self._capped(row, scenes, k, cap)
+            picks = self._capped(row, scenes, k, cap, self.active)
             if len(picks) < want and len(row) < self.N:  # caps ate the shortlist: walk the full draw
                 picks = self._capped(np.argsort(-Z[r]).tolist(), scenes, k, cap, self.active)
             counts[picks] += 1
@@ -365,6 +367,15 @@ class Ranker:
             allowed[[i for i in exclude if 0 <= i < self.N]] = False
             if allowed.sum() < 2:
                 allowed = self.active.copy()
+        # A photo sits out once it has had four of the last twenty calls. Tiny pools still need a pair.
+        window = list(recent)[-40:]
+        seen = {i: window.count(i) for i in set(window)}
+        cooler = allowed.copy()
+        for i, count in seen.items():
+            if count >= 4:
+                cooler[i] = False
+        if cooler.sum() >= 2:
+            allowed = cooler
         sd = np.sqrt(var)
         u = p * (1 - p)
         unseen = (post.n_obs == 0) & allowed
@@ -406,6 +417,11 @@ class Ranker:
             if (min(ii, jj), max(ii, jj)) in compared:
                 pen[k] *= 0.02
         score = value * pen * self.rng.uniform(0.85, 1.15, len(i))
+        fresh_pairs = np.array([(min(int(a),int(b)),max(int(a),int(b))) not in compared for a,b in zip(i,j)])
+        if fresh is not None:
+            fresh_pairs &= (i == fresh) | (j == fresh)
+        if fresh_pairs.any():
+            score = np.where(fresh_pairs,score,-1.0)
         if fresh is not None:
             score = np.where((i == fresh) | (j == fresh), score, -1.0)
         k = int(np.argmax(score))

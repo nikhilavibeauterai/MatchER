@@ -41,7 +41,10 @@ def client(tmp_path, fake_prompts):
     app.config["MATCHER"].open(src, start=False)
     c = app.test_client()
     c.matcher = app.config["MATCHER"]
-    return c
+    yield c
+    c.matcher.close()
+    for session in c.matcher._sessions.values():
+        session.shutdown()
 
 
 def single(c, k):
@@ -62,7 +65,7 @@ def look(c, pid):
 
 
 def test_a_group_starts_from_photos_with_a_name_and_deals_likely_matches(client):
-    st = client.get("/api/draw").get_json()
+    st = client.get("/api/draw/board").get_json()
     assert st["drawn"] == 0 and st["total"] > 40 and st["groups"] == []
     seed = single(client, 0)
     t = post(client, "/api/draw/new", {"photos": [seed]}).get_json()["theme"]
@@ -77,7 +80,7 @@ def test_a_group_starts_from_photos_with_a_name_and_deals_likely_matches(client)
     d2 = client.get(f"/api/draw/deck?theme={t['id']}").get_json()
     assert other["photo"] not in [x["photo"] for x in d2["bulk"] + d2["cards"]]    # "out" isn't offered again
     assert d2["theme"]["size"] == 6
-    st = client.get("/api/draw").get_json()
+    st = client.get("/api/draw/board").get_json()
     assert st["drawn"] >= 6 and len(st["groups"]) == 1 and "draw1" in st["game"]["unlocked"]
     b = client.get("/api/draw/board?per=4").get_json()
     assert b["groups"][0]["count"] == 6 and len(b["groups"][0]["shots"]) == 4
@@ -88,13 +91,13 @@ def test_a_group_starts_from_photos_with_a_name_and_deals_likely_matches(client)
 
 def test_every_draw_step_undoes_in_order(client):
     seed = single(client, 2)
-    t = post(client, "/api/draw/start", {"photo": seed}).get_json()["theme"]
+    t = post(client, "/api/draw/new", {"photos": [seed]}).get_json()["theme"]
     d = client.get(f"/api/draw/deck?theme={t['id']}").get_json()
     a, b = (d["bulk"] + d["cards"])[:2]
     post(client, "/api/draw/call", {"theme": t["id"], "photo": a["photo"], "call": "in"})
     post(client, "/api/draw/call", {"theme": t["id"], "photo": b["photo"], "call": "out"})
     post(client, "/api/draw/rename", {"theme": t["id"], "name": "Testing Testing"})
-    xp = client.get("/api/draw").get_json()["game"]["xp"]
+    xp = client.get("/api/draw/board").get_json()["game"]["xp"]
     assert post(client, "/api/draw/undo").get_json()["undone"] == "rename"
     assert client.get(f"/api/draw/deck?theme={t['id']}").get_json()["theme"]["name"] == t["name"]
     assert post(client, "/api/draw/undo").get_json()["undone"] == "not this one"
@@ -102,9 +105,9 @@ def test_every_draw_step_undoes_in_order(client):
         client.get(f"/api/draw/deck?theme={t['id']}&n=20").get_json()), [])]
     assert post(client, "/api/draw/undo").get_json()["undone"] == "add"
     assert client.get(f"/api/draw/deck?theme={t['id']}").get_json()["theme"]["size"] == 1
-    assert client.get("/api/draw").get_json()["game"]["xp"] < xp                  # the XP goes back too
+    assert client.get("/api/draw/board").get_json()["game"]["xp"] < xp                  # the XP goes back too
     assert post(client, "/api/draw/undo").get_json()["undone"] == "new group"
-    st = client.get("/api/draw").get_json()
+    st = client.get("/api/draw/board").get_json()
     assert st["groups"] == [] and st["drawn"] == 0
 
 
@@ -114,7 +117,7 @@ def test_a_near_twin_asks_same_moment_and_stacks_into_the_group(client):
     first = s.store.one("SELECT id FROM photos WHERE rel='cam/IMG_0000.jpg'")["id"]
     twin = s.store.one("SELECT id FROM photos WHERE rel='cam/IMG_0004.jpg'")["id"]
     assert s.photo_group[first] != s.photo_group[twin]                           # the stacking left them apart
-    t = post(client, "/api/draw/start", {"photo": first}).get_json()["theme"]
+    t = post(client, "/api/draw/new", {"photos": [first]}).get_json()["theme"]
     d = client.get(f"/api/draw/deck?theme={t['id']}").get_json()
     card = next(x for x in d["cards"] if x["photo"] == twin)
     assert card["twin"]["of"] == first
@@ -130,7 +133,7 @@ def test_a_near_twin_asks_same_moment_and_stacks_into_the_group(client):
 def test_the_auto_draw_puts_every_shot_in_a_sealed_group(client):
     r = post(client, "/api/draw/auto").get_json()
     assert r["groups"] >= 4
-    st = client.get("/api/draw").get_json()
+    st = client.get("/api/draw/board").get_json()
     assert st["done"] and st["drawn"] == st["total"]
     assert all(g["sealed"] for g in st["groups"])
     s = client.matcher.session
@@ -146,7 +149,7 @@ def test_the_auto_draw_puts_every_shot_in_a_sealed_group(client):
 def test_the_group_stage_plays_inside_groups_then_hands_over_to_the_knockouts(client):
     post(client, "/api/draw/auto")
     s = client.matcher.session
-    nxt = client.get("/api/next?n=1").get_json()
+    nxt = post(client, "/api/deal?n=1").get_json()
     assert nxt["stage"] == "groups"
     seen_settle = False
     for _ in range(400):
@@ -168,11 +171,11 @@ def test_the_group_stage_plays_inside_groups_then_hands_over_to_the_knockouts(cl
     assert seen_settle
     j = client.get("/api/journey").get_json()["stages"]["groups"]
     assert j["done"] and j["settled"] == j["groups"]
-    assert client.get("/api/next?n=1").get_json()["stage"] == "knockouts"
+    assert post(client, "/api/deal?n=1").get_json()["stage"] == "knockouts"
     out = s.draw.outside_knockouts()
     assert out                                                                   # someone went home…
     for _ in range(10):
-        nxt = client.get("/api/next?n=2&stage=knockouts").get_json()
+        nxt = post(client, "/api/deal?n=2&stage=knockouts").get_json()
         for card in nxt["cards"]:
             if card["type"] == "duel":
                 assert s._item(card["a"]) not in out and s._item(card["b"]) not in out   # …and doesn't play on
@@ -181,13 +184,13 @@ def test_the_group_stage_plays_inside_groups_then_hands_over_to_the_knockouts(cl
 
 
 def test_undo_in_the_duels_never_takes_back_a_draw_call(client):
-    nxt = client.get("/api/next?n=1&stage=open").get_json()
+    nxt = post(client, "/api/deal?n=1&stage=open").get_json()
     card = nxt["cards"][0]
     post(client, "/api/vote", {"card": card["id"], "outcome": "a", "ms": 800})
-    post(client, "/api/draw/start", {"photo": single(client, 3)})
+    post(client, "/api/draw/new", {"photos": [single(client, 3)]})
     r = post(client, "/api/undo", {}).get_json()
     assert r["undone"] in ("duel", "mini", "frame")
-    assert len(client.get("/api/draw").get_json()["groups"]) == 1
+    assert len(client.get("/api/draw/board").get_json()["groups"]) == 1
 
 
 def test_names_taglines_places_and_letters():
@@ -217,7 +220,9 @@ def test_auto_draw_keeps_clusters_apart_and_caps_big_ones():
     assert len(wild) >= 20
 
 
-def test_each_folder_is_a_save_with_its_own_level_and_you_can_switch(tmp_path, fake_prompts):
+def test_each_folder_is_a_save_with_its_own_level_and_you_can_switch(tmp_path, fake_prompts, monkeypatch):
+    # These libraries already have synthetic analysis; switching saves must not launch real model workers.
+    monkeypatch.setattr("matcher.server.Analyzer.start", lambda self: None)
     data = tmp_path / "data"
     srcs = [tmp_path / "trips", tmp_path / "pets"]
     for k, src in enumerate(srcs):
@@ -231,7 +236,7 @@ def test_each_folder_is_a_save_with_its_own_level_and_you_can_switch(tmp_path, f
     for src in srcs:
         assert post(c, "/api/library", {"path": str(src)}).status_code == 200
     duels_left = 6
-    nxt = c.get("/api/next?n=1&stage=open").get_json()
+    nxt = post(c, "/api/deal?n=1&stage=open").get_json()
     while duels_left:  # play a little in "pets" (open now): its level moves, "trips" stays put
         card = nxt["cards"][0]
         nxt = post(c, "/api/vote", {"card": card["id"], "outcome": "a", "ms": 700}).get_json()
@@ -248,6 +253,8 @@ def test_each_folder_is_a_save_with_its_own_level_and_you_can_switch(tmp_path, f
     st = post(c, "/api/library", {"path": str(srcs[0])}).get_json()               # switch back to "trips"
     assert st["library"]["mode"] == "gallery" and st["library"]["save"]["name"] == "trips"
     assert [s["current"] for s in c.get("/api/saves").get_json()["saves"] if s["name"] == "trips"] == [True]
+    for session in app.config["MATCHER"]._sessions.values():
+        session.shutdown()
 
 
 def test_the_group_stage_finishes_with_two_cards_queued_like_the_duel_screen(client):
@@ -255,7 +262,7 @@ def test_the_group_stage_finishes_with_two_cards_queued_like_the_duel_screen(cli
     group this used to leave one pairing, replayed forever."""
     post(client, "/api/draw/auto")
     s = client.matcher.session
-    queue = client.get("/api/next?n=2&stage=groups").get_json()["cards"]
+    queue = post(client, "/api/deal?n=2&stage=groups").get_json()["cards"]
     dealt = []
     for _ in range(300):
         if not queue:
@@ -280,7 +287,7 @@ def test_look_for_words_steer_which_photos_come_first(client, fake_prompts):
         c.execute("UPDATE photos SET emb=? WHERE id=?", (f16(laptop), target))
     library.refresh(s.store)
     seed = s.store.one("SELECT id FROM photos WHERE rel='cam/IMG_0000.jpg'")["id"]
-    t = post(client, "/api/draw/start", {"photo": seed}).get_json()["theme"]
+    t = post(client, "/api/draw/new", {"photos": [seed]}).get_json()["theme"]
     before = [x["photo"] for x in client.get(f"/api/draw/deck?theme={t['id']}").get_json()["cards"]]
     assert before[0] != target
     r = post(client, "/api/draw/hint", {"theme": t["id"], "hint": "laptops, screens"}).get_json()
@@ -296,7 +303,7 @@ def test_look_for_words_steer_which_photos_come_first(client, fake_prompts):
 
 def test_the_journey_organizes_first_then_plays(client):
     j = client.get("/api/journey").get_json()
-    assert j["order"] == ["stacks", "draw", "crown", "groups", "duels", "finals", "reveal"] and j["side"] == ["sweep"]
+    assert j["order"] == ["filter", "stacks", "crown", "draw", "groups", "duels", "finals", "reveal"] and j["side"] == ["sweep"]
     # stacks: the near-twins the stacking left apart are there to check, and a "not twins" call can be undone
     twins = j["stages"]["stacks"]["twins"]
     assert twins >= 1
@@ -317,7 +324,7 @@ def test_the_journey_organizes_first_then_plays(client):
 
 def test_a_deal_lists_every_group_as_a_bin_with_the_best_fits(client):
     post(client, "/api/draw/auto")
-    st = client.get("/api/draw").get_json()
+    st = client.get("/api/draw/board").get_json()
     first = st["groups"][0]
     s = client.matcher.session
     # free one shot from another group so there's something to deal
@@ -338,10 +345,10 @@ def test_a_group_that_loses_its_last_shot_goes_away_and_undo_brings_it_back(clie
     t = post(client, "/api/draw/new", {"photos": [seed]}).get_json()["theme"]
     post(client, "/api/draw/hint", {"theme": t["id"], "hint": "dogs"})
     post(client, "/api/draw/move", {"photos": [seed], "theme": None})          # its only shot moves out
-    assert client.get("/api/draw").get_json()["groups"] == []                   # no empty group left behind
+    assert client.get("/api/draw/board").get_json()["groups"] == []                   # no empty group left behind
     assert client.get(f"/api/draw/deck?theme={t['id']}").status_code == 404
     assert post(client, "/api/draw/undo").get_json()["undone"] == "unsort"
-    st = client.get("/api/draw").get_json()
+    st = client.get("/api/draw/board").get_json()
     assert [(g["id"], g["name"], g["hint"], g["size"]) for g in st["groups"]] == [(t["id"], t["name"], "dogs", 1)]
 
 
@@ -349,7 +356,7 @@ def test_your_order_of_groups_sets_their_place_and_undoes(client):
     a = post(client, "/api/draw/new", {"photos": [single(client, 0)]}).get_json()["theme"]
     b = post(client, "/api/draw/new", {"photos": [single(client, 1)]}).get_json()["theme"]
     c = post(client, "/api/draw/new", {"photos": [single(client, 2)]}).get_json()["theme"]
-    ids = lambda: [g["id"] for g in client.get("/api/draw").get_json()["groups"]]  # noqa: E731
+    ids = lambda: [g["id"] for g in client.get("/api/draw/board").get_json()["groups"]]  # noqa: E731
     assert ids() == [a["id"], b["id"], c["id"]]                                  # made order to start with
     post(client, "/api/draw/order", {"order": [c["id"], a["id"], b["id"]]})
     assert ids() == [c["id"], a["id"], b["id"]]
@@ -402,6 +409,7 @@ def test_the_analysis_tags_every_photo_and_your_edits_and_names_survive_a_refres
     assert rows[friend]["label"] == "Sam" and rows[friend]["pinned"]          # ...your names and edits stay
     assert "night" in eff[p1]
     assert friend in client.get("/api/draw/board?per=400&uper=600&tags=1").get_json()["tagging"]["visible"]
+    assert post(client, "/api/draw/undo").get_json()["undone"] == "edit tag"
     assert post(client, "/api/draw/undo").get_json()["undone"] == "tags"
     assert "night" not in tags.effective(s.store)[p1]
 

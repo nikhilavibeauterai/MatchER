@@ -1,0 +1,65 @@
+[
+  {
+    "file": "ducreux-mocking.jpg",
+    "title": "Joseph Ducreux Original Self-Portrait.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Joseph_Ducreux_Original_Self-Portrait.jpg",
+    "license": "Public domain",
+    "sha256": "34a7527bc3cba82201f75b2cd39fde17288627c0a8bbc31760f49c5a99d1a984"
+  },
+  {
+    "file": "ducreux-yawning.jpg",
+    "title": "Joseph Ducreux (French) - Self-Portrait, Yawning - Google Art Project.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Joseph_Ducreux_%28French%29_-_Self-Portrait%2C_Yawning_-_Google_Art_Project.jpg",
+    "license": "Public domain",
+    "sha256": "e9c472931bfa07016e5cf47f6a9e6dc3b5a293624fc7c8d84c33632a0e725444"
+  },
+  {
+    "file": "moon-face.jpg",
+    "title": "Le Voyage dans la lune.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Le_Voyage_dans_la_lune.jpg",
+    "license": "Public domain",
+    "sha256": "a8f932b1197c45aa9ce7f76b2dc7f0b9361e44394068bba91253bb178ecc9e10"
+  },
+  {
+    "file": "the-scream.jpg",
+    "title": "The Scream.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:The_Scream.jpg",
+    "license": "Public domain",
+    "sha256": "f3e2667d3f7e3d16ae60efc11d5142597b1aa4407986c251c67f9efbf2ea1ab6"
+  },
+  {
+    "file": "mona-lisa.jpg",
+    "title": "Mona Lisa, by Leonardo da Vinci, from C2RMF retouched.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg",
+    "license": "Public domain",
+    "sha256": "12f3a161df70534079eb582149d17862f83b86987232d9c944e81123499e4389"
+  },
+  {
+    "file": "starry-night.jpg",
+    "title": "Van Gogh - Starry Night - Google Art Project.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+    "license": "Public domain",
+    "sha256": "70ddc5f0b95875823ddf261ad749b0faaaa5405b5cfcfdd803628c28da847137"
+  },
+  {
+    "file": "great-wave.jpg",
+    "title": "The Great Wave off Kanagawa.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:The_Great_Wave_off_Kanagawa.jpg",
+    "license": "Public domain",
+    "sha256": "7a3276c40bc60c2eefb061bf81ae682b6cc82e13df70413fa0cf457b95e53649"
+  },
+  {
+    "file": "earthrise.jpg",
+    "title": "NASA-Apollo8-Dec24-Earthrise.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:NASA-Apollo8-Dec24-Earthrise.jpg",
+    "license": "Public domain",
+    "sha256": "e4e5172cdc97b3229c9051732d978bbba69cd0c8184be6f655b2471d355b9884"
+  },
+  {
+    "file": "buzz-aldrin.jpg",
+    "title": "Aldrin Apollo 11 original.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Aldrin_Apollo_11_original.jpg",
+    "license": "Public domain",
+    "sha256": "7ea66a1e0632c564bd1beb4733abe5ef26d70de0561d5fd000b8f7bb92e6bd38"
+  }
+]
