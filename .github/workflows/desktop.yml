@@ -1,6 +1,11 @@
 name: Desktop release
 on:
   workflow_dispatch:
+    inputs:
+      draft_release:
+        description: Create a draft preview release after both builds pass
+        type: boolean
+        default: false
   push:
     tags: ['v*']
 
@@ -56,6 +61,7 @@ jobs:
         shell: bash
         run: |
           python -c "import json; from matcher import __version__; assert json.load(open('desktop/package.json'))['version'] == __version__"
+          python -c "from matcher import __version__; print('MATCHER_VERSION=' + __version__)" >> "$GITHUB_ENV"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             python -c "import os; from matcher import __version__; assert os.environ['GITHUB_REF_NAME'] == 'v' + __version__"
           fi
@@ -82,7 +88,28 @@ jobs:
         env:
           MATCHER_DESKTOP: ${{ github.workspace }}\dist\desktop\win-unpacked\MatchER.exe
       - name: Write checksums
+      # The installer is exercised separately from the unpacked app.
         run: python scripts/checksums.py
+      - name: Install, launch and uninstall on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist/desktop/MatchER-*.exe | Select-Object -First 1
+          $install = Join-Path $env:RUNNER_TEMP 'MatchER-installed'
+          $process = Start-Process $installer.FullName -ArgumentList @('/S', "/D=$install") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited $($process.ExitCode)" }
+          $env:MATCHER_DESKTOP = Join-Path $install 'MatchER.exe'
+          node scripts/smoke_desktop.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Installed app smoke test failed' }
+          $uninstaller = Get-ChildItem $install -Filter 'Uninstall*.exe' | Select-Object -First 1
+          $process = Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Uninstaller exited $($process.ExitCode)" }
+      - name: Smoke-test portable Linux AppImage
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/smoke_desktop.cjs
+        env:
+          MATCHER_DESKTOP: ${{ github.workspace }}/dist/desktop/MatchER-${{ env.MATCHER_VERSION }}-linux-x64.AppImage
+          APPIMAGE_EXTRACT_AND_RUN: '1'
       - uses: actions/upload-artifact@v7
         with:
           name: MatchER-${{ runner.os }}-x64
@@ -95,12 +122,13 @@ jobs:
 
   draft:
     name: Draft a tagged release
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.draft_release
     needs: build
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           pattern: MatchER-*
@@ -110,5 +138,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" installers/* --verify-tag --draft --prerelease --title "MatchER $TAG preview" --generate-notes
+        run: |
+          TAG="$(node -p "'v' + require('./desktop/package.json').version")"
+          gh release create "$TAG" installers/* --target "$GITHUB_SHA" --draft --prerelease --title "MatchER $TAG preview" --generate-notes

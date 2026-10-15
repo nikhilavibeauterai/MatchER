@@ -94,7 +94,7 @@ def test_the_best_crop_leaves_the_least_paper_showing():
     assert y1 - y0 < 1200 and abs((x1 - x0) / (y1 - y0) - touchup.WINDOW[0] / touchup.WINDOW[1]) < 0.01
     assert x0 <= 0.8 * 1600 and x1 >= 0.95 * 1600  # the subject stays inside
     assert touchup.crop_box(1600, 1200, None, "best")[0] > 0  # no subject: the middle
-    # A portrait keeps its whole width.
+    # A portrait also prefers its focus subject when both options fill the window.
     assert touchup.crop_box(900, 1600, [0.5, 0.9, 0.1, 0.1], "best") == touchup.crop_box(900, 1600, [0.5, 0.9, 0.1, 0.1], "subject")
 
 
