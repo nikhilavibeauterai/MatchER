@@ -81,6 +81,7 @@ def main() -> None:
         ap.error("use a port between 0 and 65535; desktop mode only serves this computer")
 
     from .config import DATA_DIR
+    from .platforms import worker_stdin
     from .server import create_app
     from waitress import create_server
 
@@ -128,22 +129,23 @@ def main() -> None:
         finally:
             stopped.set()
 
-    thread = threading.Thread(target=serve, name="matcher-http", daemon=True)
-    thread.start()
-    if a.desktop:
-        threading.Thread(target=parent_pipe, name="matcher-desktop", daemon=True).start()
-    try:
-        stopped.wait()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.close()
-        sessions = list(app.config["MATCHER"]._sessions.values())
-        for s in sessions:
-            s.analyzer.cancel.set()
-        server.task_dispatcher.shutdown(timeout=60)
-        for s in list(app.config["MATCHER"]._sessions.values()):
-            s.shutdown()
+    with worker_stdin(a.desktop):
+        thread = threading.Thread(target=serve, name="matcher-http", daemon=True)
+        thread.start()
+        if a.desktop:
+            threading.Thread(target=parent_pipe, name="matcher-desktop", daemon=True).start()
+        try:
+            stopped.wait()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.close()
+            sessions = list(app.config["MATCHER"]._sessions.values())
+            for s in sessions:
+                s.analyzer.cancel.set()
+            server.task_dispatcher.shutdown(timeout=60)
+            for s in list(app.config["MATCHER"]._sessions.values()):
+                s.shutdown()
 
 
 if __name__ == "__main__":

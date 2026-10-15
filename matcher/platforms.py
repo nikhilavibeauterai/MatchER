@@ -4,7 +4,35 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+
+
+@contextmanager
+def worker_stdin(desktop: bool):
+    """Keep the desktop's control pipe out of Windows worker startup."""
+    if not desktop or sys.platform != "win32":
+        yield
+        return
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.GetStdHandle.argtypes = [wintypes.DWORD]
+    kernel.GetStdHandle.restype = wintypes.HANDLE
+    kernel.SetStdHandle.argtypes = [wintypes.DWORD, wintypes.HANDLE]
+    kernel.SetStdHandle.restype = wintypes.BOOL
+    original = kernel.GetStdHandle(wintypes.DWORD(-10))
+    with open(os.devnull, "rb") as empty:
+        # A pending ReadFile on the control pipe can block a child's CRT startup. Python's existing
+        # sys.stdin keeps that pipe; future children get NUL through the process's standard handle.
+        if not kernel.SetStdHandle(wintypes.DWORD(-10), msvcrt.get_osfhandle(empty.fileno())):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            yield
+        finally:
+            kernel.SetStdHandle(wintypes.DWORD(-10), original)
 
 
 def storage_paths(root: Path, *, env=None, platform=None, home=None, frozen=None) -> tuple[Path, Path]:

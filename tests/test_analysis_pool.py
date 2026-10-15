@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+from queue import Empty, Queue
 import signal
 import subprocess
 import sys
@@ -159,3 +160,50 @@ if __name__ == "__main__":
         pytest.fail(f"The synthetic read stalled after worker recycling: {out}\n{err}")
     assert proc.returncode == 0, err
     assert json.loads(out) == {"completed": 3299}
+
+
+def test_desktop_control_pipe_does_not_block_worker_startup(tmp_path):
+    script = tmp_path / "desktop_workers.py"
+    script.write_text('''\
+import json
+import sys
+import threading
+from matcher.analyze import _process_results
+from matcher.platforms import worker_stdin
+
+if __name__ == "__main__":
+    with worker_stdin(True):
+        control = threading.Thread(target=sys.stdin.readline)
+        control.start()
+        def analyze():
+            values = list(_process_results(abs, [-2, -1], 2, threading.Event()))
+            print(json.dumps(sorted(values)), flush=True)
+        work = threading.Thread(target=analyze)
+        work.start()
+        work.join()
+        control.join()
+''')
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENBLAS_NUM_THREADS": "1"}
+    proc = subprocess.Popen([sys.executable, str(script)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
+    output = Queue()
+    threading.Thread(target=lambda: output.put(proc.stdout.readline()), daemon=True).start()
+    try:
+        # communicate() would close stdin first and hide the Windows startup deadlock.
+        line = output.get(timeout=30)
+        assert json.loads(line) == [1, 2]
+        proc.stdin.write("stop\n")
+        proc.stdin.flush()
+        _, err = proc.communicate(timeout=10)
+        assert proc.returncode == 0, err
+    except (Empty, subprocess.TimeoutExpired):
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+        out, err = proc.communicate()
+        pytest.fail(f"Desktop analysis workers did not start with the control pipe open: {out}\n{err}")
+    finally:
+        if proc.poll() is None:
+            proc.stdin.close()
+            proc.wait(timeout=10)
