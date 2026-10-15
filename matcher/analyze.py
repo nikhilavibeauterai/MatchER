@@ -198,6 +198,9 @@ def _process_results(fn, tasks: list, workers: int, cancel: threading.Event, ini
             try:
                 for _ in range(workers * 2):
                     submit()
+                if os.environ.get("MATCHER_DIAGNOSTICS") == "1":
+                    processes = [(p.pid, p.exitcode) for p in pool._processes.values()]
+                    print(f"Analysis pool: executable={sys.executable!r}, workers={workers}, processes={processes!r}", file=sys.stderr, flush=True)
                 while pending:
                     if cancel.is_set():
                         return

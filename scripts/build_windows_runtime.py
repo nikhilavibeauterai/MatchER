@@ -50,6 +50,7 @@ def build():
     subprocess.run([sys.executable, "-m", "pip", "install", "--require-hashes", "--only-binary=:all:",
                     "--no-compile", "--target", str(packages), "-r", str(ROOT / "requirements.lock")], check=True)
     shutil.copytree(ROOT / "matcher", packages / "matcher", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    (packages / "sitecustomize.py").write_text("from matcher.process_trace import install\ninstall()\n", encoding="utf-8")
     shutil.copytree(ROOT / "build" / "licenses", dest / "_internal" / "licenses")
     notice = dest / "_internal" / "licenses" / "Microsoft-VC-Runtime"
     notice.mkdir(parents=True)
