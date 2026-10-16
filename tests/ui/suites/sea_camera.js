@@ -20,9 +20,9 @@ const {LINK,LIB,OUT}=process.env;
   const geo=await page.evaluate(()=>{
     const rows=World.sea.bodies.filter(it=>Number.isFinite(it.visual?.colorfulness)&&Number.isFinite(it.visual?.brightness)).map(it=>({v:it.visual,it:World.sea.items.get(it.id)})).filter(x=>x.it);
     const corr=(f,g)=>{const n=rows.length,mf=rows.reduce((s,x)=>s+f(x),0)/n,mg=rows.reduce((s,x)=>s+g(x),0)/n;let num=0,df=0,dg=0;for(const x of rows){const u=f(x)-mf,w=g(x)-mg;num+=u*w;df+=u*u;dg+=w*w;}return num/Math.sqrt(df*dg||1);};
-    return {n:rows.length,colour:corr(x=>x.v.colorfulness,x=>x.it.x),bright:corr(x=>x.v.brightness,x=>-x.it.y)};
+    return {n:rows.length,total:World.sea.bodies.length,colour:corr(x=>x.v.colorfulness,x=>x.it.x),bright:corr(x=>x.v.brightness,x=>-x.it.y)};
   });
-  assert(geo.n>10&&geo.colour>.4&&geo.bright>.4,`Colour runs left to right and brightness bottom to top: ${JSON.stringify(geo)}`);
+  assert(geo.n===geo.total&&geo.n>=4&&geo.colour>.4&&geo.bright>.4,`Every stack has its colour/brightness home: ${JSON.stringify(geo)}`);
   // 2. Zoom about the pointer, pan by dragging water, the layer carries both, a double-click resets.
   const water=await page.evaluate(()=>{const r=World.sea.el.getBoundingClientRect(),taken=[...World.sea.items.values()];
     for(let y=r.top+160;y<r.bottom-120;y+=37)for(let x=r.left+220;x<r.right-220;x+=41){const [wx,wy]=World.sea.toWorld(x-r.left,y-r.top);

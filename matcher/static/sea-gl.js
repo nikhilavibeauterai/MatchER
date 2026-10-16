@@ -12,12 +12,13 @@ class SpriteLayer {
     layout(location=1) in vec3 pos;    // centre x, centre y (sea units), width
     layout(location=2) in vec4 cell;   // u0, v0, width, height of the picture on the sheet (texels); width 0 = no picture yet
     layout(location=3) in vec4 look;   // opacity, then the card's three wobble randoms
+    layout(location=4) in float aspect;
     uniform vec2 view;                 // the sea's size (css px)
     uniform vec3 cam;                  // zoom, tx, ty
     uniform float time;                // ms
     uniform vec4 wob;                  // period ms, degrees, speed spread, force spread
     uniform float wobDelay;            // delay spread
-    out vec2 vq; out vec4 vcell; out float vopacity; out float vpx;
+    out vec2 vq; out vec4 vcell; out float vopacity; out float vpx; out float vaspect;
     void main() {
       float w = pos.z, h = w * 4.0 / 3.0;
       vec2 corner = (q - 0.5) * vec2(w, h);
@@ -28,11 +29,11 @@ class SpriteLayer {
       vec2 r = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
       vec2 screen = (pos.xy + r) * cam.x + cam.yz;
       gl_Position = vec4(screen.x / view.x * 2.0 - 1.0, 1.0 - screen.y / view.y * 2.0, 0.0, 1.0);
-      vq = q; vcell = cell; vopacity = look.x; vpx = w * cam.x;
+      vq = q; vcell = cell; vopacity = look.x; vpx = w * cam.x; vaspect = aspect;
     }`;
   static FRAGMENT = `#version 300 es
     precision mediump float;
-    in vec2 vq; in vec4 vcell; in float vopacity; in float vpx;
+    in vec2 vq; in vec4 vcell; in float vopacity; in float vpx; in float vaspect;
     uniform sampler2D sheet; uniform vec2 sheetSize;
     out vec4 color;
     void main() {
@@ -42,7 +43,8 @@ class SpriteLayer {
       vec3 rgb = vec3(0.957, 0.937, 0.902);
       float wx0 = 0.055, ww = 0.89, wy0 = 0.055, wh = 4.0 / 3.0 - 0.225;
       if (vcell.z > 0.0) {
-        float k = min(ww / vcell.z, wh / vcell.w), pw = vcell.z * k, ph = vcell.w * k, px0 = wx0 + (ww - pw) * 0.5;
+        float aspect = vaspect > 0.0 ? vaspect : vcell.z / vcell.w;
+        float pw = min(ww, wh * aspect), ph = pw / aspect, px0 = wx0 + (ww - pw) * 0.5;
         if (x >= px0 && x < px0 + pw && y >= wy0 && y < wy0 + ph) {
           // Sample half a texel in from the cell's edges so a neighbour on the sheet never bleeds in.
           vec2 uv = vec2(vcell.x + 0.5 + (x - px0) / pw * (vcell.z - 1.0), vcell.y + 0.5 + (y - wy0) / ph * (vcell.w - 1.0)) / sheetSize;
@@ -56,7 +58,7 @@ class SpriteLayer {
       float a = vopacity * clamp(0.5 - dist * max(vpx, 1.0), 0.0, 1.0);
       color = vec4(rgb * a, a);
     }`;
-  static STRIDE = 12;  // floats per instance: x, y, w, u0, v0, cw, ch, opacity, r1, r2, r3, pad
+  static STRIDE = 12;  // floats per instance: x, y, w, u0, v0, cw, ch, opacity, r1, r2, r3, aspect
 
   constructor(canvas) {
     const gl = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: "high-performance" });
@@ -87,6 +89,7 @@ class SpriteLayer {
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 0); gl.vertexAttribDivisor(1, 1);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 12); gl.vertexAttribDivisor(2, 1);
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 28); gl.vertexAttribDivisor(3, 1);
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 44); gl.vertexAttribDivisor(4, 1);
     gl.bindVertexArray(null);
     this.blank = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.blank);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([201, 194, 180, 255]));
@@ -136,6 +139,7 @@ class SpriteLayer {
       if (b.upload) { gl.bufferData(gl.ARRAY_BUFFER, b.data.subarray(0, b.n * SpriteLayer.STRIDE), gl.DYNAMIC_DRAW); b.upload = false; }
       const stride = SpriteLayer.STRIDE * 4;
       gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 0); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 12); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 28);
+      gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 44);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, b.n);
     }
     gl.bindVertexArray(null);

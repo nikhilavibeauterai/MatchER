@@ -1800,8 +1800,9 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             try:
                 with Image.open(s.workdir / "thumbs" / f"{pid}.jpg") as im:
                     im = im.convert("RGB")
-                    im.thumbnail((16, 16))
-                    sheet.paste(im, ((k % 50)*16+(16-im.width)//2, (k//50)*16+(16-im.height)//2))
+                    # Fill the cell; the renderer restores the photo's aspect inside its paper window.
+                    im = im.resize((16, 16), Image.Resampling.LANCZOS)
+                    sheet.paste(im, ((k % 50)*16, (k//50)*16))
             except (OSError, ValueError):
                 pass
         buf = io.BytesIO()
@@ -3093,7 +3094,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         _need(s)
         after = max(0, int(request.args.get("after", 0)))
         per = max(1, min(1000, int(request.args.get("per", 400))))
-        rows = s.store.q("SELECT id, group_id, theme_id, category, cut, override, flags, luma, chroma, saturation, hue FROM photos "
+        rows = s.store.q("SELECT id, group_id, theme_id, category, cut, override, flags, width, height, luma, chroma, saturation, hue FROM photos "
                          "WHERE id>? AND status IN ('analyzed','error') ORDER BY id LIMIT ?", (after, per + 1))
         more, part = len(rows) > per, rows[:per]
         sets = tags.effective(s.store, [r["id"] for r in part])
@@ -3105,6 +3106,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                         "theme": r["theme_id"] if r["theme_id"] is not None else -1,
                         "category": r["category"], "cut": r["cut"], "tags": sorted(sets.get(r["id"], [])),
                         "rescued": r["override"] == "keep", "box": s.view.get(r["id"], {}).get("box"),
+                        "dims": [r["width"] or 1, r["height"] or 1],
                         "visual": visual.descriptor(r["luma"], r["chroma"], r["saturation"], r["hue"])})
         total = s.store.one("SELECT COUNT(*) AS n FROM photos WHERE status IN ('analyzed','error')")["n"]
         return jsonify(photos=out, after=part[-1]["id"] if part else after, more=more, total=total,

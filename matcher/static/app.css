@@ -1468,6 +1468,7 @@ body[data-world="hidden"] #world, body.no-bar #world { opacity: 0; }
 #world .ps-item.lifted { opacity: 0; }
 #world .ps-item.pile-lifted { opacity:0; pointer-events:none; }
 .ps-item.is-tiny .ps-stack, .ps-item.is-tiny .ps-rank, .ps-item.is-tiny .ps-badge { display:none; }
+.photo-sea .ps-item.image-pending > :is(img, .ps-stack, .ps-badge, .ps-rank) { visibility:hidden; } /* The atlas shows until decode; the card still takes input. */
 #world .vn-lasso-tag { pointer-events: none; font-size: 12px; }
 #world .ps-item.ps-won { animation: wonpulse 1.1s ease-out; }
 @keyframes wonpulse { 0% { box-shadow: 0 0 0 0 rgba(255, 216, 107, 0.9); } 100% { box-shadow: 0 0 0 26px rgba(255, 216, 107, 0); } }

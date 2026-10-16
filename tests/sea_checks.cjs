@@ -4,6 +4,31 @@ const {SeaField,seaSimilarity,seaForce}=require('../matcher/static/sea-worker.js
 // These checks exercise the engine's mechanics under one known tuning; the shipped defaults (sea-tuning.js) are the owner's feel.
 const MECHANICS={...require('../matcher/static/sea-tuning.js').seaTuningDefaults(),speedCap:2.2,drag:.1,calmDrag:.18,repel:.8,groupCohesion:1,groupSeparation:.5,homeMax:.3,margin:.06,settleMove:.06,domLimit:160,hurry:0};
 const field=(items)=>{const f=new SeaField();f.set({generation:1,tuning:MECHANICS,width:1200,height:750,items:items.map((it,i)=>({id:i+1,x:100+(i*317%1000),y:100+(i*179%550),baseSize:35,...it}))});return f;};
+test('atlas cells retain the photo aspect independently of their square texture slots',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype');
+  for(const dims of [[400,200],[200,400],[300,300],[400,25]]){
+    const cell=proto.atlasCell({},51,dims);assert.equal(cell.x,16);assert.equal(cell.y,16);
+    assert.equal(cell.aspect,dims[0]/dims[1]);
+  }
+  assert.equal(proto.atlasCell({},0,null).aspect,1);
+});
+test('camera pans capture the pointer and release it when a two-finger pinch takes over',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),classes=new Set(),captured=new Set();
+  const proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype',{
+    performance,document:{body:{classList:{add:x=>classes.add(x),remove:x=>classes.delete(x)}}}});
+  const sea=Object.assign(Object.create(proto),{cameraOn:true,camera:{zoom:1,tx:0,ty:0},touches:new Map(),
+    el:{setPointerCapture:id=>captured.add(id),hasPointerCapture:id=>captured.has(id),releasePointerCapture:id=>captured.delete(id),getBoundingClientRect:()=>({left:0,top:0})},
+    zoomAt(factor){this.camera.zoom*=factor;},setCamera(zoom,tx,ty){this.camera={zoom,tx,ty};}});
+  let prevented=false;
+  sea.panStart({pointerId:1,button:0,clientX:100,clientY:200,preventDefault(){prevented=true;}});
+  assert(prevented&&captured.has(1),'The pan suppresses native dragging and keeps its pointer');
+  sea.panMove({pointerId:1,clientX:110,clientY:200});assert(classes.has('sea-panning'));
+  sea.pinch({type:'pointerdown',pointerType:'touch',pointerId:1,clientX:100,clientY:200});
+  sea.pinch({type:'pointerdown',pointerType:'touch',pointerId:2,clientX:200,clientY:200});
+  assert(sea.pinch({type:'pointermove',pointerType:'touch',pointerId:2,clientX:240,clientY:200}));
+  assert.equal(sea.pan,null);assert.equal(captured.size,0);assert(!classes.has('sea-panning'));
+  assert.equal(sea.camera.zoom,1.4);
+});
 test('Filter outcomes add a bounded current without moving, re-clustering or unpinning photos',()=>{
   const f=field([{tags:['dog'],x:800,y:180},{tags:['dog'],x:400,y:570},{tags:['cat'],x:590,y:350}]);
   f.cluster();f.step({time:0});

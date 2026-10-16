@@ -432,7 +432,8 @@ class Analyzer:
                     self.feed["read"].append([res["id"], [[round(f["x"], 3), round(f["y"], 3), round(f["w"], 3), round(f["h"], 3)] for f in fs[:6]],
                                               sum(1 for f in fs if (f.get("smile") or 0) > 0.5),
                                               sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) >= 0.55),
-                                              visual.descriptor(*(res.get(key) for key in ("luma", "chroma", "saturation", "hue")))])
+                                              visual.descriptor(*(res.get(key) for key in ("luma", "chroma", "saturation", "hue"))),
+                                              [res.get("width"), res.get("height")]])
                     self.progress["faces"] += len(fs)
                     self.progress["smiles"] += sum(1 for f in fs if (f.get("smile") or 0) > 0.5)
                     self.progress["blinks"] += sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) >= 0.55)

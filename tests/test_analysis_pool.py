@@ -16,7 +16,7 @@ from matcher.store import Store
 
 
 def _photo(task):
-    return {"id": task[0], "status": "analyzed", "n_faces": 0, "faces": []}
+    return {"id": task[0], "status": "analyzed", "n_faces": 0, "faces": [], "width": 800, "height": 600}
 
 
 class _Pool:
@@ -78,6 +78,7 @@ def test_reading_continues_past_3200_and_persists_every_result(tmp_path, monkeyp
         assert all(p.closed for p in pools)
         assert analyzer.progress["done"] == analyzer.progress["total"] == 3299
         assert sorted(row[0] for row in analyzer.feed["read"]) == list(range(1, 3300))
+        assert all(row[5] == [800, 600] for row in analyzer.feed["read"])
         assert store.one("SELECT COUNT(*) AS n FROM photos WHERE status='analyzed'")["n"] == 3299
         analyzer._phase1()
         assert analyzer.progress["done"] == analyzer.progress["total"] == 0

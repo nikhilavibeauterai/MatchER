@@ -18,8 +18,8 @@ def test_analysis_atlas_can_show_read_photos_in_requested_order(client):
     s = client.matcher.session
     a, b = single(client, 0), single(client, 1)
     (s.workdir / "thumbs").mkdir(exist_ok=True)
-    Image.new("RGB", (32, 32), (220, 30, 30)).save(s.workdir / "thumbs" / f"{a}.jpg")
-    Image.new("RGB", (32, 32), (30, 30, 220)).save(s.workdir / "thumbs" / f"{b}.jpg")
+    Image.new("RGB", (32, 16), (220, 30, 30)).save(s.workdir / "thumbs" / f"{a}.jpg")
+    Image.new("RGB", (16, 32), (30, 30, 220)).save(s.workdir / "thumbs" / f"{b}.jpg")
     with s.store.tx() as c:
         c.execute("UPDATE photos SET status='read' WHERE id IN (?,?)", (a, b))
     r = client.get(f"/img/atlas.jpg?ids={b},{a}")
@@ -28,6 +28,10 @@ def test_analysis_atlas_can_show_read_photos_in_requested_order(client):
         assert sheet.size == (800, 16)
         assert sheet.getpixel((8, 8))[2] > 180
         assert sheet.getpixel((24, 8))[0] > 180
+        # The whole slot contains the photo; its aspect travels in metadata, never as padding baked into pixels.
+        for x, channel in [(1, 2), (14, 2), (17, 0), (30, 0)]:
+            for y in [1, 14]:
+                assert sheet.getpixel((x, y))[channel] > 180
     for query in ["", "-1", "x", "1/2", ",".join([str(a)] * 1001)]:
         assert client.get(f"/img/atlas.jpg?ids={query}").status_code == 400
 
@@ -127,6 +131,9 @@ def test_world_and_board_pages_include_every_photo_and_shot(client):
             break
     expected = {r["id"] for r in s.store.q("SELECT id FROM photos WHERE status IN ('analyzed','error')")}
     assert set(seen) == expected and r["total"] == len(expected)
+    dimensions = {r["id"]: [r["width"] or 1, r["height"] or 1]
+                  for r in s.store.q("SELECT id, width, height FROM photos")}
+    assert all(p["dims"] == dimensions[p["id"]] for p in seen.values())
     assert any(p["cut"] for p in seen.values())
     assert any(p["id"] != p["rep"] for p in seen.values())
     sections = {}

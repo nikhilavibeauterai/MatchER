@@ -570,8 +570,8 @@ function viewAnalyze(main) {
     feeding = false;
     if (left(view0)) return false;
     for (const k of Object.keys(fr)) fr[k] += (f[k] || []).length;
-    for (const [id, boxes, smiles, blinks, visual] of f.read) {
-      addPhoto(id).visual=visual;changed.add(id);dirty=true;
+    for (const [id, boxes, smiles, blinks, visual, dims] of f.read) {
+      addPhoto(id).visual=visual;addPhoto(id).dims=dims;changed.add(id);dirty=true;
       facesOf.set(id, { boxes, smiles, blinks });
       if (boxes.length) enqueue(id, tagOf("faces", "🙂", "Faces"));
       if (smiles) enqueue(id, tagOf("smiling", "😄", "Smiling"));
@@ -6220,7 +6220,7 @@ const World = {
     const loading = (async () => {
       let after = 0, more = true;
       const fromAnalysis=this.sea.source===source;
-      const seed=fromAnalysis?[...this.sea.items.values()].map(it=>[it.id,{id:it.id,rep:it.stack,members:it.take?[it.id]:it.members,tags:it.tags,theme:typeof it.group==='number'?it.group:-1,category:it.category,cut:it.cut,visual:it.visual}]):[];
+      const seed=fromAnalysis?[...this.sea.items.values()].map(it=>[it.id,{id:it.id,rep:it.stack,members:it.take?[it.id]:it.members,tags:it.tags,theme:typeof it.group==='number'?it.group:-1,category:it.category,cut:it.cut,visual:it.visual,dims:it.dims}]):[];
       const photos = new Map(retain?this.photos:seed),seen=new Set();this.photos = photos;
       this.sprites=retain?this.sprites||new Map():fromAnalysis?this.sea.sprites||new Map():new Map();this.sea.sprites=this.sprites;
       if(!retain){this.recycled=new Map();this.lifted.clear();}
@@ -6230,11 +6230,11 @@ const World = {
         const page = await api(`/api/world?per=1000&after=${after}`);
         if (source !== S.lib?.source) return;
         const sheet = new Image(),key=imageKey();
-        sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;page.photos.forEach((p,i)=>this.sprites.set(p.id,{img:sheet,x:(i%50)*16,y:Math.floor(i/50)*16}));this.sea.densityDirty=this.sea.spritesDirty=true;this.sea.kick(); };
+        sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;page.photos.forEach((p,i)=>this.sprites.set(p.id,this.sea.atlasCell(sheet,i,p.dims)));this.sea.densityDirty=this.sea.spritesDirty=true;this.sea.kick(); };
         // A sheet that fails to arrive is asked for again (a few times): without it a thousand prints would stay blank.
         sheet.onerror = () => { if(source!==S.lib?.source||key!==imageKey()||(sheet.tries=(sheet.tries||0)+1)>3)return;setTimeout(()=>{if(source===S.lib?.source)sheet.src=`${sheet.src.split('&t=')[0]}&t=${Date.now()}`;},2000*sheet.tries); };
         page.photos.forEach(p=>{photos.set(p.id,p);seen.add(p.id);});
-        sheet.src = `/img/atlas.jpg?per=1000&after=${before}&v=${imageKey()}`;
+        sheet.src = `/img/atlas.jpg?layout=2&per=1000&after=${before}&v=${imageKey()}`;
         this.total = page.total; after = page.after; more = page.more;
         onPage?.(page); await sleep(0);
       }
@@ -6252,7 +6252,7 @@ const World = {
     for (const p of this.photos?.values() || []) if (!have.has(p.id)) {
       const rep=covers.get(p.rep), group=p.cut?"cut":p.theme>=0?p.theme:p.category?`cup:${p.category}`:null;
       const it={id:p.id,photo:p.id,tags:p.tags||[],group:rep?rep.group:group,sugg:rep?.sugg,
-        n:p.members.length,members:p.members,rep:p.rep,category:p.category,cut:!!p.cut,take:p.rep!==p.id,box:p.box,visual:p.visual};
+        n:p.members.length,members:p.members,rep:p.rep,category:p.category,cut:!!p.cut,take:p.rep!==p.id,box:p.box,visual:p.visual,dims:p.dims};
       items.push(it);if(p.rep===p.id)covers.set(p.id,it);
     }
     return items;
