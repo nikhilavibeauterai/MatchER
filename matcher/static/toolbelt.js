@@ -88,7 +88,25 @@ const Toolbelt = {
     },true);
     // Panes come and go with every screen: whatever shows a photo's card is armed as it appears.
     let queued = false;
-    this.observer = new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; this.arm(document.body); }); });
+    const pending = new Set();
+    this.observer = new MutationObserver(records => {
+      for(const record of records){
+        if(record.target.closest?.('svg.marks, .user-note, #toolbelt, #af-defs, #topbar, #journey-dock, #history-hud'))continue;
+        const host=record.target.closest?.(this.HOSTS);
+        if(host)pending.add(host);
+        for(const node of record.addedNodes)if(node.nodeType===1)pending.add(node);
+      }
+      if(queued)return;queued=true;
+      requestAnimationFrame(()=>{
+        queued=false;
+        const roots=new Set([...pending].filter(node=>node.isConnected));pending.clear();
+        for(const root of roots){
+          let parent=root.parentElement;while(parent&&!roots.has(parent))parent=parent.parentElement;
+          if(!parent)this.arm(root);
+        }
+        for(const print of this.sized)if(!print.isConnected){this.sizes.unobserve(print);this.sized.delete(print);}
+      });
+    });
     this.observer.observe(document.body, { childList: true, subtree: true });
     if (typeof matchMedia === "function") matchMedia("(max-width: 900px)").addEventListener("change", () => this.paint());
     this.sizes=new ResizeObserver(entries=>{for(const {target,contentRect} of entries)target.style.setProperty('--note-unit',`${contentRect.width/100}px`);});
@@ -180,7 +198,8 @@ const Toolbelt = {
       // card the sea rebuilt (its marks went with its old picture) is armed again.
       if (print.classList.contains("world-fly") || print.closest(".an-grab, #an-sea, .world-fly, #topbar, #journey-dock, #history-hud, #toolbelt") || !print.querySelector("img")) continue;
       if(print.matches('.shot-select')&&!print.closest('.tile.open'))continue;
-      if(this.sizes&&!this.sized.has(print)){this.sized.add(print);this.sizes.observe(print);print.style.setProperty('--note-unit',`${print.clientWidth/100}px`);}
+      // ResizeObserver supplies the initial width before paint; reading clientWidth here forced a layout per card.
+      if(this.sizes&&!this.sized.has(print)){this.sized.add(print);this.sizes.observe(print);}
       if (print.dataset.belt && print.querySelector(":scope > svg.marks")) continue;
       const pid = this.pidOf(print);
       if (!pid) continue;
@@ -190,14 +209,13 @@ const Toolbelt = {
       print.append(svg);
       svg.addEventListener('pointermove',e=>this.showCursor(e,svg));
       svg.addEventListener('pointerleave',()=>{if(!this.gesture){this.cursor?.remove();this.cursor=null;}});
-      if (this.edits.has(pid)) this.render(pid); else this.load(pid);
+      if (this.edits.has(pid)) this.render(pid,[print]); else this.load(pid);
     }
-    if(this.sized)for(const print of this.sized)if(!print.isConnected){this.sizes.unobserve(print);this.sized.delete(print);}
   },
   // Draw what a shot carries on every armed pane that shows it.
-  render(pid) {
+  render(pid, prints = $$(`[data-belt="${pid}"]`)) {
     const e = this.current(pid);
-    for (const print of $$(`[data-belt="${pid}"]`)) {
+    for (const print of prints) {
       const svg = print.querySelector(":scope > svg.marks");
       if (svg) this.renderMarks(svg,this.gesture?.print===print?this.gesture.marks:e.marks||[]);
       // A saved stroke arriving while someone types must not replace their textarea or move its caret.

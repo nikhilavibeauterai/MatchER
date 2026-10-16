@@ -12,9 +12,14 @@ let page;const problems=[],res={};
   await page.waitForSelector('#an-go',{timeout:300000});await page.click('#an-go');await page.waitForSelector('.journey');
   const setup=await page.evaluate(async()=>{
     const b=await api('/api/draw/board?per=400&uper=400'),stack=b.unsorted.shots.find(x=>x.members.length>3);
-    const ids=[stack.members[0],stack.members.at(-1)];
-    for(const photo of stack.members.filter(id=>!ids.includes(id)))await api('/api/groups/split',{photo});
-    await api('/api/draw/auto',{});return {retained:ids,added:stack.members[2]};
+    const copies=[stack.members[0],stack.members.at(-1)];
+    for(const photo of stack.members.filter(id=>!copies.includes(id)))await api('/api/groups/split',{photo});
+    // The offline demo's first/last takes can be pixel twins. Keep those for the duplicate-only check;
+    // use visibly different public pictures for the Crown match and the later extra challenger.
+    const singles=b.unsorted.shots.filter(x=>x.members.length===1);
+    const ids=[stack.members.find(id=>!copies.includes(id)),singles[0].rep];
+    await api('/api/groups/merge',{photos:ids});
+    await api('/api/draw/auto',{});return {retained:ids,added:singles[1].rep};
   });
   const target=await page.evaluate(async ids=>{
     const b=await api('/api/draw/board?per=400&uper=400');

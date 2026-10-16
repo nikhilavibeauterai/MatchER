@@ -3600,7 +3600,7 @@ async function stacksPage(main) {
   let shots = [], boxes = {}, twins = 0, undo = null, pairs = [], total = 0, nextPage = 1, pages = 0, paging = false;
   let order = (() => { try { return localStorage.getItem("matcher-stacks-order") === "time" ? "time" : "look"; } catch (_) { return "look"; } })();
   const byRep = new Map();
-  let loadEpoch = 0;
+  let loadEpoch = 0, shownPairs = '';
   function sizeFamilies() {
     const grid = $(".stacker .lookgrid", main);if(!grid)return;
     const columns = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length;
@@ -3640,10 +3640,10 @@ async function stacksPage(main) {
     if (left(view)) return;
     byRep.clear();
     shots.forEach((x) => byRep.set(x.rep, x));
-    render();
+    render(keep);
     if (expanded) {
       const members = new Set(expanded.members), match = shots.map(x=>({shot:x,n:x.members.filter(m=>members.has(m)).length})).sort((a,b)=>b.n-a.n)[0];
-      if(match?.n && match.shot.members.length>1){const button=$(`[data-expand="${match.shot.rep}"]`,main);if(button)expandStack(main,match.shot,button,boxes,false);}
+      if(match?.n && match.shot.members.length>1){const button=$(`[data-expand="${match.shot.rep}"]`,main);if(button&&!button.closest('.tile.open'))expandStack(main,match.shot,button,boxes,false);}
     }
     if (keep) {
       // Reattach the shared tag shelf before restoring scroll; its height changes the bottom scroll limit.
@@ -3663,17 +3663,37 @@ async function stacksPage(main) {
       nextPage++;
       shots.push(...r.shots); Object.assign(boxes, r.boxes);
       for (const x of r.shots) byRep.set(x.rep, x);
-      const grid = $(".lookgrid", main); if (grid) { grid.insertAdjacentHTML("beforeend", shotTiles(r.shots, null, boxes));sizeFamilies(); }
+      const grid = $(".lookgrid", main); if (grid) { patchShotTiles(grid,shots,null,boxes);sizeFamilies(); }
     } catch (e) { if (!left(view) && request === loadEpoch) toast(e.message); }
     finally { if (request === loadEpoch) paging = false; }
   }
-  function render() {
+  function render(keep = false) {
+    const current=keep&&$('.stacker',main);
+    if(current&&shots.length&&$('.lookgrid',current)){
+      patchShotTiles($('.lookgrid',current),shots,null,boxes);
+      $('[data-stack-total]',current).textContent=fmt(total||shots.length);
+      $('[data-stack-word]',current).textContent=(total||shots.length)===1?'stack':'stacks';
+      $('[data-stack-twins]',current).innerHTML=twins?`🧐 <b>${fmt(twins)}</b> possible ${twins===1?'twin':'twins'} to check`:'✅ all checked';
+      const button=$('#g-undo',current);button.hidden=!undo;
+      $('.desktop-label',button).textContent=undo?`Undo ${DRAW_WORD[undo]||undo}`:'Undo';
+      const pairKey=JSON.stringify(pairs);
+      if(pairKey!==shownPairs){
+        const oldRail=$('.screen-rail',current),rail=twinsRail();
+        if(rail){if(oldRail)oldRail.outerHTML=rail;else $('.screen-bar',current).insertAdjacentHTML('beforebegin',rail);}else oldRail?.remove();
+        shownPairs=pairKey;
+      }
+      current.classList.toggle('no-rail',!pairs.length);
+      $('.bar-right',current).innerHTML=twinsAction();
+      setForward(twins?null:{label:'Next: Crown →',name:'Crown',href:'#duel?stage=stacks'});
+      sizeFamilies();
+      return;
+    }
     main.innerHTML = `
       <div class="screen sorter stacker ${pairs.length ? '' : 'no-rail'}">
         <div class="screen-head">
           <h1>🧩 Stacks</h1>
-          <span class="stat-chip"><b>${fmt(total || shots.length)}</b> ${(total || shots.length) === 1 ? "stack" : "stacks"}</span>
-          <span class="stat-chip">${twins ? `🧐 <b>${fmt(twins)}</b> possible ${twins === 1 ? "twin" : "twins"} to check` : "✅ all checked"}</span>
+          <span class="stat-chip"><b data-stack-total>${fmt(total || shots.length)}</b> <span data-stack-word>${(total||shots.length)===1?'stack':'stacks'}</span></span>
+          <span class="stat-chip" data-stack-twins>${twins ? `🧐 <b>${fmt(twins)}</b> possible ${twins === 1 ? "twin" : "twins"} to check` : "✅ all checked"}</span>
           <span class="grow"></span>
           <span class="seg" role="group" aria-label="Stack order">
             <button class="seg-btn ${order === "look" ? "on" : ""}" data-stack-order="look" title="Put similar stacks next to each other">Similar</button>
@@ -3687,18 +3707,15 @@ async function stacksPage(main) {
         <div class="screen-body">
           ${shots.length ? `<div class="lookgrid gsec-tiles">${shotTiles(shots, null, boxes)}</div>` : `<div class="empty">No stacks: every shot stands alone.</div>`}
         </div>
-        ${pairs.length ? `<aside class="screen-rail">
-          <div class="rail-card grow"><h3>🧐 Possible twins</h3>
-            <div class="twin-list">${pairs.map((x) => `<a class="twin-row" href="#stacks?check=1" title="${Math.round(x.similarity * 100)}% alike">
-              <img src="${T(x.a)}" alt=""><span>≈</span><img src="${T(x.b)}" alt=""><span class="muted small">${Math.round(x.similarity * 100)}%</span></a>`).join("")}</div>
-          </div></aside>` : ''}
+        ${twinsRail()}
         <div class="screen-bar action-bar">
           <div class="bar-left"><a class="btn ghost" href="#filter">← Filter</a></div>
           <div class="bar-mid"><button class="btn ghost" id="g-undo" ${undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> <span class="desktop-label">${undo ? `Undo ${DRAW_WORD[undo] || undo}` : "Undo"}</span><span class="phone-label">Undo</span></button></div>
-          <div class="bar-right">${twins ? `<a class="btn primary big" href="#stacks?check=1">🎮 Twin check <span class="btn-sub">${fmt(twins)} to check</span> <kbd>Enter</kbd></a>` : ""}</div>
+          <div class="bar-right">${twinsAction()}</div>
         </div>
       </div>`;
     setForward(twins ? null : { label: "Next: Crown →", name: "Crown", href: "#duel?stage=stacks" });
+    shownPairs=JSON.stringify(pairs);
     $("#g-undo").onclick = () => drawUndo(() => load(true));
     $$("[data-stack-order]", main).forEach((b) => (b.onclick = async () => {
       if (b.dataset.stackOrder === order) return;
@@ -3708,6 +3725,7 @@ async function stacksPage(main) {
       await load(false,true);
     }));
     const body = $(".screen-body", main);
+    rememberShotTiles($('.lookgrid',main),shots,boxes);
     sizeFamilies();
     body.onscroll = () => { if (body.scrollHeight-body.scrollTop-body.clientHeight < 500) moreStacks(); };
     const page = $(".stacker", main);
@@ -3759,7 +3777,12 @@ async function stacksPage(main) {
       if (d.kind === "frame") return act("/api/groups/move", { photo: d.id, target: Number(z.dataset.drop) }, "Moved into that stack.");
       act("/api/groups/merge", { photos: [d.id, Number(z.dataset.drop)] }, "Merged into one stack.");
     };
+    page.ondragend=()=>{drag=null;$$('.drop-hot',page).forEach(tile=>tile.classList.remove('drop-hot'));};
   }
+  function twinsRail(){return pairs.length?`<aside class="screen-rail"><div class="rail-card grow"><h3>🧐 Possible twins</h3>
+    <div class="twin-list">${pairs.map(x=>`<a class="twin-row" href="#stacks?check=1" title="${Math.round(x.similarity*100)}% alike">
+    <img src="${T(x.a)}" alt=""><span>≈</span><img src="${T(x.b)}" alt=""><span class="muted small">${Math.round(x.similarity*100)}%</span></a>`).join('')}</div></div></aside>`:'';}
+  function twinsAction(){return twins?`<a class="btn primary big" href="#stacks?check=1">🎮 Twin check <span class="btn-sub">${fmt(twins)} to check</span> <kbd>Enter</kbd></a>`:'';}
   async function act(path, payload, msg) {
     try { await api(path, payload); toastOnce(msg, `${msg} Z undoes it.`); Sound.play("pick"); } catch (e) { toast(e.message); return; }
     await load(true);
@@ -4323,15 +4346,52 @@ function shotTile(x, selected, boxes = null) {
       <button class="zoom" data-view="${x.rep}" title="View larger" aria-label="View larger">⤢</button>
     </div>`;
 }
-function shotTiles(list, selected, boxes = null) {  // consecutive look-alikes (2+) share a dashed box
+function shotFamilies(list) {
   const out = [];
   for (const x of list) {
     const last = out[out.length - 1];
     if (x.family != null && last && last.family === x.family) last.items.push(x);
     else out.push({ family: x.family, items: [x] });
   }
-  return out.map((k) => (k.items.length > 1 ? `<div class="fam-tiles">${k.items.map((x) => shotTile(x, selected, boxes)).join("")}</div>`
+  return out;
+}
+function shotTiles(list, selected, boxes = null) {  // consecutive look-alikes (2+) share a dashed box
+  return shotFamilies(list).map((k) => (k.items.length > 1 ? `<div class="fam-tiles" data-family="${esc(k.family)}">${k.items.map((x) => shotTile(x, selected, boxes)).join("")}</div>`
     : shotTile(k.items[0], selected, boxes))).join("");
+}
+const shotSnapshot = (shot,boxes) => JSON.stringify([shot,boxes?.[shot.rep]||null]);
+function rememberShotTiles(grid,shots,boxes) {
+  if(!grid)return;
+  const keys=new Map(shots.map(shot=>[shot.rep,shotSnapshot(shot,boxes)]));
+  for(const tile of $$('[data-drag-shot]',grid))if(keys.has(Number(tile.dataset.dragShot)))tile.shotSnapshot=keys.get(Number(tile.dataset.dragShot));
+}
+// A merge changes two piles. Reuse the rest, including their decoded pictures, notes and keyboard focus.
+function patchShotTiles(grid,shots,selected,boxes) {
+  const tiles=new Map($$('[data-drag-shot]',grid).map(tile=>[Number(tile.dataset.dragShot),tile]));
+  const families=new Map();
+  for(const family of $$(':scope > .fam-tiles',grid)){
+    const siblings=families.get(family.dataset.family)||[];siblings.push(family);families.set(family.dataset.family,siblings);
+  }
+  const reconcile=(parent,children)=>{
+    let cursor=parent.firstElementChild;
+    for(const child of children){if(child===cursor)cursor=cursor.nextElementSibling;else parent.insertBefore(child,cursor);}
+    while(cursor){const next=cursor.nextElementSibling;cursor.remove();cursor=next;}
+  };
+  const blocks=shotFamilies(shots).map(group=>{
+    const children=group.items.map(shot=>{
+      const key=shotSnapshot(shot,boxes);let tile=tiles.get(shot.rep);
+      if(!tile||tile.shotSnapshot!==key){
+        const holder=document.createElement('template');holder.innerHTML=shotTile(shot,selected,boxes);
+        tile=holder.content.firstElementChild;tile.shotSnapshot=key;
+      }
+      return tile;
+    });
+    if(children.length===1)return children[0];
+    const family=families.get(String(group.family))?.shift()||document.createElement('div');
+    family.className='fam-tiles';family.dataset.family=group.family;
+    reconcile(family,children);return family;
+  });
+  reconcile(grid,blocks);
 }
 // Open the pile into a fan: overlapping prints, every take reachable to keep or split out.
 function expandStack(root, x, btn, boxes, reveal = true) {
@@ -6333,11 +6393,20 @@ const World = {
   },
   // A photo can also appear in a roster or a pile. Its largest main copy is the one that flies and gets recycled.
   images(root) {
-    const best=new Map();
+    const best=new Map(),clips=new Map();
     for(const img of root?.querySelectorAll('img[src*="/img/"]') || []) {
       const match=img.getAttribute("src").match(/\/img\/[pt]\/(\d+)\.jpg/);
       if(!match||img.closest(".under, .screen-rail, .board-card"))continue;  // the Leaderboard's card slides instead
-      const pid=Number(match[1]),rect=img.getBoundingClientRect(),area=rect.width*rect.height,old=best.get(pid);
+      const pid=Number(match[1]),rect=img.getBoundingClientRect();
+      if(!rect.width||!rect.height||rect.bottom<=0||rect.top>=innerHeight||rect.right<=0||rect.left>=innerWidth)continue;
+      // A long overview can contain thousands of pictures. Only prints visible through its scrollports fly.
+      let clipped=false;
+      for(let box=img.closest('.screen-body, .photo-fan');box;box=box.parentElement?.closest('.screen-body, .photo-fan')){
+        if(!clips.has(box))clips.set(box,box.getBoundingClientRect());const edge=clips.get(box);
+        if(rect.bottom<=edge.top||rect.top>=edge.bottom||rect.right<=edge.left||rect.left>=edge.right){clipped=true;break;}
+      }
+      if(clipped)continue;
+      const area=rect.width*rect.height,old=best.get(pid);
       if(!old||area>old.area)best.set(pid,{pid,img,rect,area});
     }
     return [...best.values()];
