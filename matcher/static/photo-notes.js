@@ -62,7 +62,7 @@ const PhotoNotes = {
   },
   camera() {
     // Editing chrome lives in screen space. Never rebuild sprites, resize a world-space image or translate a
-    // sea body while its camera is moving; a single full-size print gets a normal focused card after it rests.
+    // sea body while its camera is moving; only the cover of a full-size print changes after it rests.
     this.clearSea();
     const version=this.cameraVersion;
     if(!['ambient','live'].includes(World.mode)||World.sea?.camera.zoom<=1)return;
@@ -79,7 +79,13 @@ const PhotoNotes = {
       detail.ondblclick=e=>{if(e.target.closest('button,input,textarea,.meta.sticky'))return;e.preventDefault();e.stopPropagation();sea.resetCamera();};
       img.decode().then(()=>{
         if(this.seaDetail||this.cameraVersion!==version||!it.el.isConnected)return;
-        this.seaDetail=detail;this.seaSource=it.el;document.body.append(detail);it.el.classList.add('photo-detail-source');this.attach(detail);Toolbelt.arm(detail);
+        this.seaDetail=detail;this.seaSource=it.el;document.body.append(detail);
+        // Leave the same underprints in the world. The focused cover sits exactly over its predecessor, with
+        // its current angle and count, instead of replacing the whole pile with a different-looking single.
+        it.el.classList.add('photo-detail-source');Cards.focus(detail);
+        const paper=detail.querySelector('.paper');paper.style.rotate=getComputedStyle(it.el.querySelector('.pile-cover')).rotate;
+        const count=it.el.querySelector('.ps-stack');if(count)detail.append(count.cloneNode(true));
+        this.attach(detail);Toolbelt.arm(detail);
       }).catch(()=>{});
     },250);
   },
@@ -138,7 +144,7 @@ const PhotoNotes = {
       if(p.edits?.title){if(!title){title=document.createElement('span');title.className='chin-title';chin.prepend(title);}title.textContent=p.edits.title;}
       else title?.remove();writing.hidden=true;
     }
-    host.classList.toggle('notes-caption',!!host.querySelector('.paper > .role,.paper > .stack'));
+    host.classList.toggle('notes-caption',!!host.querySelector('.paper > .role,.paper > .stack,:scope > .ps-stack'));
     let facts=$(':scope > .photo-sticky',host);
     host.classList.add('has-photo-sticky');host.dataset.note=JSON.stringify(p.edits?.note||null);
     if(!host.querySelector('.meta.sticky:not(.user-note):not(.photo-sticky)')){

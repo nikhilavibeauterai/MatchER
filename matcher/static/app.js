@@ -3529,14 +3529,35 @@ function openViewer(id) {
   m.viewerControls?.abort();
   const events=new AbortController(),{signal}=events;m.viewerControls=events;
   m.className = "wide photo-viewer";
-  m.innerHTML = `<div class="viewer"><div class="viewer-stage" role="region" aria-label="Photo preview. Scroll to zoom; drag to pan when zoomed in."><div class="print"><img src="${P(id)}" alt="" draggable="false"></div></div><div class="viewer-actions">${photoPathButton(id)}<button class="btn" data-viewer-reset hidden>Reset view</button><button class="btn" data-viewer-notes hidden>Notes</button><button class="btn" id="close-modal">Close</button></div></div>`;
+  m.innerHTML = `<div class="viewer"><div class="viewer-stage" role="region" aria-label="Photo preview. Scroll to zoom; drag to pan when zoomed in."><div class="print"><img src="${T(id)}" alt="" draggable="false"></div></div><div class="viewer-actions">${photoPathButton(id)}<button class="btn" data-viewer-reset hidden>Reset view</button><button class="btn" data-viewer-notes hidden>Notes</button><button class="btn" id="close-modal">Close</button></div></div>`;
   const stage=$('.viewer-stage',m),card=$('.print',stage),img=$('img',card),resetButton=$('[data-viewer-reset]',m),notesButton=$('[data-viewer-notes]',m);
-  let zoom=1,x=0,y=0,drag=null,suppressClick=false,fullTimer=null,fullRequested=false;
+  let zoom=1,x=0,y=0,drag=null,suppressClick=false,sourceTimer=null,pendingSource=null,wantedSource=img.getAttribute('src');
+  const loadSource=()=>{
+    if(signal.aborted||!m.open||pendingSource||img.getAttribute('src')===wantedSource)return;
+    const source=wantedSource,next=new Image();pendingSource=next;next.src=source;
+    // Keep the currently decoded picture on the card until its replacement is ready. Only one resolution can
+    // be loading at once, and an old response cannot replace the level the latest camera position needs.
+    next.decode().then(()=>{
+      if(!signal.aborted&&m.open&&source===wantedSource)img.src=source;
+    }).catch(()=>{/* Retain the last good picture; the next zoom or resize can retry this level. */}).finally(()=>{
+      if(pendingSource===next)pendingSource=null;
+      if(source!==wantedSource)loadSource();
+    });
+  };
+  const requestSource=()=>{
+    clearTimeout(sourceTimer);
+    sourceTimer=setTimeout(()=>{
+      if(signal.aborted||!m.open)return;
+      const r=card.getBoundingClientRect(),picture=img.getBoundingClientRect();
+      wantedSource=M(id,Math.max(picture.width,picture.height),r.height>=innerHeight*.8);
+      loadSource();
+    },120);
+  };
   const paint=()=>{
     card.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;card.dataset.viewerZoom=String(zoom);
     stage.classList.toggle('zoomed',zoom>1.001);resetButton.hidden=notesButton.hidden=zoom<=1.001;
   };
-  const reset=()=>{zoom=1;x=y=0;paint();};
+  const reset=()=>{zoom=1;x=y=0;paint();requestSource();};
   const constrain=()=>{
     const r=card.getBoundingClientRect(),s=stage.getBoundingClientRect(),left=r.left-x,top=r.top-y;
     const bound=(value,lo,hi,base,size)=>size>hi-lo?Math.max(hi-24-base-size,Math.min(lo+24-base,value)):Math.max(lo+8-base,Math.min(hi-8-base-size,value));
@@ -3546,13 +3567,7 @@ function openViewer(id) {
     const r=card.getBoundingClientRect(),ratio=next/zoom;
     x+=(cx-r.left)*(1-ratio);y+=(cy-r.top)*(1-ratio);zoom=next;
     if(zoom<=1.001)reset();else{paint();constrain();paint();}
-    clearTimeout(fullTimer);
-    // Decode one original after the gesture rests, never on every wheel tick.
-    if(!fullRequested&&zoom>1.001&&card.clientHeight*zoom>=innerHeight*.8)fullTimer=setTimeout(()=>{
-      if(signal.aborted||!m.open)return;fullRequested=true;
-      img.addEventListener('load',()=>{const state=PhotoNotes.hosts.get(card);if(state?.data)PhotoNotes.preview(card,state.data,Toolbelt.current(id));},{once:true,signal});
-      img.src=`${P(id)}&m=full`;
-    },150);
+    requestSource();
   };
   stage.addEventListener('wheel',e=>{
     if(e.target.closest('.photo-notes-paper'))return;
@@ -3582,8 +3597,14 @@ function openViewer(id) {
   notesButton.onclick=()=>{reset();PhotoNotes.open(card);};
   m.onclick = e => {if(suppressClick){suppressClick=false;e.preventDefault();return;}if(!e.target.closest('.print,.viewer-actions,.photo-note-sheet'))m.close();};
   $('#close-modal',m).onclick=()=>m.close();
+  const sizes=new ResizeObserver(requestSource);for(const el of [card,img,stage])sizes.observe(el);
+  img.addEventListener('load',()=>{
+    const state=PhotoNotes.hosts.get(card);if(state?.data)PhotoNotes.preview(card,state.data,Toolbelt.current(id));
+    requestSource();
+  },{signal});
   // A dialog's close event is queued: reopening it before that event arrives must keep the new viewer alive.
-  m.addEventListener('close',()=>{if(!m.open)events.abort();},{signal});signal.addEventListener('abort',()=>clearTimeout(fullTimer),{once:true});
+  m.addEventListener('close',()=>{if(!m.open)events.abort();},{signal});
+  signal.addEventListener('abort',()=>{clearTimeout(sourceTimer);sizes.disconnect();if(pendingSource)pendingSource.src='';},{once:true});
   reset();
   m.showModal();
 }

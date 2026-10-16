@@ -305,7 +305,8 @@ and nothing farther away moves. On the map or the Groups sea, drop one print ont
 takes: the target lights up green and says **Drop to stack**. **Z** undoes it. Drop inside a group's lasso to file
 the shot there, or onto open water to move it without stacking. The small prints are drawn by your graphics card (every one of them a real
 thumbnail at any size), so a sea of thousands pans and zooms without the CPU breaking a sweat and holds still at
-rest; a print only gets a card of its own once it is big enough on screen to need one.
+rest; a print only gets a card of its own once it is big enough on screen to need one. Zooming into a stack
+keeps the same takes behind its cover; only the top print gains the focused controls and full detail.
 
 **Developer mode** (`./matcher.sh --debug`, or add `?debug=1` to the address once; `?debug=0` forgets it) keeps a
 panel on every screen with the sea's knobs: the macro order (rank spread, margins, jitter, home pull), the micro
@@ -334,7 +335,10 @@ the tag minigame.
 - **Copy path** copies a take's full original file path from the photo viewer, sea inspection, open stack or Filter
   review. Right-click a photo to open its viewer, including during a duel. Scroll over the popup to zoom around
   your pointer, then drag to pan. Double-click or **Reset view** returns to the fitted card. Copy path and Close
-  stay within reach while zoomed in. If clipboard access is blocked, the path
+  stay within reach while zoomed in. Image detail follows the same progressive levels as the sea, accounting for
+  the screen's pixel density. Once the card fills four fifths of the screen's height, it loads the original;
+  RAW, HEIC and TIFF photos get a cached display copy at their full original resolution. The current picture
+  stays visible until the next level has decoded. If clipboard access is blocked, the path
   appears selected for manual copying. A stack take copies its own path, even when another take is its cover.
 - The photos a screen brings to you (a duel's pair, the sweep's card, Twin check's pair, Quick sort's card, the finals)
   lift out of their spot in the sea, grow into place and wobble gently; when you're done they sink back, a winner

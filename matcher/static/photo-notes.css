@@ -1,8 +1,11 @@
 /* The corner of a longer sheet peeks out from under a focused polaroid. */
 .has-photo-notes { overflow:visible;transition:translate .4s cubic-bezier(.22,.8,.25,1); }
 .sea-photo-detail { position:fixed;z-index:55;max-width:none;aspect-ratio:3 / 4; }
-.photo-detail-source { visibility:hidden!important;pointer-events:none!important; }
-.sea-photo-detail > .paper { animation:none; }
+.photo-detail-source { pointer-events:none!important; }
+.photo-detail-source > :not(.pile-take) { visibility:hidden!important; }
+.photo-detail-source > .pile-cover { animation-play-state:paused!important; }
+.sea-photo-detail > .paper { animation:none;box-shadow:none; }
+.sea-photo-detail .ps-stack { left:0;right:0;bottom:3cqw;padding:0;border-radius:0;background:transparent;color:var(--paper-ink);text-align:center;font-size:10cqw;line-height:1;z-index:7; }
 .map-census { position:fixed;left:18px;bottom:14px;z-index:6;max-width:calc(100% - 90px);font-size:16px;white-space:normal;pointer-events:auto; }
 .has-photo-notes.print > img:not(.under) { position:relative;z-index:6; }
 /* This is the whole sheet, even while the frame hides all but its lower-right corner. */

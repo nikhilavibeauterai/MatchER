@@ -26,7 +26,7 @@ from PIL import Image
 
 from . import export as exporter
 from . import touchup
-from . import edit_history, filtering, game, library, tags, tournament, visual
+from . import edit_history, filtering, game, imageio, library, tags, tournament, visual
 from .draw import Draw
 from .search import PhotoSearch
 from .sample import SampleFetcher
@@ -3456,16 +3456,45 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         return out
 
     SHOWABLE = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp"}
+    full_images_lock = threading.Lock()  # only one large RAW/HEIC/TIFF decode at a time, outside the game lock
+
+    def _full_image(s: Session, pid: int, original: Path) -> Path:
+        stamp = original.stat()
+        key = hashlib.sha256(f"{original}:{stamp.st_mtime_ns}:{stamp.st_size}".encode()).hexdigest()[:16]
+        out = s.workdir / "full" / f"{pid}-{key}.jpg"
+        if out.is_file():
+            return out
+        with full_images_lock:
+            if not out.is_file():
+                # Browsers cannot display every imported format. Decode its full-size pixels, rather than sending
+                # the analysis preview under an original-image URL. Nothing here crops or enhances the photo.
+                decoded = imageio.decode(original)
+                tmp = out.with_suffix(f".{secrets.token_hex(4)}.tmp")
+                try:
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    imageio.save_jpeg(decoded.image, tmp, quality=95)
+                    tmp.replace(out)
+                finally:
+                    decoded.image.close()
+                    tmp.unlink(missing_ok=True)
+        return out
 
     def _img(sub: str, pid: int):
         s = sess()
         path, mimetype = s.workdir / sub / f"{pid}.jpg", "image/jpeg"
         m = request.args.get("m", "")
-        if m == "full":  # zoomed all the way in: the original file itself, when a browser can show it
+        if m == "full":
             row = s.store.one("SELECT rel FROM photos WHERE id=?", (pid,))
             original = s.source / row["rel"] if row else None
-            if original and original.is_file() and original.suffix.lower() in SHOWABLE:
+            if not original or not original.is_file():
+                abort(404, "The original photo is missing.")
+            if original.suffix.lower() in SHOWABLE:
                 path, mimetype = original, SHOWABLE[original.suffix.lower()]
+            else:
+                try:
+                    path = _full_image(s, pid, original)
+                except (OSError, ValueError, RuntimeError):
+                    abort(422, "Could not decode this photo at full resolution.")
         else:
             try:
                 level = int(m or 0)
