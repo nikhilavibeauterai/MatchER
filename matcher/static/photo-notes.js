@@ -10,7 +10,7 @@ const PhotoNotes = {
         [...r.addedNodes,...r.removedNodes].some(n=>n.nodeType===1)))queue();
     });
     this.observer.observe(document.body,{childList:true,subtree:true});
-    window.addEventListener('sea-camera',()=>this.camera());
+    window.addEventListener('sea-camera',e=>this.camera(e.detail.sea));
     window.addEventListener('sea-image-ready',()=>{if(!this.seaDetail)this.camera();});
     window.addEventListener('resize',()=>{queue();requestAnimationFrame(()=>{this.repaint();this.position();});});
     window.addEventListener('photo-render-change',()=>this.repaint());
@@ -38,6 +38,7 @@ const PhotoNotes = {
       },80);
     });
     Toolbelt.listeners.add((pid,edits)=>{
+      const sea=World.sea;for(const it of sea?.moving||[])if(it.photo===pid)sea.frameImage(it);
       for(const [host,state] of this.hosts)if(state.pid===pid){if(state.data)state.data.edits=edits;this.decorate(host,state);}
       if(this.active?.pid===pid&&this.active.data){this.active.data.edits=edits;this.controls();}
     });
@@ -45,7 +46,7 @@ const PhotoNotes = {
   },
   scan() {
     const source=S.lib?.source||'';
-    if(source!==this.source){this.close(false);this.source=source;this.cache.clear();this.pending.clear();for(const host of this.hosts.keys())this.detach(host);}
+    if(source!==this.source){this.close(false);this.clearSea();this.source=source;this.cache.clear();this.pending.clear();for(const host of this.hosts.keys())this.detach(host);}
     for(const [host,state] of this.hosts){
       if(!host.isConnected||!host.getClientRects().length||Toolbelt.pidOf(host)!==state.pid)this.detach(host);
     }
@@ -58,34 +59,54 @@ const PhotoNotes = {
     clearTimeout(this.seaTimer);this.seaTimer=null;
     this.cameraVersion=(this.cameraVersion||0)+1;
     if(this.seaDetail){this.detach(this.seaDetail);this.seaDetail.remove();this.seaDetail=null;}
+    if(this.seaPose&&this.seaPose.sea.presentation===this.seaPose)this.seaPose.sea.presentation=null;
+    this.seaLayer?.remove();this.seaLayer=null;this.seaPose=null;
     this.seaSource?.classList.remove('photo-detail-source');this.seaSource=null;
   },
-  camera() {
-    // Editing chrome lives in screen space. Never rebuild sprites, resize a world-space image or translate a
-    // sea body while its camera is moving; only the cover of a full-size print changes after it rests.
-    this.clearSea();
+  followSea() {
+    const pose=this.seaPose;if(!pose)return;
+    const {sea,item:it,zoom,size}=pose,c=sea.camera,s=it.size||sea.s;
+    if(!sea.alive||sea!==World.sea||sea.items.get(it.id)!==it||it.photo!==pose.photo||it.take||it.density||!it.el.isConnected||it.el.classList.contains('lifted')||
+      !sea.inView(it,-c.tx/c.zoom,-c.ty/c.zoom,(sea.el.clientWidth-c.tx)/c.zoom,(sea.el.clientHeight-c.ty)/c.zoom,0)){
+      this.clearSea();return;
+    }
+    // These are the world's two transforms, with a fixed reference size for the notes controls. Moving the
+    // camera never reframes, reloads or replaces the photograph, or restarts its paper animation.
+    const camera=`translate(${c.tx.toFixed(2)}px,${c.ty.toFixed(2)}px) scale(${(c.zoom/zoom).toFixed(7)})`;
+    if(this.seaLayer.style.transform!==camera)this.seaLayer.style.transform=camera;
+    const body=`translate3d(${(Number(it.x.toFixed(2))*zoom).toFixed(3)}px,${(Number(it.y.toFixed(2))*zoom).toFixed(3)}px,0) translate(-50%,-50%) scale(${(it.renderScale||1)*s/size})`;
+    if(this.seaDetail.style.transform!==body)this.seaDetail.style.transform=body;
+    this.seaDetail.classList.toggle('pinned',it.el.classList.contains('pinned'));
+  },
+  camera(sea=World.sea) {
+    if(sea!==World.sea)return;
+    clearTimeout(this.seaTimer);this.seaTimer=null;this.cameraVersion=(this.cameraVersion||0)+1;
+    if(!['ambient','live'].includes(World.mode)||!sea?.cameraOn||sea.camera.zoom<=1){this.clearSea();return;}
+    this.followSea();
     const version=this.cameraVersion;
-    if(!['ambient','live'].includes(World.mode)||World.sea?.camera.zoom<=1)return;
     this.seaTimer=setTimeout(()=>{
-      const sea=World.sea;if(!sea?.cameraOn||this.seaDetail)return;
+      if(!sea.cameraOn||this.seaDetail)return;
       const visible=[...sea.items.values()].filter(it=>!it.take&&!it.imagePending&&sea.fullSize(it)&&it.el.isConnected&&!it.el.classList.contains('lifted'));
       const chosen=visible.map(it=>({it,r:it.el.getBoundingClientRect()})).filter(({r})=>r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight)
         .sort((a,b)=>Math.hypot(a.r.left+a.r.width/2-innerWidth/2,a.r.top+a.r.height/2-innerHeight/2)-Math.hypot(b.r.left+b.r.width/2-innerWidth/2,b.r.top+b.r.height/2-innerHeight/2))[0];
       if(!chosen)return;
       const {it,r}=chosen,detail=document.createElement('div');detail.className='print sea-photo-detail';detail.dataset.photo=it.photo;
-      detail.style.cssText=`left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
+      const zoom=sea.camera.zoom,size=it.size||sea.s;
+      detail.style.cssText=`left:0;top:0;width:${size*zoom}px;height:${size*zoom*4/3}px;transition:none`;
       const img=document.createElement('img');img.src=it.el.querySelector('.pile-cover')?.getAttribute('src')||M(it.photo,r.width,true);img.alt='Focused photo';img.draggable=false;detail.append(img);
-      detail.onpointerdown=e=>{if(e.target.closest('button,input,textarea,.meta.sticky')||Toolbelt.tool!=='hand')return;e.stopPropagation();sea.panStart(e);};
-      detail.ondblclick=e=>{if(e.target.closest('button,input,textarea,.meta.sticky'))return;e.preventDefault();e.stopPropagation();sea.resetCamera();};
+      detail.onpointerdown=e=>{if(e.target.closest('button,input,textarea,.meta.sticky')||Toolbelt.tool!=='hand')return;e.stopPropagation();
+        if(sea.overZoomed(it.el)||e.button===1)sea.panStart(e);else sea.down(e,it.el);};
+      detail.ondblclick=e=>{if(e.target.closest('button,input,textarea,.meta.sticky'))return;e.preventDefault();e.stopPropagation();
+        if(sea.overZoomed(it.el))sea.resetCamera();else sea.onSelect?.(it,e);};
       img.decode().then(()=>{
         if(this.seaDetail||this.cameraVersion!==version||!it.el.isConnected)return;
-        this.seaDetail=detail;this.seaSource=it.el;document.body.append(detail);
-        // Leave the same underprints in the world. The focused cover sits exactly over its predecessor, with
-        // its current angle and count, instead of replacing the whole pile with a different-looking single.
+        this.seaDetail=detail;this.seaSource=it.el;
+        const layer=document.createElement('div');layer.className='sea-photo-detail-layer';layer.append(detail);document.body.append(layer);this.seaLayer=layer;
+        const pose={sea,item:it,photo:it.photo,zoom,size,follow:()=>this.followSea()};this.seaPose=pose;sea.presentation=pose;this.followSea();
+        if(!this.seaDetail)return;
         it.el.classList.add('photo-detail-source');Cards.focus(detail);
-        const paper=detail.querySelector('.paper');paper.style.rotate=getComputedStyle(it.el.querySelector('.pile-cover')).rotate;
-        const count=it.el.querySelector('.ps-stack');if(count)detail.append(count.cloneNode(true));
         this.attach(detail);Toolbelt.arm(detail);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{if(detail.isConnected)detail.style.transition='';}));
       }).catch(()=>{});
     },250);
   },
@@ -99,7 +120,9 @@ const PhotoNotes = {
     tab.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key))e.stopPropagation();});
     tab.onclick=e=>{e.preventDefault();e.stopPropagation();this.active?.host===host?this.close():this.open(host);};
     const paper=document.createElement('div');paper.className='photo-notes-paper rail-card';paper.id=`photo-notes-${++this.paperID}`;
-    paper.append(tab);host.classList.add('has-photo-notes');host.append(paper);
+    paper.append(tab);host.classList.add('has-photo-notes');
+    if(host===this.seaDetail){const under=document.createElement('div');under.className='sea-note-underlay';under.append(paper);host.append(under);}
+    else host.append(paper);
     for(const type of ['pointerdown','click','dblclick','wheel'])paper.addEventListener(type,e=>e.stopPropagation());
     paper.addEventListener('click',()=>{if(!paper.classList.contains('photo-note-sheet')&&!paper.classList.contains('notes-returning'))this.open(host);});
     const state={pid,tab,paper,data:null,motion:0};this.hosts.set(host,state);this.load(host,state);
@@ -107,7 +130,7 @@ const PhotoNotes = {
   detach(host) {
     if(this.active?.host===host)this.close(false);
     const state=this.hosts.get(host);if(state)state.motion++;
-    for(const el of $$(':scope > .photo-notes-paper,:scope > .photo-writing,:scope > .photo-facts',host))el.remove();
+    for(const el of $$(':scope > .photo-notes-paper,:scope > .sea-note-underlay,:scope > .photo-writing,:scope > .photo-facts',host))el.remove();
     host.classList.remove('has-photo-notes','has-photo-sticky');this.hosts.delete(host);
   },
   async get(pid) {
@@ -144,7 +167,7 @@ const PhotoNotes = {
       if(p.edits?.title){if(!title){title=document.createElement('span');title.className='chin-title';chin.prepend(title);}title.textContent=p.edits.title;}
       else title?.remove();writing.hidden=true;
     }
-    host.classList.toggle('notes-caption',!!host.querySelector('.paper > .role,.paper > .stack,:scope > .ps-stack'));
+    host.classList.toggle('notes-caption',!!host.querySelector('.paper > .role,.paper > .stack:not(.stack-clip)'));
     let facts=$(':scope > .photo-sticky',host);
     host.classList.add('has-photo-sticky');host.dataset.note=JSON.stringify(p.edits?.note||null);
     if(!host.querySelector('.meta.sticky:not(.user-note):not(.photo-sticky)')){
@@ -163,6 +186,7 @@ const PhotoNotes = {
     if(host.matches('.print')||host.classList.contains('framed-photo')||['crop','rotate','look','enhance'].some(k=>k in (p.edits||{})))this.preview(host,p,p.edits);
   },
   repaint() {
+    const sea=World.sea;for(const it of sea?.moving||[])sea.frameImage(it);
     for(const [host,state] of this.hosts)if(state.data&&host.isConnected&&host.matches('.print,.framed-photo')){placeNote(host);this.preview(host,state.data,Toolbelt.current(state.pid));}
     this.controls();
   },
@@ -222,7 +246,11 @@ const PhotoNotes = {
     if(innerWidth<760){
       host.style.removeProperty('--notes-shift');return;
     }
-    host.style.setProperty('--notes-shift',`${Math.max(16-left,Math.min(0,innerWidth-16-r.width-18-right))}px`);
+    const shift=Math.max(16-left,Math.min(0,innerWidth-16-r.width-18-right));
+    if(host===this.seaDetail){
+      host.style.removeProperty('--notes-shift');
+      const sea=this.seaPose.sea;if(Math.abs(shift)>.5)sea.setCamera(sea.camera.zoom,sea.camera.tx+shift,sea.camera.ty);
+    }else host.style.setProperty('--notes-shift',`${shift}px`);
   },
   async reload() {
     const active=this.active,sheet=this.sheet;if(!active||!sheet)return;

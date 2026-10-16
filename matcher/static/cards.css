@@ -1,0 +1,27 @@
+/* A metal clip holds a small count slip at the pile's top-left corner. Both stay clear of the picture window. */
+:is(.photo-sea .ps-item,.print,.shot-pile) .stack-clip {
+  position:absolute;left:-1.5cqw;top:-7cqw;right:auto;bottom:auto;width:25cqw;height:22cqw;z-index:12;
+  display:block;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--paper-ink);
+  box-shadow:none;rotate:none;line-height:1;pointer-events:none;
+}
+.stack-slip { position:absolute;left:20%;top:-8%;width:84%;height:55%;display:grid;place-items:center;box-sizing:border-box;
+  padding:.3cqw .8cqw;background:#fff5db;color:#443b30;border-radius:1% 3% 5% 2%;rotate:-7deg;
+  box-shadow:.15cqw .45cqw .65cqw #0005,inset 0 -.12cqw #d6c8a6;
+  font:700 calc(11cqw / max(1,var(--stack-digits,1) * .58))/1 var(--hand);white-space:nowrap;
+}
+.stack-slip::after { content:'';position:absolute;inset:0;border: .12cqw solid #b4a17b44;pointer-events:none; }
+.stack-paperclip { position:absolute;left:-5%;top:-14%;width:36%;height:118%;overflow:visible;rotate:-12deg;stroke-linecap:round;stroke-linejoin:round;pointer-events:none; }
+.clip-shadow { stroke:#211e19aa;stroke-width:4.4;transform:translate(.7px,1px); }
+.clip-wire { stroke:#89979a;stroke-width:3; }
+.clip-shine { stroke:#e5eff0;stroke-width:.85; }
+.shot-pile { position:relative;width:100%;height:100%;min-width:0;container-type:inline-size; }
+.tile.pick { overflow:visible; }
+.tile.open > .shot-pile { height:auto;aspect-ratio:3 / 4;align-self:center; }
+.shot-pile .kept-crown { left:auto;right:7%;top:auto;bottom:4%;font-size:11cqw; }
+:is(.photo-sea .ps-item,.print,.shot-pile) button.stack-clip { pointer-events:auto;cursor:pointer; }
+.shot-pile button.stack-clip::before { content:'';position:absolute;inset:-3cqw; }
+.tile .badge.expand.stack-clip:is(:hover,[aria-expanded=true]) { background:transparent;color:var(--paper-ink); }
+.shot-pile button.stack-clip:is(:hover,[aria-expanded=true]) .stack-slip { background:#ffebaa; }
+.shot-pile button.stack-clip:focus-visible { outline: .7cqw solid var(--accent);outline-offset:1cqw; }
+.photo-sea .ps-item:is(.is-tiny,.is-small) > .stack-clip { display:none; }
+@media(max-width:760px) { .tile.open > .shot-pile { width:72px; } }

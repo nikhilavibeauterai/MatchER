@@ -1439,8 +1439,7 @@ function showCard() {
       const n = photoInfo(c, c[side]).frames, team = c.group || c.teams?.[c[side]];
       return `
       <div class="slot slot-${side}"><div class="side ${n > 1 ? "stacked pile" : ""}" data-side="${side}" data-photo="${c[side]}" tabindex="0" title="Point here and press X to toss"${team?.id != null ? ` style="--team-hue:${groupHue(team.id)}"` : ""}>
-        <div class="print">${pilePhotos(c[side],photoInfo(c,c[side]).members)}<div class="paper"><div class="window"><img class="pile-cover" src="${P(c[side])}" alt="${side === "a" ? "Left" : "Right"} photo" draggable="false"></div>
-        ${n > 1 ? `<span class="stack" title="A stack of ${n} takes; this is the one you kept">⧉ ${n} takes</span>` : ""}</div></div>
+        <div class="print">${pilePhotos(c[side],photoInfo(c,c[side]).members,n)}<div class="paper"><div class="window"><img class="pile-cover" src="${P(c[side])}" alt="${side === "a" ? "Left" : "Right"} photo" draggable="false"></div></div></div>
         ${c.teams && c.teams[c[side]] ? `<span class="team-chip" title="Plays for ${esc(c.teams[c[side]].name)}">${esc(c.teams[c[side]].emoji)} <b>${esc(c.teams[c[side]].letter)}</b> ${side === "b" && c.teams[c.a]?.letter === c.teams[c.b]?.letter ? "" : esc(c.teams[c[side]].name)}</span>` : ""}
         <button class="toss" ${c.type === "knockout" ? "hidden" : ""} data-toss="${side}" title="Never show this shot again (${side === "a" ? "Q" : "E"})">Toss ✕</button>
       </div></div>`;
@@ -1490,7 +1489,9 @@ function rotateBox(b, deg) {
 function framePhoto(side, info, opts = {}) {
   // The pane holds one polaroid (`.print > .paper > .window`); the photo is sized inside the window.
   const win = side.querySelector(".window"), img = win?.querySelector("img");
-  const W = win?.clientWidth, H = win?.clientHeight;
+  // Sea windows can be only a few world pixels across. Integer client sizes would magnify that rounding into
+  // visible gaps at deep zoom, even though their paper and the camera both use fractional sizes.
+  const style=win&&getComputedStyle(win),W=parseFloat(style?.width),H=parseFloat(style?.height);
   if (!img || !W || !H) return;
   const rotate = (((opts.rotate || 0) % 360) + 360) % 360, enhance = opts.enhance ?? S.filter, mode = normCrop(opts.crop ?? S.crop);
   let [iw, ih] = info.dims, b = mode !== "off" ? info.box : null;  // "best" without a subject frames the middle
@@ -1501,7 +1502,11 @@ function framePhoto(side, info, opts = {}) {
   // where the framing put it.
   const place = (x, y, w, h) => {
     const [ew, eh] = rotate % 180 ? [h, w] : [w, h];
-    img.style.cssText = base + `width:${ew}px;height:${eh}px;transform:translate(${x + w / 2 - ew / 2}px,${y + h / 2 - eh / 2}px)${rotate ? ` rotate(${rotate}deg)` : ""}`;
+    if(side.matches('.ps-item')){
+      // A sea body's size can ease between anchors. Relative geometry follows it without another layout,
+      // crop calculation or filter rebuild on each physics frame.
+      img.style.cssText=base+`left:${(x+w/2-ew/2)/W*100}%;top:${(y+h/2-eh/2)/H*100}%;width:${ew/W*100}%;height:${eh/H*100}%;${rotate?`transform:rotate(${rotate}deg)`:'transform:none'}`;
+    }else img.style.cssText = base + `width:${ew}px;height:${eh}px;transform:translate(${x + w / 2 - ew / 2}px,${y + h / 2 - eh / 2}px)${rotate ? ` rotate(${rotate}deg)` : ""}`;
     paintFilter(img, Number(side.dataset.photo), enhance, opts.knobs || null);
   };
   const { x, y, w, h } = frameRect(W, H, iw, ih, b, mode);
@@ -3243,7 +3248,7 @@ function photoSticky(it, tagsOn, {change = "", controls = false} = {}) {
     ${ranked?`<div class="note-line">${pct(it.p_in)} sure · ${it.duels} duel${it.duels===1?"":"s"}</div>
       <div class="conf" title="Chance it belongs on the leaderboard: ${pct(it.p_in)}"><i style="width:${pct(it.p_in)}"></i></div>`:""}
     <div class="note-line">${ranked?`appeal ${(it.appeal>0?"+":"")+Number(it.appeal||0).toFixed(2)} · `:""}${it.frames>1
-      ?controls?`<button class="note-link" data-frames="${it.photo}" title="Swap which take stands in for this stack">${it.frames} takes ⧉</button>`:`${it.frames} takes ⧉`:"one take"}${it.rescued?" · 🧹 rescued":""}</div>
+      ?controls?`<button class="note-link" data-frames="${it.photo}" title="Swap which take stands in for this stack">${it.frames} takes</button>`:`${it.frames} takes`:"one take"}${it.rescued?" · 🧹 rescued":""}</div>
     ${tagsOn.length?`<div class="note-tags">${tagsOn.map(t=>`<span>${esc(t.emoji||"🏷️")} ${esc(t.label)}</span>`).join("")}</div>`:""}
     ${it.flags?.length?`<div class="flags">${flagHtml(it.flags)}</div>`:""}
     ${controls&&it.bubble?`<div class="actions">${it.added?`<button class="btn" data-unpick="${it.photo}">Added ✓</button>`:`<button class="btn" data-pick="${it.photo}" title="It rides along in the export without a rank">+ Add</button>`}</div>`:""}`;
@@ -3843,7 +3848,7 @@ async function stacksPage(main) {
           ${dateJump()}
           ${helpBtn(`The same picture (a crop, a copy) or a burst of nearly the same shot belongs in <b>one stack</b>, so it competes
             as one shot showing its best take. The obvious ones are stacked already.<br><br><b>Twin check</b> shows the pairs that look
-            like the same shot but weren't stacked. Here, <b>⧉</b> opens a stack (keep a different take, split one out, split it
+            like the same shot but weren't stacked. Here, the <b>paperclip</b> opens a stack (keep a different take, split one out, split it
             all), and dragging one photo or stack onto another combines them. Loose photos are stacks of one;
             <b>Stacks only</b> hides them. <b>Z</b> undoes.`)}
         </div>
@@ -4516,12 +4521,12 @@ async function viewTags(main, params) {
 }
 
 // Real takes peek out from under the kept print. Stable offsets keep a pile still while you reach for it.
-function pilePhotos(rep, members = []) {
+function pilePhotos(rep, members = [], count = members.length) {
   return members.filter((p)=>p!==rep).slice(0,4).reverse().map((p,i)=>`<img class="pile-take under" src="${T(p)}" alt="" loading="lazy" draggable="false"
-    style="--pile-x:${[5,-6,7,-3][i]}%;--pile-y:${[4,-3,-5,6][i]}%;--pile-turn:${[7,-8,3,-4][i]}deg;--pile-z:${i}">`).join("");
+    style="--pile-x:${[5,-6,7,-3][i]}%;--pile-y:${[4,-3,-5,6][i]}%;--pile-turn:${[7,-8,3,-4][i]}deg;--pile-z:${i}">`).join("")+Cards.stack(count);
 }
 const fanStyle = (i,n) => `--i:${i};--fan-turn:${Math.max(-12,Math.min(12,(i-(n-1)/2)*4))}deg;--fan-y:${Math.min(16,Math.abs(i-(n-1)/2)*2)}px`;
-// A shot (or a stack, ⧉ n) as a tile: click selects it, drag it onto another to stack them, ⤢ views it larger.
+// A shot (or a clipped stack) as a tile: click selects it, drag it onto another to stack them, ⤢ views it larger.
 function shotTile(x, selected, boxes = null, defer = false) {
   const on = selected && selected.has(x.rep);
   return `
@@ -4533,9 +4538,9 @@ function shotTile(x, selected, boxes = null, defer = false) {
 function shotTileContents(x,selected,boxes=null){
   const on=selected&&selected.has(x.rep);
   return `
-      <button class="shot-select" aria-label="Select shot" aria-pressed="${!!on}">${pilePhotos(x.rep,x.members)}<img class="pile-cover" src="${T(x.rep)}" alt="Shot" loading="lazy" draggable="false" data-box="${esc(JSON.stringify(boxes?.[x.rep] || null))}">${selected ? `<span class="shot-selected" aria-hidden="true" title="Selected" ${on ? "" : "hidden"}>✓</span>` : ""}</button>
+      <div class="shot-pile"><button class="shot-select" aria-label="Select shot" aria-pressed="${!!on}">${pilePhotos(x.rep,x.members,false)}<img class="pile-cover" src="${T(x.rep)}" alt="Shot" loading="lazy" draggable="false" data-box="${esc(JSON.stringify(boxes?.[x.rep] || null))}">${selected ? `<span class="shot-selected" aria-hidden="true" title="Selected" ${on ? "" : "hidden"}>✓</span>` : ""}</button>
       ${x.members.length > 1 ? `<span class="kept-crown" title="The take that stands in for this stack">👑</span>
-        <button class="badge expand" data-expand="${x.rep}" title="Show all ${x.members.length} takes" aria-expanded="false">⧉ ${x.members.length}</button>` : ""}
+        <button class="badge expand stack-clip" data-expand="${x.rep}" title="Show all ${x.members.length} takes" aria-label="Open stack of ${x.members.length} takes" aria-expanded="false">${Cards.stackFace(x.members.length)}</button>` : ""}</div>
       ${x.solo ? `<button class="rank undo-split" data-reset="${x.rep}" title="Hand it back to automatic stacking">split by you · undo</button>` : ""}
       <button class="zoom" data-view="${x.rep}" title="View larger" aria-label="View larger">⤢</button>`;
 }
@@ -6487,7 +6492,7 @@ const World = {
     if (!img?.isConnected) return null;
     // Every photo is a polaroid and a flight carries the whole card, so the rectangle is the card's box: a pane's
     // picture sits in a `.window` inside its `.print`, a bare image carries its own paper.
-    const card=img.closest?.('.print')||img;
+    const card=img.closest?.('.print,.ps-item')||img;
     const box=card.getBoundingClientRect();if(!box.width||!box.height)return null;
     const style=getComputedStyle(img),bare=card===img&&!(parseFloat(style.paddingBottom)>0);let a=1,b=0,c=0,d=1;
     // Keep the actual wobble/scale as well as contain's letterboxing. The element's outer rectangle includes both.

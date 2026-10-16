@@ -33,7 +33,8 @@ const {LINK,LIB,OUT}=process.env;
       it.el.classList.add=(...names)=>{
         if(names.includes('photo-detail-source')){
           const under=[...it.el.querySelectorAll(':scope > .pile-take')];
-          window.layerBefore={under,rects:under.map(el=>el.getBoundingClientRect()),angle:getComputedStyle(it.el.querySelector('.pile-cover')).rotate};
+          const cover=it.el.querySelector('.pile-cover'),paper=cover.closest('.paper');
+          window.layerBefore={under,rects:under.map(el=>el.getBoundingClientRect()),bounds:it.el.getBoundingClientRect(),cover,paper,animation:paper.getAnimations()[0]};
         }
         return add(...names);
       };
@@ -46,21 +47,36 @@ const {LINK,LIB,OUT}=process.env;
       const r=detail.getBoundingClientRect(),p=source.getBoundingClientRect(),under=[...source.querySelectorAll(':scope > .pile-take')];
       return {details:document.querySelectorAll('.sea-photo-detail').length,detail:getComputedStyle(detail).visibility,
         source:getComputedStyle(source).visibility,tab:getComputedStyle(detail.querySelector('.photo-notes-tab')).visibility,
-        cover:getComputedStyle(source.querySelector('.pile-cover')).visibility,count:detail.querySelector('.ps-stack')?.textContent,
+        cover:getComputedStyle(source.querySelector('.pile-cover')).visibility,count:source.querySelector('.ps-stack')?.textContent,
+        sameCover:source.querySelector('.pile-cover')===layerBefore.cover&&source.querySelector('.paper')===layerBefore.paper,
+        sameAnimation:source.querySelector('.paper').getAnimations()[0]===layerBefore.animation,duplicate:getComputedStyle(detail.querySelector('.paper')).visibility,
         takes:under.length,sameTakes:under.length===layerBefore.under.length&&under.every((el,i)=>el===layerBefore.under[i]),
         visibleTakes:under.every(el=>getComputedStyle(el).visibility==='visible'&&el.complete&&el.naturalWidth),
-        takeDrift:Math.max(...under.map((el,i)=>{const r=el.getBoundingClientRect(),p=layerBefore.rects[i];return Math.max(...['left','top','width','height'].map(k=>Math.abs(r[k]-p[k])));})),
-        angle:detail.querySelector('.paper').style.rotate,beforeAngle:layerBefore.angle,
+        takeDrift:Math.max(...under.map((el,i)=>{
+          const r=el.getBoundingClientRect(),before=layerBefore.rects[i],b=layerBefore.bounds;
+          return Math.max(Math.abs((r.left-p.left)/p.width-(before.left-b.left)/b.width)*p.width,
+            Math.abs((r.top-p.top)/p.height-(before.top-b.top)/b.height)*p.height,
+            Math.abs(r.width/p.width-before.width/b.width)*p.width,Math.abs(r.height/p.height-before.height/b.height)*p.height);
+        })),
         transitions:getComputedStyle(source).transitionProperty,drift:Math.hypot(r.left-p.left,r.top-p.top),
         offscreen:s.moving.filter(it=>!it.focused&&it.id!==s.held&&!s.inView(it,-s.camera.tx/s.camera.zoom,-s.camera.ty/s.camera.zoom,(s.el.clientWidth-s.camera.tx)/s.camera.zoom,(s.el.clientHeight-s.camera.ty)/s.camera.zoom,0)).length};
     });
-    states.push(state);assert.equal(state.details,1);assert.equal(state.detail,'visible');assert.equal(state.tab,'visible');assert.equal(state.source,'visible');assert.equal(state.cover,'hidden');
+    states.push(state);assert.equal(state.details,1);assert.equal(state.detail,'visible');assert.equal(state.tab,'visible');assert.equal(state.source,'visible');assert.equal(state.cover,'visible');assert.equal(state.duplicate,'hidden');
     assert(state.takes>1&&state.sameTakes&&state.visibleTakes,'The same stack stays visible behind its detailed cover');
     assert(state.takeDrift<.1,`Underprints do not jump during the handoff: ${JSON.stringify(state)}`);
-    assert.equal(state.angle,state.beforeAngle,'The new cover keeps the old cover’s angle');assert.match(state.count,/⧉ \d+/,'The stack count survives');
+    assert(state.sameCover&&state.sameAnimation,'Focus retains the original cover, paper and animation');assert.match(state.count,/^\s*\d+\s*$/,'The clipped handwritten count survives');
     assert(!state.transitions.includes('width')&&!state.transitions.includes('height')&&!state.transitions.includes('opacity'),JSON.stringify(state));
     assert(state.drift<2,JSON.stringify(state));assert.equal(state.offscreen,0,'No off-screen live cards survive culling');
-    if(!pass){await page.screenshot({path:OUT+'/sea-layers-focused.png'});await page.click('.sea-photo-detail .photo-notes-tab');await page.waitForSelector('.photo-note-sheet .notes-writing');await page.keyboard.press('Escape');}
+    if(!pass){
+      await page.screenshot({path:OUT+'/sea-layers-focused.png'});await page.click('.sea-photo-detail .photo-notes-tab');await page.waitForSelector('.photo-note-sheet .notes-writing');
+      await page.waitForTimeout(450);
+      const sheet=await page.evaluate(()=>{
+        const host=PhotoNotes.seaDetail.getBoundingClientRect(),paper=PhotoNotes.sheet.getBoundingClientRect();
+        return {width:Math.abs(host.width-paper.width),height:Math.abs(host.height-paper.height),gap:paper.left-host.right,right:paper.right};
+      });
+      assert(sheet.width<2&&sheet.height<2&&sheet.gap>=16&&sheet.right<=1440-14,`The full sheet opens beside the real print: ${JSON.stringify(sheet)}`);
+      await page.screenshot({path:OUT+'/sea-layers-notes.png'});await page.keyboard.press('Escape');
+    }
     await page.evaluate(()=>World.sea.resetCamera());await page.waitForTimeout(350);
     assert.equal(await page.locator('.sea-photo-detail,.photo-detail-source').count(),0,'Zooming out restores the live cover');
   }

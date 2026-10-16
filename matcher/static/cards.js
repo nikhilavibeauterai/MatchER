@@ -5,6 +5,15 @@ const Cards = {
   SELECTOR: 'img[src^="/img/t/"], img[src^="/img/p/"]',
   // Boxes that already are the card: the image fills them and their paper is sized by them.
   HOSTS: ".ps-item, .print, .window, .picture, .shot-select, .tile, .ftile, .bulk-tile, .filter-take, .crown-card, .pod-photo, .tb-seat, .mf, .bchamp, .polaroid, .up-next, .rank-pop, .save-chip",
+  // One little count slip, held to a pile by a metal paperclip. The same face fits an editor's Open button.
+  stackFace(count) {
+    const n=Math.max(0,Math.floor(Number(count)||0));
+    return `<span class="stack-slip" aria-hidden="true" style="--stack-digits:${String(n).length}">${n}</span><svg class="stack-paperclip" viewBox="0 0 40 100" aria-hidden="true" focusable="false" fill="none"><path class="clip-shadow" d="M26 24v52a8 8 0 0 1-16 0V20a12 12 0 0 1 24 0v57a16 16 0 0 1-32 0V29"/><path class="clip-wire" d="M26 24v52a8 8 0 0 1-16 0V20a12 12 0 0 1 24 0v57a16 16 0 0 1-32 0V29"/><path class="clip-shine" d="M25 25v51a7 7 0 0 1-14 0V20a11 11 0 0 1 22 0v57"/></svg>`;
+  },
+  stack(count) {
+    const n=Math.max(0,Math.floor(Number(count)||0));
+    return n>1?`<span class="ps-stack stack-clip" role="img" aria-label="Stack of ${n} takes">${this.stackFace(n)}</span>`:'';
+  },
   init() {
     if (this.observer) return;
     this.observer = new MutationObserver((records) => { for (const r of records) for (const node of r.addedNodes) if (node.nodeType === 1) this.dress(node); });

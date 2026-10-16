@@ -298,7 +298,9 @@ highlighted group (or ✏️), its emoji changes it.
 The sea is calm and explorable. Prints settle where their colour (left muted, right colourful) and brightness
 (low dark, high bright) put them, nudged locally by shared tags and spacing, and then stay put. Every photo in
 MatchER is the same polaroid: a 3:4 paper card with the picture contained in its window, so a landscape and a
-portrait compare as equals, and a stack is a pile of those cards with its count on the chin. Drag open water to pan, use the wheel or a
+portrait compare as equals, and a stack is a pile of those cards held by a paperclip at its top-left corner,
+with its count handwritten on a small scrap of paper. Click the clip on a Stacks or Groups tile to open its takes.
+Drag open water to pan, use the wheel or a
 pinch to zoom in on a neighbourhood, and double-click open water (or a print you have zoomed right into) to see
 everything again. A print you pick up floats over the others; when you let go, its neighbours make a little room
 and nothing farther away moves. On the map or the Groups sea, drop one print onto another to stack all their
@@ -307,6 +309,8 @@ the shot there, or onto open water to move it without stacking. The small prints
 thumbnail at any size), so a sea of thousands pans and zooms without the CPU breaking a sweat and holds still at
 rest; a print only gets a card of its own once it is big enough on screen to need one. Zooming into a stack
 keeps the same takes behind its cover; only the top print gains the focused controls and full detail.
+Its crop, enhancement, paper and shadow stay in place while you scroll, pan or drag; the notes and controls
+follow the print without replacing its picture.
 
 **Developer mode** (`./matcher.sh --debug`, or add `?debug=1` to the address once; `?debug=0` forgets it) keeps a
 panel on every screen with the sea's knobs: the macro order (rank spread, margins, jitter, home pull), the micro
