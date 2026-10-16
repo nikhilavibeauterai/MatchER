@@ -1022,6 +1022,9 @@ button.pstat:hover { border-color: #ffd86b; }
 .screen.stacker .screen-body { padding: 22px; }
 .screen.stacker .screen-body .gsec-tiles { grid-template-columns: repeat(auto-fill, minmax(min(130px,100%), 1fr)); gap: 18px; min-width: 0; }
 .screen.stacker .gsec-tiles > *, .screen.stacker .fam-tiles > * { min-width: 0; }
+.screen.stacker .tile:not(.open) { aspect-ratio:3 / 4; }
+.screen.stacker .tile:not(.open) > .shot-select { height:100%; }
+.screen.stacker .tile.sleeping { background:var(--paper); }
 .screen.stacker .fam-tiles { grid-template-columns: minmax(0,1fr); gap:18px; padding:22px; }
 @media (max-width:760px) { .screen.stacker .screen-body { padding:18px 12px; } }
 .screen.draw-play { --rail: 300px; }
@@ -1647,12 +1650,36 @@ body.sea-on .group-table, body.sea-on .mini-bar, body.sea-on .done-banner {
   background: var(--panel); color: var(--text); border-radius: 9px; cursor: pointer; }
 .tag-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag-row.on { border-color: #ffd86b; }
-.tag-edit { background: rgba(11,12,14,0.84); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 16px; }
+.tag-edit { background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:16px; }
 .tag-edit form { display: flex; gap: 8px; align-items: end; margin-bottom: 10px; }
 .tag-edit label { display: grid; gap: 5px; min-width: 0; }
 .tag-edit .row { flex-wrap: wrap; }
-.tag-photos > button { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.tag-photos .tag-photo { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
 .tag-photos .polaroid { display: block; width: 100%; }
+.tag-photo-card { position:relative;min-width:0; }
+.tag-photo-card > .tag-photo { width:100%; }
+.tag-photo-pick { position:absolute;right:8px;bottom:8px;z-index:10;padding:6px;background:var(--paper);border-radius:50%; }
+.date-jump { display:flex;align-items:center;gap:6px;max-width:100%;padding:3px 6px;background:var(--paper);color:var(--ink);text-shadow:none;border-radius:var(--scrap-round);box-sizing:border-box; }
+.date-jump label { display:flex;align-items:center;gap:8px;min-width:0; }
+.date-jump label > span { white-space:nowrap;font-size:16px; }
+.date-jump select { width:220px;max-width:100%;min-width:0; }
+.date-jump button { min-width:36px;min-height:44px;padding:0 8px;font-size:28px; }
+.date-divider { grid-column:1 / -1;position:relative;z-index:5;justify-self:start;margin:10px 0 0;padding:4px 12px;background:var(--paper);color:var(--ink);font:700 22px/1.3 var(--hand); }
+.stacker.by-date .lookgrid::after { content:'';grid-column:1 / -1;height:var(--date-tail,0px); }
+.stacker.by-date .lookgrid { grid-auto-flow:row; } /* Later days never fill gaps above an earlier heading. */
+@media(max-width:759px) {
+  .screen.stacker .screen-head > .date-jump { grid-column:1 / -1;grid-row:3;justify-self:stretch; }
+  .date-jump label { flex:1; }.date-jump select { width:190px;flex:1; }
+}
+.tag-photo-pick input { width:20px;height:20px;display:block;cursor:pointer; }
+.tags-page:not(.choosing-tag-photos) .tag-photo-pick { display:none; }
+.tags-page .screen-rail > label,.tags-page #tag-new { background:var(--paper);color:var(--ink);padding:10px;border-radius:var(--scrap-round); }
+.tag-picker { position:relative;min-width:min(250px,100%); }
+.tag-picker input { width:100%; }
+.tag-options { position:absolute;left:0;right:0;top:100%;z-index:30;max-height:260px;overflow:auto;display:grid;gap:3px;padding:6px; }
+.tag-options[hidden] { display:none; }
+.tag-options button { text-align:left;white-space:normal;overflow-wrap:anywhere; }
+.tag-options button[aria-selected=true] { outline:2px solid var(--gold); }
 .tag-photos img { width: 100%; }
 .tag-call { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
 .tag-call h2 { margin: 0; background: rgba(11,12,14,0.8); padding: 6px 12px; border-radius: 12px; }
@@ -1747,6 +1774,7 @@ body.sea-on .group-table, body.sea-on .mini-bar, body.sea-on .done-banner {
   transform: translateY(var(--fan-y)) rotate(var(--fan-turn)); z-index: var(--i); box-shadow: 0 6px 20px rgba(0,0,0,0.5); transition: transform 0.2s; }
 .photo-fan > * + * { margin-left: -82px; }
 .photo-fan > *:hover, .photo-fan > *:focus-within { z-index: 40; transform: translateY(-12px) rotate(0deg); }
+.photo-fan > *:focus-within { z-index:41; } /* A control you are using stays above a neighbouring hovered take. */
 .photo-fan .ftile img, .photo-fan .frame-pick img { width: 100%; height: 180px; object-fit: cover; border-radius: 0; }
 .photo-fan .ftile-actions { opacity: 1; min-height: 32px; }
 .photo-fan .ftile-actions span { color: #ffd86b; font-size: 11px; font-weight: 700; }
@@ -1846,7 +1874,7 @@ body[data-world] #world .vn-tag, body[data-world] #world .vn-lasso-tag { pointer
 /* The card, finishing sheet and rank arrows each sit above the sea; prints still drift between them. */
 #main .board :is(.tile, .board-h, .board-fit, .edit-sheet, .board-arrow) { position: relative; z-index: 5; }
 /* Tag cards and their editor float above the sea, leaving the gaps between prints open. */
-#main :is(.tag-edit, .tag-photos > button, .tag-call > .print, .tag-call > h2) { position: relative; z-index: 5; }
+#main :is(.tag-edit, .tag-photo-card, .tag-call > .print, .tag-call > h2) { position: relative; z-index: 5; }
 /* Reward and reading moments calm the sea behind the words; the next card or route brings it back. */
 body.world-calm #world { opacity: .22; }
 .stage-done { align-content: center; justify-items: center; gap: 6px; padding: 24px; }
@@ -1910,10 +1938,13 @@ code.path { word-break: normal; overflow-wrap: anywhere; }
 }
 
 /* The sea's camera: one layer carries every print, panned and zoomed as a whole; the canvases follow it. */
-.photo-sea .sea-layer { position: absolute; inset: 0; transform-origin: 0 0; pointer-events: none; will-change: transform; }
+.photo-sea .sea-layer { position: absolute; inset: 0; z-index:1;isolation:isolate;transform-origin: 0 0; pointer-events: none; will-change: transform; }
 /* The compositor (GPU) carries the camera and the sprite canvas; a live card is its own layer already (its 3D
    translate), so no will-change hint is spent on each of a thousand cards. */
-.photo-sea .ps-item { contain: layout; }
+.photo-sea .ps-item, #world .ps-item { contain:layout;transition:transform var(--sea-glide,50ms) linear,box-shadow .15s; }
+.photo-sea .ps-item:is(.pinned,.is-tiny), #world .ps-item:is(.pinned,.is-tiny) { transition:box-shadow .15s; }
+.photo-sea .ps-item.image-pending { box-shadow:none!important; }
+.photo-sea .ps-item.set-aside { opacity:.4; }
 .venn-sea .vn-density { will-change: transform; }
 .world-fly { will-change: transform, left, top, width, height; }
 .photo-sea:not(#world) .sea-layer .ps-item { pointer-events: auto; }
@@ -1941,10 +1972,10 @@ body.sea-panning, body.sea-panning * { cursor: grabbing !important; }
 .tile-pile > :is(.rank, .badge, .rank-change, .rescue-mark) { z-index: 7; }
 .tile-pile > .meta { position: relative; z-index: 8; }
 /* The leaderboard: one card at a time, as big as its stage allows, an arrow either side. The square sticky note is
-   stuck where the view puts it (card widths from the top-left, a slight turn), over scenery or the chin; its writing
+   stuck where the view puts it (card widths from the top-left, a slight turn), hanging from the paper; its writing
    scales with the card and never spills out. */
 .board-body { display: grid; overflow: hidden; }
-.board-stage { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; width: 100%; height: 100%; min-height: 0; }
+.board-stage { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; height: 100%; min-height: 0; }
 .board-fit { container-type: size; height: 100%; min-height: 0; display: grid; place-items: center; }
 .board-fit > .board-card { grid-area: 1 / 1; }
 /* The finishing sheet beside the card: a ruled page of knobs, crops and turns. */
@@ -2003,21 +2034,22 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
   #toolbelt .belt-tool { width: 30px; height: 30px; font-size: 15px; }
   .belt-inks { grid-column: 1 / -1; grid-template-columns: repeat(4, auto); }
 }
-.board-card.print > .meta.sticky { position: absolute; left: calc(var(--note-x, 3) * 1cqw); top: calc(var(--note-y, 3) * 1cqw); width: calc(var(--note-size, 38) * 1cqw); aspect-ratio: 1;
-  margin: 0; padding: 2.2cqw 2.4cqw; rotate: var(--note-turn, -2deg); overflow: hidden; font-size: calc(var(--note-font, 2.3) * 1cqw); line-height: 1.25; }
-.board-card .note-head { display: flex; align-items: baseline; gap: 1.5cqw; }
-.board-card .note-rank { font-size: 5cqw; line-height: 1; }
-.board-card .note-change { color: var(--good); font-weight: 700; }
-.board-card .note-tags { display: flex; flex-wrap: wrap; gap: 0 1.6cqw; }
-.board-card .note-file { font-size: 2cqw; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-card .conf { height: .6cqw; margin: .3cqw 0 .7cqw; }
-.board-card .flags { gap: .5cqw 1.4cqw; }
-.board-card .flag { font-size: 2.1cqw; padding: 0; }
-.board-card .note-link { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
-.board-card .actions { margin-top: .6cqw; }
-.board-card .actions .btn { font-size: 2.4cqw; padding: .3cqw 1.4cqw; flex: none; }
-.board-card .meta.sticky { cursor: grab; touch-action: none; }
-.board-card .meta.sticky.dragging { cursor: grabbing; box-shadow: 0 2px 2px #0003, 0 16px 30px #0005; }
+.print > .meta.sticky.photo-sticky { position: absolute; left: calc(var(--note-x, 4) * 1cqw); top: calc(var(--note-y, 129.3) * 1cqw); width: calc(var(--note-size, 38) * 1cqw); aspect-ratio: 1;
+  z-index: 9; margin: 0; padding: 2.2cqw 2.4cqw; rotate: var(--note-turn, -2deg); overflow: hidden; display: grid; align-content: start; gap: 1.2cqw; font: calc(var(--note-font, 2.3) * 1cqw)/1.25 var(--hand); }
+.photo-sticky .note-head { display: flex; align-items: baseline; gap: 1.5cqw; }
+.photo-sticky .note-rank { font-size: 5cqw; line-height: 1; }
+.photo-sticky .note-change { color: var(--good); font-weight: 700; }
+.photo-sticky .note-tags { display: flex; flex-wrap: wrap; gap: 0 1.6cqw; }
+.photo-sticky .note-file { font-size: 2cqw; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.photo-sticky .conf { height: .6cqw; margin: .3cqw 0 .7cqw; border-radius: 9px; overflow: hidden; }
+.photo-sticky .conf i { display: block; height: 100%; background: var(--good); }
+.photo-sticky .flags { gap: .5cqw 1.4cqw; }
+.print > .photo-sticky .flags .flag { font: inherit; padding: 0; }
+.photo-sticky .note-link { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+.photo-sticky .actions { margin-top: .6cqw; }
+.photo-sticky .actions .btn { font-size: 2.4cqw; padding: .3cqw 1.4cqw; flex: none; }
+.photo-sticky { cursor: grab; touch-action: none; }
+.photo-sticky.dragging { cursor: grabbing; box-shadow: 0 2px 2px #0003, 0 16px 30px #0005; }
 /* The chin, within the frame: the group above, the file and its date below, each on one line that never spills. */
 .board-card .paper > .chin { position: absolute; left: 6%; right: 6%; top: 88.2%; bottom: 2.4%; z-index: 7; display: grid; align-content: center; gap: .2cqw; text-align: center; line-height: 1.1; pointer-events: none; }
 .board-card .chin > * { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2085,7 +2117,7 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
 :is(#main, #world, #sea, #modal, .inspect) img.pile-take[src] { animation: none; }
 .game-paused :is(img, .paper, .tile-pile), body.sea-deep :is(img, .paper, .tile-pile) { animation-play-state: paused !important; }
 /* Zoomed in until one print fills the view, the sea is that picture: the chrome hides until you zoom back out. */
-body.sea-deep > :not(#world, #modal, #af-defs, script, style), body.sea-deep #world :is(.vn-density-labels, .vn-catalog, .focus-bar, .sea-tags) { visibility: hidden; }
+body.sea-deep > :not(#world, #modal, #af-defs, .sea-photo-detail, .photo-note-sheet, script, style), body.sea-deep #world :is(.vn-density-labels, .vn-catalog, .focus-bar, .sea-tags) { visibility: hidden; }
 /* The picture stays clear in deep zoom. Reaching for the belt reveals it; a tool in use keeps it open. */
 body.sea-deep #toolbelt { visibility: visible; opacity: 0; transition: opacity .15s; }
 body.sea-deep #toolbelt:is(:hover, :focus-within), body.sea-deep:not([data-tool="hand"]) #toolbelt { opacity: 1; }

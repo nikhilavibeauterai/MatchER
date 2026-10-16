@@ -4,7 +4,7 @@
 var SEA_TUNING = [
   // macro: the visual geography
   { key: "spread", group: "macro", label: "Rank spread", hint: "0 places homes on absolute colour and brightness curves; 1 spreads them evenly by rank across the canvas", min: 0, max: 1, step: 0.05, value: 1 },
-  { key: "margin", group: "macro", label: "Edge margin", hint: "share of the canvas kept clear at each edge", min: 0, max: 0.25, step: 0.01, value: 0.25 },
+  { key: "margin", group: "macro", label: "Edge margin", hint: "share of the canvas kept clear at each edge", min: 0, max: 0.25, step: 0.01, value: 0.04 },
   { key: "jitter", group: "macro", label: "Home jitter", hint: "each photo's own small offset from its exact home, as a share of the canvas", min: 0, max: 0.1, step: 0.005, value: 0.02 },
   { key: "homeRate", group: "macro", label: "Home pull per px", hint: "acceleration toward home per pixel of distance", min: 0, max: 0.01, step: 0.0002, value: 0.003 },
   { key: "homeMax", group: "macro", label: "Home pull cap", min: 0, max: 0.8, step: 0.01, value: 0.57 },
@@ -38,11 +38,11 @@ var SEA_TUNING = [
   { key: "sizeShare", group: "render", label: "Print size share", hint: "share of the canvas area the prints may fill at zoom 1", min: 0.05, max: 0.8, step: 0.01, value: 0.26 },
   { key: "sizeDivisor", group: "render", label: "Print size divisor", min: 0.8, max: 3, step: 0.05, value: 1.3 },
   { key: "sizeMax", group: "render", label: "Print size max px", min: 24, max: 200, step: 2, value: 86 },
-  { key: "domLimit", group: "render", label: "Max live prints", hint: "prints with their own image element; the rest draw as sprites. At the default the device's memory sets the real cap; raise it and your number stands, up to every print", min: 40, max: 200000, step: 10, value: 1000 },
+  { key: "domLimit", group: "render", label: "Max live prints", hint: "prints with their own image element; the rest draw as sprites. At the default the device's memory sets the real cap; raise it and your number stands, up to every print", min: 40, max: 200000, step: 10, value: 160 },
   { key: "gpu", group: "render", label: "Sprites on the GPU", hint: "1 draws every small print as an instanced quad from the atlas on the GPU (a thumbnail at any size, free pans and zooms); 0 uses the 2D canvas. Takes effect when the sea is next built", min: 0, max: 1, step: 1, value: 1 },
-  { key: "liveMin", group: "render", label: "Live from px", hint: "a print at least this wide on screen gets an image element of its own (and the pyramid level its size needs); smaller prints are atlas sprites", min: 8, max: 80, step: 1, value: 22 },
+  { key: "liveMin", group: "render", label: "Live from px", hint: "a print at least this wide on screen gets an image element of its own (and the pyramid level its size needs); smaller prints are atlas sprites", min: 8, max: 80, step: 1, value: 56 },
   { key: "promoteBudget", group: "render", label: "Promotions per pass", hint: "how many sprites may come up live in one pass of the camera cull (each is an element and a picture to fetch); the rest follow on the next pass", min: 10, max: 400, step: 10, value: 80 },
-  { key: "dotLod", group: "render", label: "Dot prints under (px)", hint: "past 4,000 prints, a sprite this many device pixels wide or less draws as a paper dot in the photo's colour", min: 0, max: 16, step: 1, value: 6 },
+  { key: "dotLod", group: "render", label: "Dot prints under (px)", hint: "past 4,000 prints, a sprite this many device pixels wide or less draws as a paper dot in the photo's colour", min: 0, max: 16, step: 1, value: 0 },
   { key: "badgeMin", group: "render", label: "Badges from px", hint: "stack counts and badges appear on prints at least this big on screen", min: 16, max: 120, step: 2, value: 44 },
   { key: "tinyMax", group: "render", label: "Tiny below px", hint: "below this size on screen a print loses its border and badges", min: 4, max: 40, step: 1, value: 18 },
   { key: "wobblePeriod", group: "wobble", label: "Wobble period s", hint: "one full rock of a card; every card is offset from this", min: 2, max: 14, step: 0.1, value: 5.6 },

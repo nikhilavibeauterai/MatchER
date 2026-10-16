@@ -1,0 +1,36 @@
+// Search uses the existing local visual index; writing and tags are immediately discoverable on any stage.
+const {chromium}=require('playwright-core'),assert=require('node:assert/strict');
+const {LINK,LIB,OUT,BASE}=process.env;
+(async()=>{
+  const browser=await chromium.launch({headless:true}),page=await browser.newPage({viewport:{width:1440,height:900}}),problems=[],mutations=[];
+  page.on('pageerror',e=>problems.push(e.message));
+  await page.goto(LINK);await page.click('.mode-card[data-mode=gallery]');await page.fill('#path',LIB);await page.click('#use-path');
+  await page.waitForSelector('#an-go',{timeout:300000});await page.click('#an-go');await page.waitForSelector('.journey');
+  await page.waitForSelector('#photo-search:not([hidden])');
+  const semantic=await page.evaluate(()=>api('/api/search?q=red%20jacket'));
+  assert(semantic.photos.length>0&&semantic.photos.every(p=>Number.isFinite(p.score)),'A visual phrase searches the saved image embeddings');
+  const pid=semantic.photos.at(-1).photo;
+  await page.evaluate(async pid=>{await api('/api/edit',{photo:pid,title:'My crimson coat'});await api('/api/tags/new',{label:'Special wardrobe',photos:[pid],exact:true});},pid);
+  await page.goto(BASE+'/#duel?stage=open');await page.waitForSelector('#stage .side .print');
+  const pair=await page.locator('#stage .side').evaluateAll(es=>es.map(e=>e.dataset.photo));
+  page.on('request',r=>{if(r.method()==='POST')mutations.push(new URL(r.url()).pathname);});
+  await page.keyboard.press('Control+k');assert(await page.locator('#photo-search input').evaluate(e=>e===document.activeElement));
+  await page.fill('#photo-search input','crimson coat');await page.keyboard.press('Enter');
+  await page.waitForSelector('#photo-search-results [data-search-photo]');
+  assert.equal(Number(await page.locator('[data-search-photo]').first().getAttribute('data-search-photo')),pid);
+  const title=await page.locator('[data-search-photo]').first().innerText();assert(title.includes('My crimson coat'));
+  await page.screenshot({path:OUT+'/search-desktop.png'});
+  await page.locator('[data-search-photo]').first().click();await page.waitForSelector('.photo-viewer .photo-writing');
+  assert.equal(await page.locator('.viewer .print').getAttribute('data-photo'),String(pid));
+  assert.equal(await page.locator('.viewer .photo-writing').textContent(),'My crimson coat');
+  await page.click('.viewer #close-modal');
+  await page.fill('#photo-search input','Special wardrobe');await page.keyboard.press('Enter');await page.waitForSelector('#photo-search-results [data-search-photo]');
+  assert.equal(Number(await page.locator('[data-search-photo]').first().getAttribute('data-search-photo')),pid,'Friendly tag names work in global search');
+  await page.setViewportSize({width:390,height:844});
+  const phone=await page.locator('#photo-search-results').evaluate(e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,overflow:document.documentElement.scrollWidth>innerWidth};});
+  assert(phone.left>=0&&phone.right<=390&&!phone.overflow,JSON.stringify(phone));await page.screenshot({path:OUT+'/search-phone.png'});
+  await page.keyboard.press('Escape');assert(await page.locator('#photo-search-results').isHidden());assert.equal(await page.locator('#menu[open]').count(),0);
+  assert.deepEqual(await page.locator('#stage .side').evaluateAll(es=>es.map(e=>e.dataset.photo)),pair,'Typing and browsing search leaves the comparison untouched');
+  assert.deepEqual(mutations,[],'Searching never reanalyzes, votes or edits');assert.deepEqual(problems,[]);
+  console.log(JSON.stringify({semantic:semantic.photos.length,pid,title,phone,mutations,problems}));await browser.close();
+})().catch(e=>{console.error('FAILED:',e.stack);process.exit(1);});

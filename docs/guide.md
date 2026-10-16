@@ -88,10 +88,14 @@ board, leaderboard, Rescue, Tag lab, Open arena and its 60-second challenge, plu
 2. 🧩 **Stacks**: the same picture (a crop, a copy) or a burst of nearly the same shot belongs in one stack,
    so it competes as one. The obvious ones are stacked already; the **Twin check** minigame shows the pairs
    that look like the same shot but weren't stacked (`→` same shot, `←` different). The Stacks page shows
-   every stack as a pile of actual prints, each slightly offset and rotated. Open one to fan out its takes,
-   keep a different take, split one out or split it all; drag one onto another to merge, and drag past the top or
-   bottom of the list to scroll it. **X** (or the open stack's Set aside button) sets a whole stack aside with
-   every take. Similar stacks sit together, with a By date toggle.
+   loose photos alongside every stack as a pile of actual prints, each slightly offset and rotated. **Stacks only**
+   hides the loose photos and remembers your preference. Choose **By date** for day headings and a **Jump to**
+   picker grouped by month. The picker follows the date you are scrolling through; its arrows jump to the
+   previous or next date. Any date loads directly, including **No date**, and scrolling upward from a jump brings
+   earlier photos back into view.
+   Open a stack to fan out its takes, keep a different take, split one out or split it all; drag one onto another
+   to merge, and drag past the top or bottom of the list to scroll it. **X** (or the open stack's Set aside button)
+   sets a whole stack aside with every take. **Similar** puts look-alike stacks together.
 3. 👑 **Crown**: each stack's takes duel for the one that plays on: the current best defends against each
    of the others (`←` `→`, `Space` defers the challenger). A half-played Crown resumes after restarting.
    The two takes stay above the sea, with a compact roster and *Left wins* / Skip / *Right wins* controls. Enter
@@ -195,7 +199,8 @@ When the last winner returns in the next comparison, it stays on the same side a
   the sorter knows about it: rank, how sure it is, duels, appeal, takes (click to swap which one stands in), date,
   tags and looks; drag it wherever you like (it remembers). The file name, group and date are handwritten on the
   card's chin. The card holds still, and slides in and out as you walk the ranks.
-  Finishing happens on the **sheet** beside the card: **✨ Enhance** (`F`) with knobs for levels, light, contrast,
+  Pull out the **notes** corner beneath the bottom-right of the card to open its sheet. Finishing includes
+  **✨ Enhance** (`F` on the Leaderboard) with knobs for levels, light, contrast,
   colour and warmth on top of the auto look, **✂ Crop** (`C` walks best, focus subject, fill height, fill width, off) and **↻ Turn**
   (`R`). Each is that shot's own choice, shown live in the card's window, undone with `Z` and baked into **Save my
   best**.
@@ -207,6 +212,27 @@ When the last winner returns in the next comparison, it stays on the same side a
   **Shift+Z** redoes it, including during a tournament. Drawing tools own the photo gesture, so drawing never
   also picks a winner or moves a print. In deep zoom, reach for the belt at the left edge to reveal it; a tool
   in use keeps it visible. These stay with the shot, show wherever it appears, and are not written into the export.
+- Every **focused photo** carries its frame writing and saved sticky notes. The sorter's square sticky shows its
+  rank, confidence, duel count, appeal, takes, tags and flags wherever they are available. It hangs from the bottom
+  of the frame by default, clear of the picture; drag it to keep your own placement for that shot.
+  Its full notes sheet rests underneath the frame, with its bottom-right corner exposed. Hover to reveal
+  **notes**, then click the corner: that same sheet slides out beside the photo and tucks back when closed. The sheet
+  matches its polaroid's size and stacks over it on phones. It holds a title for the frame, longer private notes,
+  searchable tags, saved metadata, recognition findings, faces, recent calls, stack and group choices, and the
+  finishing controls. Tag corrections here affect
+  this exact take. **Esc** closes the sheet first; edits join the shared Undo history. Opening it never reads the
+  original file. The detailed sheet stays tucked away until requested.
+
+## Find a photo
+
+The **Search photos** field is available throughout the game. Describe what you remember—**red jacket**,
+**a dog on the beach**, **people at night**—and MatchER compares the phrase with the visual understanding saved
+during analysis. It also searches tag names, filenames, titles and private notes. Click a result to focus that
+exact take and open its notes corner for editing. Set-aside takes remain searchable and are labelled.
+
+Press **Ctrl+K** (or **⌘K**) to reach search; **Esc** closes the results. Searching runs locally, does not
+reanalyze the library and never sends photos or queries anywhere. Visual results are the closest matches,
+so a phrase can still return suggestions when the collection has no exact match.
 
 ## Tags
 
@@ -221,7 +247,9 @@ shown there carries into the game with the same photo membership. Your additions
 For saves analyzed before discovery history was stored, **Settings → Re-scan for new photos** fills in the missing
 Looking closer tags while keeping your corrections.
 **Tags** is an editable page with every tag and its photos, including takes, other cups and Set aside. Rename,
-change emoji, merge or delete tags there; Z undoes each edit. **Check this tag** is a finite yes/no game:
+change emoji, search **Merge into** by the destination tag's name, or delete tags there; Z undoes each edit.
+To create a tag, start writing its name, select its photos, then create it. Selection boxes appear only during
+that task. Empty tags disappear from the lab and sea; Undo restores their membership. **Check this tag** is a finite yes/no game:
 → or Enter adds the tag, ← removes it, and Z undoes the last call.
 
 ## Groups
@@ -304,7 +332,9 @@ the tag minigame.
   tags, and what you can do with it: edit tags, move to a group, stack with another photo, fan its takes out,
   keep or split a take, toss or rescue. Shift-click selects several to work on together. Esc shrinks them back to their spots.
 - **Copy path** copies a take's full original file path from the photo viewer, sea inspection, open stack or Filter
-  review. Right-click a photo to open its viewer, including during a duel. If clipboard access is blocked, the path
+  review. Right-click a photo to open its viewer, including during a duel. Scroll over the popup to zoom around
+  your pointer, then drag to pan. Double-click or **Reset view** returns to the fitted card. Copy path and Close
+  stay within reach while zoomed in. If clipboard access is blocked, the path
   appears selected for manual copying. A stack take copies its own path, even when another take is its cover.
 - The photos a screen brings to you (a duel's pair, the sweep's card, Twin check's pair, Quick sort's card, the finals)
   lift out of their spot in the sea, grow into place and wobble gently; when you're done they sink back, a winner

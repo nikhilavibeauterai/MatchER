@@ -11,6 +11,7 @@ class PhotoSea {
     try {
       const saved = JSON.parse(localStorage.getItem("matcher-sea-tuning") || "null"), t = saved?.tuning || {};
       if ((saved?.version || 1) < 2) delete t.zoomMax;  // the camera reaches much further now: a cap saved by the old panel would hold it back
+      if((saved?.version||1)<3)for(const [key,old]of Object.entries({margin:.25,domLimit:1000,liveMin:22,dotLod:6}))if(t[key]===old)delete t[key];
       Object.assign(this.tuning, t);
     } catch (_) { /* no saved tuning */ }
     if (typeof Cards !== "undefined") Cards.tune(this.tuning);
@@ -37,10 +38,9 @@ class PhotoSea {
   worldX(sx){return (sx-this.camera.tx)/this.camera.zoom;}
   localWorld(e){const [sx,sy]=this.local(e);return this.toWorld(sx,sy);}
   enableCamera(on){this.cameraOn=!!on;this.resetCamera();}
-  // How many prints may be live image elements: at the knob's default the device's memory decides; a number the
-  // owner raised stands as it is (every print live, if they like), and the big-sea cap of 160 steps aside too.
+  // Bound independent image elements. A deliberate tuning override stands; smaller devices can lower the default.
   liveCap(){const auto=(navigator.deviceMemory||4)*(innerWidth<760?60:250),set=this.tuning.domLimit;return Math.max(40,set===seaTuningDefaults().domLimit?Math.min(set,auto):set);}
-  bigCap(){return this.domLimit;}  // memory is not the throttle (the owner has it to spare); the knob is
+  bigCap(){return this.domLimit;}
   // Texture slots are square; their photo's aspect belongs to the card, never to padding baked into the atlas.
   atlasCell(img,index,dims){
     const x=index%50*16,y=Math.floor(index/50)*16;
@@ -50,7 +50,8 @@ class PhotoSea {
   watchImage(it){
     const img=it.el.querySelector('.pile-cover');if(!img)return;
     const valid=()=>this.alive&&this.items.get(it.id)===it&&!it.density&&it.el.querySelector('.pile-cover')===img;
-    const pending=on=>{if(!valid())return;it.imagePending=on;it.el.classList.toggle('image-pending',on);this.densityDirty=this.spritesDirty=true;this.paintSoon?.();this.kick();};
+    const pending=on=>{if(!valid())return;it.imagePending=on;it.el.classList.toggle('image-pending',on);this.densityDirty=this.spritesDirty=true;this.paintSoon?.();this.kick();
+      if(!on&&this.el.id==='world'&&this.cameraOn&&this.fullSize(it))window.dispatchEvent(new Event('sea-image-ready'));};
     const ready=()=>{const source=img.currentSrc||img.src;img.decode().then(()=>{
       if(valid()&&(img.currentSrc||img.src)===source&&img.naturalWidth)pending(false);
     }).catch(()=>{});};
@@ -61,7 +62,7 @@ class PhotoSea {
   // Live tuning: the worker, the print size and the camera limits all read the new values at once.
   tune(values,persist=true){
     Object.assign(this.tuning,values||{});
-    if(persist){try{localStorage.setItem("matcher-sea-tuning",JSON.stringify({version:2,tuning:this.tuning}));}catch(_){}}
+    if(persist){try{localStorage.setItem("matcher-sea-tuning",JSON.stringify({version:3,tuning:this.tuning}));}catch(_){}}
     this.domLimit=this.liveCap();
     this.worker?.postMessage({kind:"tune",values:this.tuning});if(typeof Cards!=="undefined")Cards.tune(this.tuning);this.layout();this.kick();
   }
@@ -74,12 +75,8 @@ class PhotoSea {
     c.zoom=z;c.tx=Math.min(sx,Math.max(W*(1-z)-sx,tx));c.ty=Math.min(sy,Math.max(H*(1-z)-sy,ty));
     this.layer.style.transform=z===1&&!c.tx&&!c.ty?'':`translate(${c.tx.toFixed(2)}px,${c.ty.toFixed(2)}px) scale(${z.toFixed(4)})`;this.el.style.setProperty('--zoom',z.toFixed(4));
     this.el.dataset.zoom=z.toFixed(2);this.followCamera();this.scheduleCull();
-    // Zoomed in, the sprites are drawn for a 3×3 grid of views around the camera: a pan inside that region slides
-    // the canvas and redraws nothing; leaving it, or a change of zoom, draws the next region.
-    const r=this.densityRegion;
-    if(this.gpu){this.densityDirty=true;this.paintSoon();}  // the GPU draws every sprite again for the new camera, this frame
-    else if(r&&r.region===3&&r.zoom===z&&Math.abs(c.tx-r.tx)<r.W&&Math.abs(c.ty-r.ty)<r.H&&this.densityCanvas)this.densityCanvas.style.transform=`translate(${(c.tx-r.tx-r.W).toFixed(2)}px,${(c.ty-r.ty-r.H).toFixed(2)}px)`;
-    else this.densityDirty=true;
+    // Both renderers draw only the current viewport. Camera movement never changes a print's paint order.
+    this.densityDirty=true;this.paintSoon();
     // Zoomed in until one print fills the view, the sea is a picture: physics and wobble stop, the chrome hides
     // (the wheel and a drag still work), everything returns on the way out.
     const deep=z>=3&&this.el.id==='world'&&this.oneInView(W,H);
@@ -178,7 +175,7 @@ class PhotoSea {
   cull(force=false){
     const c=this.camera,W=this.el.clientWidth,H=this.el.clientHeight;
     if(!force&&c.zoom===1&&!this.culled)return;this.culled=c.zoom!==1;
-    const x0=-c.tx/c.zoom,y0=-c.ty/c.zoom,x1=x0+W/c.zoom,y1=y0+H/c.zoom,pad=Math.max(this.s,Math.max(W,H)/c.zoom);  // a view's margin around the view
+    const x0=-c.tx/c.zoom,y0=-c.ty/c.zoom,x1=x0+W/c.zoom,y1=y0+H/c.zoom,pad=0;
     const keep=it=>it.focused||it.selected||!it.density&&(it.id===this.held||!!this.drag?.members.has(it)||it.el.classList.contains('lifted'));
     const liveMin=this.tuning.liveMin??22;
     const visible=[...this.items.values()].filter(it=>!it.take&&this.inView(it,x0,y0,x1,y1,pad)&&(keep(it)||(it.size||this.s)*c.zoom>=liveMin*(it.density?1:.85))).sort((a,b)=>Number(keep(b))-Number(keep(a))||Number(this.inView(b,x0,y0,x1,y1,0))-Number(this.inView(a,x0,y0,x1,y1,0))||Number(a.density)-Number(b.density)||(b.size||0)-(a.size||0));
@@ -304,17 +301,23 @@ class PhotoSea {
     }
     // Budget across the retained collection before creating images. A small tag update must not promote its whole batch.
     // A big sea keeps the same cap the frames enforce, so a full set never raises 400 prints only to drop 240 again.
-    const all = [...this.items.values()], dom = new Set(), dragged = new Set(this.drag?.items || []);
+    // Use the complete collection's footprint before choosing renderers. The constructor's provisional size
+    // would briefly promote hundreds of cards, then replace them with tiny sprites after the first layout.
+    if(this.el.id==='world')this.homes(this.el.clientWidth,this.el.clientHeight);
+    const all = [...this.items.values()].sort((a,b)=>(a.stack||a.id)-(b.stack||b.id)||Number(b.take)-Number(a.take)||a.id-b.id),dom=new Set(),dragged=new Set(this.drag?.items||[]);
+    const c=this.camera,W=this.el.clientWidth,H=this.el.clientHeight,onScreen=it=>this.inView(it,-c.tx/c.zoom,-c.ty/c.zoom,(W-c.tx)/c.zoom,(H-c.ty)/c.zoom,0);
+    // A stack's takes stay under its cover even when their atlas sheets differ or its cover becomes live.
+    this.paintOrder=all;all.forEach((it,i)=>{it.order=i+1;});
     const limit = this.items.size > 400 ? this.bigCap() : this.domLimit;
-    for (const it of all) if (dom.size < limit && (it.focused || !it.density &&
+    for (const it of all) if (!it.take && dom.size < limit && (it.focused || !it.density &&
       (it.selected || it.id === this.held || dragged.has(it) || it.el.classList.contains('lifted')))) dom.add(it.id);
     // A partial update keeps the live set as it is; only what just arrived may come up live (it is what you watch).
     if (partial) { const zoom = this.camera?.zoom || 1, liveMin = this.tuning.liveMin ?? 22;
-      for (const it of all) if (dom.size < limit && (fresh.has(it.id) && (it.size || this.s) * zoom >= liveMin || (!it.density && it.el.isConnected))) dom.add(it.id); }
+      for (const it of all) if (!it.take && onScreen(it) && dom.size < limit && (fresh.has(it.id) && (it.size || this.s) * zoom >= liveMin || (!it.density && it.el.isConnected))) dom.add(it.id); }
     // Otherwise the prints big enough on screen to need a real picture, largest first, up to the cap. Smaller ones
     // are atlas sprites (a thumbnail at any size, free on the GPU), so a big sea at rest has no live cards at all.
     else { const zoom = this.camera?.zoom || 1, liveMin = this.tuning.liveMin ?? 22;
-      for (const it of all.filter((it) => !dom.has(it.id) && (it.size || this.s) * zoom >= liveMin).sort((a, b) => (b.size || this.s) - (a.size || this.s))) { if (dom.size >= limit) break; dom.add(it.id); } }
+      for (const it of all.filter((it) => !it.take && !dom.has(it.id) && onScreen(it) && (it.size || this.s) * zoom >= liveMin).sort((a, b) => (b.size || this.s) - (a.size || this.s))) { if (dom.size >= limit) break; dom.add(it.id); } }
     this.moving = [];
     for (const it of all) {
       const density = !dom.has(it.id);
@@ -353,7 +356,8 @@ class PhotoSea {
     if (img.complete) copy(); else img.addEventListener("load",copy,{once:true});
   }
   promote(id, relayout=true) {
-    const it = this.items.get(Number(id));
+    let it = this.items.get(Number(id));
+    if(it?.take)it=this.items.get(it.stack)||it;
     if (!it || !it.density) return it;
     const eligible=x=>!x.focused&&x.id!==this.held&&!this.drag?.members.has(x)&&!x.el.classList.contains('lifted');
     const old = this.moving.length>=this.domLimit ? this.moving.find(x=>eligible(x)&&!x.selected) || this.moving.find(eligible) : null;  // room is made only at the cap
@@ -580,22 +584,17 @@ class VennSea extends PhotoSea {
     }
     if(this.gpu){this.drawSprites(W,H);return;}
     const canvas = this.densityCanvas,cam=this.camera||{zoom:1,tx:0,ty:0};
-    // The region: the view itself, or the 3×3 grid of views around it from three times in (what is beyond that is
-    // culled from drawing, never from the sea). The grid keeps to a pixel budget by drawing a little softer.
-    const region=cam.zoom>=3?3:1,budget=16e6,dpr=Math.min(2,devicePixelRatio||1,region===3?Math.sqrt(budget/(9*W*H)):Infinity);
-    const ox=region===3?W:0,oy=region===3?H:0,cw=Math.round(W*region*dpr),ch=Math.round(H*region*dpr);
-    if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;canvas.style.width=`${W*region}px`;canvas.style.height=`${H*region}px`;}
-    canvas.style.transform=region===3?`translate(${-W}px,${-H}px)`:'';
-    this.densityRegion={zoom:cam.zoom,tx:cam.tx,ty:cam.ty,region,W,H};
-    const ctx = this.densityCtx||(this.densityCtx=canvas.getContext("2d")); ctx.setTransform(dpr,0,0,dpr,ox*dpr,oy*dpr);ctx.clearRect(-ox,-oy,W*region,H*region);
+    const dpr=Math.min(2,devicePixelRatio||1),ox=0,oy=0,cw=Math.round(W*dpr),ch=Math.round(H*dpr);
+    if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;canvas.style.width=`${W}px`;canvas.style.height=`${H}px`;}
+    canvas.style.transform='';
+    const ctx = this.densityCtx||(this.densityCtx=canvas.getContext("2d")); ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
     // Tiny prints share pre-scaled atlas pixels. One upload avoids thousands of canvas draw calls per frame.
     const raster=this.items.size>4000;
     if(raster&&(!this.densityPixels||this.densityPixels.width!==canvas.width||this.densityPixels.height!==canvas.height)){
       this.densityPixels=ctx.createImageData(canvas.width,canvas.height);
     }
-    // Past a few thousand prints each is a handful of pixels: those draw as a paper dot in the photo's own colour
-    // (two rectangles, no pixel work, no full-screen upload), the raster buffer only when something still needs it.
-    const dotLod=this.tuning?.dotLod??6,dots=[];let filled=false;
+    // Real atlas thumbnails remain visible even at the smallest size. The optional dot shortcut is off by default.
+    const dotLod=this.tuning?.dotLod??0,dots=[];let filled=false;
     const deferred=[],{zoom,tx,ty}=this.camera||{zoom:1,tx:0,ty:0};
     this.densityStats={dots:0,raster:0,cards:0};
     const cols=Math.ceil(W/16),rows=Math.ceil(H/16);
@@ -603,12 +602,12 @@ class VennSea extends PhotoSea {
     else for(const cell of this.hitGrid.values())cell.length=0;
     this.hitCols=cols;this.hitRows=rows;
     let alpha=1,max=0;
-    for (const it of this.items.values()) if (it.density||it.imagePending) {
+    for (const it of this.paintOrder||this.items.values()) if (it.density||it.imagePending) {
       if(it.lifted||it.pileLifted)continue;
       const size = (it.size || this.densitySize || 4)*(it.density?1:it.renderScale||1);if(size>max)max=size;
       const hit=Math.floor(it.y/16)*this.hitCols+Math.floor(it.x/16);let cell=this.hitGrid.get(hit);
       if(!cell){cell=[];this.hitGrid.set(hit,cell);}if(cell.length<24)cell.push(it);
-      const opacity=this.highlightIds&&!this.highlightIds.has(it.id)?.22:it.cut?.4:.9;
+      const opacity=this.highlightIds&&!this.highlightIds.has(it.id)?.22:it.cut?.4:1;
       const sprite = this.sprites?.get(it.id), preview = it.preview;
       const source=sprite&&(sprite.img instanceof HTMLCanvasElement||sprite.img.complete&&sprite.img.naturalWidth)?sprite:preview;
       // A sprite is the same 3:4 polaroid as a live print: paper, a dark window, the picture inside.
@@ -649,19 +648,27 @@ class VennSea extends PhotoSea {
     catch(_){canvas.remove();return null;}
   }
   // Every sprite as an instanced quad. The batches (one per sheet) are rebuilt only when a print moved, arrived or
-  // changed its look; a camera move or a wobble tick only draws them again. The hit grid for the pointer comes along.
+  // changed its look or the visible set changed. A wobble tick reuses them. The hit grid comes along.
   drawSprites(W,H){
     const {zoom,tx,ty}=this.camera||{zoom:1,tx:0,ty:0},dpr=Math.min(2,devicePixelRatio||1);
-    if(this.spritesDirty||!this.glBatches){
+    const viewKey=`${W}:${H}:${zoom}:${tx}:${ty}`;
+    if(this.spritesDirty||!this.glBatches||this.spriteView!==viewKey){
+      if(this.spritesDirty||!this.spriteImages){
+        // Off-screen quads are culled, but their collection's sheets stay uploaded for the next pan back.
+        this.spriteImages=new Set();
+        for(const it of this.items.values()){const image=(this.sprites?.get(it.id)||it.preview)?.img;if(image)this.spriteImages.add(image);}
+      }
       const stats=this.densityStats={dots:0,raster:0,cards:0,gpu:0},cols=Math.ceil(W/16),rows=Math.ceil(H/16);
       if(!this.hitGrid||this.hitCols!==cols||this.hitRows!==rows)this.hitGrid=new Map();else for(const cell of this.hitGrid.values())cell.length=0;
       this.hitCols=cols;this.hitRows=rows;
       const previous=new Map((this.glBatches||[]).map(b=>[b.image,b])),batches=new Map(),S=SpriteLayer.STRIDE;let max=0;
-      for(const it of this.items.values())if(it.density||it.imagePending){
+      for(const it of this.paintOrder||this.items.values())if(it.density||it.imagePending){
         if(it.lifted||it.pileLifted)continue;
         const size=(it.size||this.densitySize||4)*(it.density?1:it.renderScale||1);
+        const half=size*zoom/2,tall=size*zoom*2/3,sx=it.x*zoom+tx,sy=it.y*zoom+ty;
+        if(sx+half<0||sx-half>W||sy+tall<0||sy-tall>H){stats.culled=(stats.culled||0)+1;continue;}
         const hit=Math.floor(it.y/16)*this.hitCols+Math.floor(it.x/16);let cell=this.hitGrid.get(hit);if(!cell){cell=[];this.hitGrid.set(hit,cell);}if(cell.length<24)cell.push(it);
-        const opacity=this.highlightIds&&!this.highlightIds.has(it.id)?.22:it.cut?.4:.9;
+        const opacity=this.highlightIds&&!this.highlightIds.has(it.id)?.22:it.cut?.4:1;
         const sprite=this.sprites?.get(it.id),preview=it.preview;
         const source=sprite&&(sprite.img instanceof HTMLCanvasElement||sprite.img.complete&&sprite.img.naturalWidth)?sprite:preview;
         const image=source?source.img:null;
@@ -671,13 +678,14 @@ class VennSea extends PhotoSea {
         d[o]=it.x;d[o+1]=it.y;d[o+2]=size;
         if(source){d[o+3]=source.x;d[o+4]=source.y;d[o+5]=source.w||16;d[o+6]=source.h||16;stats.gpu++;}
         else{d[o+3]=d[o+4]=d[o+5]=d[o+6]=0;stats.blank=(stats.blank||0)+1;}
-        d[o+7]=opacity;d[o+8]=r1;d[o+9]=r2;d[o+10]=r3;d[o+11]=source?.aspect||0;b.n++;if(size>max)max=size;
+        d[o+7]=opacity;d[o+8]=r1;d[o+9]=r2;d[o+10]=r3;d[o+11]=source?.aspect||0;
+        d[o+12]=.8-1.6*((it.order||1)/(this.items.size+1));b.n++;if(size>max)max=size;
       }
-      this.gpu.release([...previous.values()]);this.glBatches=[...batches.values()];this.spriteMax=max;this.spritesDirty=false;
+      this.gpu.release([...previous.values()]);this.glBatches=[...batches.values()];this.spriteMax=max;this.spritesDirty=false;this.spriteView=viewKey;
     }
     for(const b of this.glBatches)if(b.image)b.version=this.previewVersions?.get(b.image)||0;  // a mutable preview page is uploaded again when it changed
     const T=this.tuning||{};
-    this.gpu.draw({W,H,dpr,zoom,tx,ty,time:this.wobbleNow||performance.now(),wobble:[(T.wobblePeriod||5.6)*1000,T.wobbleDeg??1,T.wobbleSpeedSpread??.25,T.wobbleForceSpread??.35,T.wobbleDelaySpread??1]},this.glBatches);
+    this.gpu.draw({W,H,dpr,zoom,tx,ty,time:this.wobbleNow||performance.now(),wobble:[(T.wobblePeriod||5.6)*1000,T.wobbleDeg??1,T.wobbleSpeedSpread??.25,T.wobbleForceSpread??.35,T.wobbleDelaySpread??1]},this.glBatches,this.spriteImages);
     this.drawOutcomeMarks(W,H,dpr,zoom,tx,ty);
     this.densityRegion=null;this.densityDirty=false;this.wobbleLoop();
   }
@@ -799,7 +807,9 @@ class VennSea extends PhotoSea {
   }
   smallAt(x,y){
     const cx=Math.floor(x/16),cy=Math.floor(y/16),radius=8/(this.camera?.zoom||1);let near=null,distance=radius*radius;
-    for(let a=cx-1;a<=cx+1;a++)for(let b=cy-1;b<=cy+1;b++)for(const it of this.hitGrid?.get(b*this.hitCols+a)||[]){const d=(it.x-x)**2+(it.y-y)**2;if(d<distance){near=it;distance=d;}}
+    for(let a=cx-1;a<=cx+1;a++)for(let b=cy-1;b<=cy+1;b++)for(let it of this.hitGrid?.get(b*this.hitCols+a)||[]){
+      if(it.take)it=this.items.get(it.stack)||it;
+      const d=(it.x-x)**2+(it.y-y)**2;if(d<distance){near=it;distance=d;}}
     return near;
   }
   // Live cards are bounded; tiny prints use the atlas hit grid. A stack only targets another physical stack,
@@ -839,6 +849,7 @@ class VennSea extends PhotoSea {
   }
   hold(id){
     if(this.held===id)return;
+    this.settled=false;
     const before=this.items.get(this.held);if(before&&!this.drag?.members.has(before))before.el.classList.remove('pinned');
     this.held=id;
     const it=this.items.get(id);if(it)this.catchItem(it);
@@ -855,14 +866,14 @@ class VennSea extends PhotoSea {
     if(it.transform!==transform){it.el.style.transform=transform;it.transform=transform;}
     if(it.renderSize!==size){it.renderSize=size;it.el.style.width=`${size}px`;it.el.style.height=`${size*4/3}px`;}  // every print is a 3:4 card
     it.el.classList.toggle('pinned',held||!!drag);
-    it.el.style.zIndex=drag?'20':held?'19':it.focused?'8':it.dropped?'5':'';
+    const priority=drag?4:held?3:it.focused?2:it.dropped?1:0;
+    it.el.style.zIndex=String(priority*(this.items.size+1)+(it.order||1));
     if(changed&&it.imagePending){this.densityDirty=this.spritesDirty=true;this.paintSoon();}
   }
   released(items){this.releasePins=items.map(it=>({id:it.stack,x:it.x,y:it.y}));for(const it of items)it.dropped=true;this.kick();this.onRelease?.(items);}  // a print you placed lies on top; a stage may read the release
   homes(W,H) {
     const area=(this.water||[]).reduce((n,r)=>n+(r.x1-r.x0)*(r.y1-r.y0),0),count=new Set([...this.items.values()].map(it=>it.stack||it.id)).size;
     const room=Math.max(0,...(this.water||[]).map(r=>Math.min(r.x1-r.x0,r.y1-r.y0)));
-    // One physical footprint for every ambient shot. LOD changes its renderer, never its collision buffer.
     // One physical footprint for every ambient shot; then, only as far as needed, prints shrink so their contact
     // footprints fit the water inside the edge margin (a small library of big prints keeps its geography).
     // The edge margin gives way, only as far as needed, when the library is too big to fit inside it at a
@@ -896,7 +907,7 @@ class VennSea extends PhotoSea {
     });
     this.takes=[...this.items.values()].filter(it=>it.take);
     this.focusMatches();
-    this.generation=(this.generation||0)+1;this.ready=false;
+    this.generation=(this.generation||0)+1;this.ready=false;this.settled=false;
     this.worker.postMessage({kind:'set',generation:this.generation,items:this.bodies,focus:this.focusState(),tuning:this.tuning,...this.bounds()});
     this.ready=true;this.kick();
   }
@@ -906,6 +917,7 @@ class VennSea extends PhotoSea {
   labelOf(it){const actual=it.group!=null?`g${it.group}`:null;return actual&&this.lassos.has(actual)&&!String(it.group).startsWith('cup:')?actual:it.cluster||null;}
   stir(){this.kick();}
   setOutcomeFlow(flow){
+    this.settled=false;
     this.outcomeFlow=flow||null;
     this.outcomeChanges=new Set(flow?.changed||[]);this.densityDirty=this.spritesDirty=true;
     this.worker.postMessage({kind:'outcomes',flow:this.outcomeFlow});this.kick();
@@ -946,7 +958,7 @@ class VennSea extends PhotoSea {
     this.el.classList.toggle('has-focus',!!active);this.focusMatches();
     if(this.el.id==='world'){document.body.classList.toggle('sea-focus',!!active);const body=$('#main .screen-body');if(body)body.inert=!!active&&World.mode==='ambient';World.fence();}
     this.layout();
-    this.worker.postMessage({kind:'focus',focus:this.focusState()});this.kick();
+    this.settled=false;this.worker.postMessage({kind:'focus',focus:this.focusState()});this.kick();
   }
   focusMatches(){
     const f=this.focusState(),active=f.keys.length||f.cluster,ids=new Set(f.ids);
@@ -1065,13 +1077,17 @@ class VennSea extends PhotoSea {
       for(const it of items){const s=it.size||this.s;if(!it.lifted&&Math.abs(it.x-m.x)<s*.62&&Math.abs(it.y-m.y)<s*.62){held=it.stack;break;}}
     }
     this.hold(held);
+    if(this.settled&&!this.drag&&this.held==null&&!this.releasePins&&!this.pan){
+      if(this.densityDirty)this.drawDensity(this.width,this.height);
+      return;
+    }
     const pinned=[...(this.drag?.items||[])],caught=this.items.get(this.held);if(caught)pinned.push(caught);
     const message={kind:'step',time:now,held:this.held,pins:[...(this.releasePins||[]),...pinned.map(it=>({id:it.stack,x:it.x,y:it.y}))],dragged:this.drag?.moving?this.drag.items.map(it=>it.stack):[],lifted:this.moving.filter(it=>it.el.classList.contains('lifted')).map(it=>it.stack),buffer:this.buffer};this.releasePins=null;
     this.busy=true;
     this.worker.postMessage(message,this.buffer?[this.buffer]:[]);this.buffer=null;
   }
   destroy(){
-    this.densityPixels=null;this.densityTiles=null;this.previewVersions=null;
+    this.densityPixels=null;this.densityTiles=null;this.previewVersions=null;this.paintOrder=null;this.spriteImages=null;
     clearTimeout(this.wobbleTimer);clearTimeout(this.contourTimer);cancelAnimationFrame(this.paintRaf);this.gpu?.destroy();this.gpu=null;this.glBatches=null;
     clearTimeout(this.bodyTimer);cancelAnimationFrame(this.contourFadeRaf);this.contourFadeRaf=null;
     if(this.contourRaster){for(const canvas of new Set([this.contourRaster.current,this.contourRaster.spare]))if(canvas)canvas.width=canvas.height=0;this.contourRaster=null;}

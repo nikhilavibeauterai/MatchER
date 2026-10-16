@@ -33,7 +33,7 @@ const {LINK,OUT}=process.env;
         const ctx=expected.getContext('2d');
         for(const it of sea.items.values())if(it.density&&!it.lifted&&!it.pileLifted){
           const src=sea.sprites.get(it.id)||it.preview;if(!src)continue;
-          ctx.globalAlpha=sea.highlightIds&&!sea.highlightIds.has(it.id)?.22:it.cut?.4:.9;
+          ctx.globalAlpha=sea.highlightIds&&!sea.highlightIds.has(it.id)?.22:it.cut?.4:1;
           // Every sprite is the same polaroid card. A raster print is laid out in device pixels (crisp at any DPR):
           // its reference is that geometry, the paper filled natively and the cell scaled natively, unclipped, then
           // placed whole (Chromium resamples a drawImage that the canvas edge clips, or a translated one, a little
@@ -68,7 +68,7 @@ const {LINK,OUT}=process.env;
       };
       const cases=[];
       set([{id:1,cell:0,x:12,y:12},{id:2,cell:1,x:15,y:14,cut:true},{id:3,cell:2,x:16,y:12},{id:4,cell:3,x:36,y:12}], [1,2,4]);
-      cases.push(compare('Atlas cells + overlapping .9 / .4 / .22 opacity'));
+      cases.push(compare('Atlas cells + overlapping 1 / .4 / .22 opacity'));
       set([{id:1,cell:0,x:0,y:14},{id:2,cell:1,x:W,y:20},{id:3,cell:2,x:24,y:0},{id:4,cell:3,x:38,y:H},
         {id:5,cell:2,x:-20,y:20},{id:6,cell:0,x:W+20,y:30}]);
       cases.push(compare('All four clipped edges + fully outside'));

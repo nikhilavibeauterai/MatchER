@@ -22,35 +22,53 @@ const {BASE,LINK,LIB,OUT}=process.env;
       imgWobble:[card.querySelector('.paper'),img,note,...card.querySelectorAll('.pile-take')].filter(Boolean).map(el=>getComputedStyle(el).animationName).find(name=>name!=='none')||'none',
       stuck:Math.min(n.right,c.right)-Math.max(n.left,c.left)>=c.width*.08&&n.bottom>c.top&&n.top<c.bottom,
       shown:n.left>=body.left-2&&n.right<=body.right+2&&n.top>=body.top-2&&n.bottom<=body.bottom+2,clipped:note.scrollHeight>note.clientHeight+1,
+      clear:n.top>=card.querySelector('.window').getBoundingClientRect().bottom,
       enhance:card.dataset.enhance,crop:card.dataset.crop,rotate:card.dataset.rotate,filter:img.style.filter,transform:img.style.transform,imgW:img.getBoundingClientRect().width,winW:card.querySelector('.window').getBoundingClientRect().width,
       sheet:{crops:[...document.querySelectorAll('.edit-sheet [data-crop]')].filter(b=>!b.hidden).map(b=>[b.dataset.crop,b.getAttribute('aria-pressed')]),knobs:document.querySelectorAll('.edit-sheet [data-knob]').length,deg:document.querySelector('.edit-sheet .sheet-deg')?.textContent},
       lifted:[...World.lifted],flying:!!document.querySelector('.world-fly')};
   });
   const first=await look();
   assert.equal(first.cards,1,'One photo at a time');
-  assert(first.card.h>first.body.height*.8,`The card fills the stage ${JSON.stringify(first.card)} in ${JSON.stringify(first.body)}`);
+  assert(first.card.h>first.body.height*.6&&first.card.h+first.note.h>first.body.height*.9,`The card and hanging sticky fill the stage ${JSON.stringify(first.card)} in ${JSON.stringify(first.body)}`);
   assert(Math.abs(first.note.w-first.note.h)<1.5&&first.note.w>first.card.w*.3,`A square sticky note ${JSON.stringify(first.note)}`);
   assert(/#1\b/.test(first.text)&&/sure/.test(first.text)&&/duel/.test(first.text)&&/appeal/.test(first.text),`The sorter's knowledge is on the note: ${first.text}`);
   assert(/\.(jpe?g|png|webp|gif|tiff?|heic|nef|dng)/i.test(first.chin),`The file is written on the chin: ${first.chin}`);
   assert(/#1 of \d+/.test(first.pos),first.pos);
   assert.equal(first.wobble,'none','The big card holds still');assert.equal(first.imgWobble,'none','Nothing on it wobbles either');
   assert(first.stuck&&first.shown,`The note is stuck to the card and fully on screen ${JSON.stringify(first.note)}`);
+  assert(first.clear,'The default sticky hangs clear of the photo window');
   assert(!first.clipped,`The note holds all its writing: ${first.text}`);
-  assert.equal(first.sheet.knobs,5,'Five knobs on the sheet');assert(first.sheet.crops.length>=3,'Crop modes on the sheet');
+  assert.equal(first.sheet.knobs,0,'The notes sheet stays tucked away until requested');
   assert(!first.lifted.includes(first.photo)&&!first.flying,'The card does not rise out of the sea');
-  const overlaps=await page.evaluate(()=>{
-    const sea=World.sea,it=[...sea.items.values()].find(it=>!it.take&&it.el.isConnected&&!it.el.classList.contains('lifted'));
-    if(!it)return [];
-    const old={x:it.x,y:it.y,size:it.size},base=sea.el.getBoundingClientRect(),results=[];
-    for(const selector of ['.edit-sheet input','.board-arrow[data-step="1"]']){
+  const boardNote=await page.locator('.board-card .photo-sticky').innerText();
+  await page.evaluate(id=>openViewer(id),first.photo);await page.waitForSelector('.viewer .photo-facts');
+  assert.equal((await page.locator('.viewer .photo-sticky').innerText()).replace(/\s+/g,' '),boardNote.replace(/\s+/g,' '),'Opening the same photo keeps its full sticky content');
+  await page.screenshot({path:OUT+'/LB-viewer-sticky.png'});await page.click('.viewer #close-modal');
+  const openNotes=async()=>{await page.locator('.board-card .photo-notes-tab').click();await page.waitForSelector('.photo-note-sheet:not(.notes-opening) [data-knob]');};
+  const closeNotes=async()=>{await page.keyboard.press('Escape');await page.waitForSelector('.photo-note-sheet',{state:'detached'});await page.locator('.board-card .photo-notes-tab').blur();};
+  await openNotes();const withSheet=await look();assert.equal(withSheet.sheet.knobs,5,'Five knobs on the sheet');assert(withSheet.sheet.crops.length>=3,'Crop modes on the sheet');
+  const longTag='A long tag following this exact take';
+  await page.fill('.notes-new-tag input',longTag);await page.click('.notes-new-tag button');
+  await page.waitForFunction(label=>document.querySelector('.board-card .photo-sticky').textContent.includes(label),longTag);
+  assert(await page.locator('.board-card .photo-sticky').evaluate(note=>note.scrollWidth<=note.clientWidth+1&&note.scrollHeight<=note.clientHeight+1),'Long tag names fit the shared sticky');
+  await page.locator('.notes-tags [data-remove-tag]').filter({hasText:longTag}).click();
+  await page.waitForFunction(label=>!document.querySelector('.board-card .photo-sticky').textContent.includes(label),longTag);
+  await page.waitForFunction(()=>!PhotoNotes.busy);
+  const overlaps=[];
+  for(const selector of ['.edit-sheet input','.photo-note-sheet .notes-close']){
+    await page.locator(selector).first().scrollIntoViewIfNeeded();
+    overlaps.push(await page.evaluate(selector=>{
+      const sea=World.sea,it=[...sea.items.values()].find(it=>!it.take&&it.el.isConnected&&!it.el.classList.contains('lifted'));
+      const old={x:it.x,y:it.y,size:it.size},base=sea.el.getBoundingClientRect();
       const target=document.querySelector(selector),r=target.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;
       [it.x,it.y]=sea.toWorld(x-base.left,y-base.top);it.size=120/sea.camera.zoom;sea.paintItem(it,true);
-      const hit=document.elementFromPoint(x,y);results.push({selector,clear:target===hit||target.contains(hit)});
-    }
-    Object.assign(it,old);sea.paintItem(it,true);return results;
-  });
+      const hit=document.elementFromPoint(x,y),result={selector,clear:target===hit||target.contains(hit)};
+      Object.assign(it,old);sea.paintItem(it,true);return result;
+    },selector));
+  }
   assert(overlaps.length===2&&overlaps.every(x=>x.clear),`Sea prints cannot intercept finishing or rank controls: ${JSON.stringify(overlaps)}`);
   await page.screenshot({path:OUT+'/LB-first.png'});
+  await closeNotes();
   // Walking the ranks: a slide, then one card; the note is stuck in different places.
   const spots=[JSON.stringify([Math.round(first.note.left),Math.round(first.note.top)])],photos=[first.photo];
   for(let k=0;k<4;k++){
@@ -74,11 +92,11 @@ const {BASE,LINK,LIB,OUT}=process.env;
   assert.equal((await look()).filter,'','F switches this shot\'s enhancement off');
   await page.keyboard.press('f');await page.waitForFunction(()=>document.querySelector('.board-card')?.dataset.enhance==='on');await page.waitForTimeout(200);
   await page.keyboard.press('r');await page.waitForFunction(()=>document.querySelector('.board-card')?.dataset.rotate==='90');await page.waitForTimeout(200);
-  const turned=await look();assert(/rotate\(90deg\)/.test(turned.transform),`R turns the picture a quarter: ${turned.transform}`);assert.equal(turned.sheet.deg,'90°');
+  await openNotes();const turned=await look();assert(/rotate\(90deg\)/.test(turned.transform),`R turns the picture a quarter: ${turned.transform}`);assert.equal(turned.sheet.deg,'90°');await closeNotes();
   const modes=[];
   for(let k=0;k<5;k++){await page.keyboard.press('c');await page.waitForTimeout(450);modes.push((await look()).crop||'off');}
   assert(modes.includes('height')&&modes.includes('width')&&modes.at(-1)==='off',`C walks the crop modes: ${modes.join(' → ')}`);
-  await page.click('.edit-sheet [data-crop="height"]');await page.waitForFunction(()=>document.querySelector('.board-card')?.dataset.crop==='height');await page.waitForTimeout(300);
+  await openNotes();await page.click('.edit-sheet [data-crop="height"]');await page.waitForFunction(()=>document.querySelector('.board-card')?.dataset.crop==='height');await page.waitForTimeout(300);
   const filled=await look();assert(filled.sheet.crops.find(([m])=>m==='height')[1]==='true','The sheet marks the mode');
   // A knob: moving it changes the live filter and saves a look.
   const knob=page.locator('.edit-sheet [data-knob="colour"]');await knob.focus();
@@ -87,6 +105,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
   const saved=await page.evaluate(async()=>(await api('/api/shortlist')).items[0].edits);
   assert.equal(saved.rotate,90);assert.equal(saved.crop,'height');assert.equal(saved.look.colour,0);
   assert.equal(await page.evaluate(()=>document.querySelector('#af-defs filter[id^="af-k"]')?.querySelector('feColorMatrix[type=saturate]')?.getAttribute('values')),'0.0000','The live filter follows the knob');
+  await closeNotes();
   // The note can be dragged; where it lands is kept for this shot.
   const head=await page.locator('.board-card .note-head').boundingBox();
   await page.mouse.move(head.x+head.width/2,head.y+head.height/2);await page.mouse.down();
@@ -122,14 +141,14 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.click('.toolbelt [data-tool="hand"]');
   await page.screenshot({path:OUT+'/LB-annotated.png'});
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(800);
-  const phone=await page.evaluate(()=>({card:document.querySelector('.board-card').getBoundingClientRect().toJSON(),sheet:document.querySelector('.edit-sheet').getBoundingClientRect().toJSON(),
+  const phone=await page.evaluate(()=>({card:document.querySelector('.board-card').getBoundingClientRect().toJSON(),sheet:!!document.querySelector('.photo-note-sheet'),
     arrows:[...document.querySelectorAll('.board-arrow')].map(e=>e.getBoundingClientRect().toJSON()),overflow:document.documentElement.scrollWidth>innerWidth}));
   assert(!phone.overflow,'The phone finishing view fits the page');
   assert(phone.card.height>250,`The phone gives the shot usable space: ${JSON.stringify(phone)}`);
   assert(Math.abs((phone.arrows[0].top+phone.arrows[0].height/2)-(phone.arrows[1].top+phone.arrows[1].height/2))<2,'Both rank arrows sit beside the card');
   await page.screenshot({path:OUT+'/LB-phone.png'});
-  await page.locator('.sheet-fold > summary').focus();await page.keyboard.press('Enter');await page.waitForSelector('.sheet-fold[open] [data-edit=enhance]');
-  assert.equal(await page.locator('#modal[open] .exported').count(),0,'Enter on the finishing disclosure opens it without exporting');
+  await page.locator('.board-card .photo-notes-tab').focus();await page.keyboard.press('Enter');await page.waitForSelector('.photo-note-sheet [data-edit=enhance]');
+  assert.equal(await page.locator('#modal[open] .exported').count(),0,'Enter on the notes corner opens it without exporting');
   await page.screenshot({path:OUT+'/LB-phone-finishing.png'});
   assert.deepEqual(problems,[]);console.log(JSON.stringify({first:{...first,text:first.text.slice(0,120)},photos,spots,modes,saved,phone,overlaps}));await browser.close();
 })().catch(e=>{console.error('FAILED:',e.stack);process.exit(1);});

@@ -710,9 +710,9 @@ class Draw:
         return {**value, "suggestions": [{**sg, "shots": [r for r in sg["shots"] if r in open_reps]}
                                          for sg in value["suggestions"] if any(r in open_reps for r in sg["shots"])]}
 
-    def set_tags(self, photos, on, off) -> dict:
-        """Add and take away tags on these shots (every take of each). One undo step."""
-        pids = self._tag_photos(photos)
+    def set_tags(self, photos, on, off, exact=False) -> dict:
+        """Add and take away tags on these shots (every take unless exact). One undo step."""
+        pids = self._tag_photos(photos, exact)
         meta = tags.rows(self.s.store)
         on = [t for t in dict.fromkeys(on) if t in meta]
         off = [t for t in dict.fromkeys(off) if t in meta and t not in on]
@@ -724,7 +724,7 @@ class Draw:
         self.changed()
         return {"on": on, "off": off, "shots": len(set(photos))}
 
-    def _tag_photos(self, photos) -> list[int]:
+    def _tag_photos(self, photos, exact=False) -> list[int]:
         out, ids = set(), list(set(map(int, photos)))
         for k in range(0,len(ids),500):
             chunk=ids[k:k+500]
@@ -733,7 +733,7 @@ class Draw:
                 abort(404, "Unknown photo.")
         for pid in ids:
             g = self.s.groups.get(self.s.photo_group.get(pid))
-            out.update(g["members"] if g else [pid])
+            out.update(g["members"] if g and not exact else [pid])
         return sorted(out)
 
     def tag_meta(self, key: str, label: str | None = None, emoji: str | None = None, hidden=None, pinned=None) -> dict:
@@ -768,11 +768,13 @@ class Draw:
         self.changed()
         return dict(s.store.one("SELECT * FROM tags WHERE key=?", (key,)))
 
-    def tag_new(self, label: str, emoji: str | None, photos) -> dict:
+    def tag_new(self, label: str, emoji: str | None, photos, exact=False) -> dict:
         """A tag of your own, on these shots."""
         if not label or not label.strip():
             abort(400, "Give the tag a name.")
-        pids = self._tag_photos(photos)
+        pids = self._tag_photos(photos, exact)
+        if not pids:
+            abort(400, "Choose at least one photo for the new tag.")
         before = tags.rows(self.s.store)
         key = tags.new_tag(self.s.store, label, emoji)
         undo = tags.edit(self.s.store, pids, [key], [])

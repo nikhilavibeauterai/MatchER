@@ -20,7 +20,7 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=70000;
   await page.route('**/api/groups?*',r=>{
     const q=new URL(r.request().url()).searchParams;
     if(q.get('view')==='suggest')return r.fulfill({json:{suggestions:pairs}});
-    if(q.get('view')!=='stacks')return r.continue();
+    if(!['stacks','all'].includes(q.get('view')))return r.continue();
     const page=Number(q.get('page')||0),per=Number(q.get('per')||120);
     return r.fulfill({json:{shots:rows.slice(page*per,(page+1)*per),boxes:{},undo:history.length?'keep':null,
       total:rows.length,page,pages:Math.ceil(rows.length/per)}});
@@ -67,7 +67,7 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=70000;
   await page.setViewportSize({width:1200,height:900});
   await page.locator('.stacker .screen-body').evaluate(e=>e.scrollTop=e.scrollHeight);
   await page.waitForFunction(()=>document.querySelectorAll('.stacker [data-drag-shot]').length===160);
-  const last=rows.at(-1).rep;await page.click(`[data-expand="${last}"]`);await page.waitForSelector(`.tile.open[data-drag-shot="${last}"]`);
+  const last=rows.at(-1).rep;await page.locator(`[data-drag-shot="${last}"]`).scrollIntoViewIfNeeded();await page.click(`[data-expand="${last}"]`);await page.waitForSelector(`.tile.open[data-drag-shot="${last}"]`);
   await page.locator('.tile.open .ftile').last().focus();await page.waitForTimeout(250);
   await page.evaluate(()=>{
     window.stackTrace=[];window.stackGeometry=label=>{const body=document.querySelector('.stacker .screen-body'),tile=body.querySelector('.tile.open'),b=body.getBoundingClientRect(),t=tile.getBoundingClientRect();return {label,scroll:body.scrollTop,max:body.scrollHeight-body.clientHeight,body:{top:b.top,height:b.height},tile:{top:t.top,height:t.height},focus:document.activeElement?.outerHTML.slice(0,150)};};

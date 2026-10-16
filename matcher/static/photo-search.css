@@ -1,0 +1,19 @@
+.photo-search { position:fixed;left:70px;top:12px;z-index:46;width:clamp(130px,16vw,260px);display:flex;align-items:center;gap:6px;padding:2px 8px;background:var(--paper);border-bottom:1px solid var(--pencil);color:var(--ink); }
+.photo-search[hidden],.photo-search-results[hidden] { display:none; }
+.photo-search > span { font:32px/1 var(--hand); }
+.photo-search input { min-width:0;width:100%;font-size:18px!important;border:0!important;box-shadow:none!important; }
+.photo-search-results { position:fixed;left:70px;top:62px;z-index:80;width:min(880px,calc(100vw - 90px));max-height:calc(100dvh - 85px);overflow:auto;overscroll-behavior:contain;padding:12px 16px; }
+.photo-search-results p { margin:0 0 10px; }
+.search-photos { display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:14px; }
+.search-photos > button { position:relative;min-width:0;display:grid;align-content:start;gap:5px;padding:0;background:none;border:0;color:var(--ink);cursor:pointer;text-align:left; }
+.search-photos .polaroid,.search-photos img { display:block;width:100%; }
+.search-photos .polaroid { border-radius:var(--card-round);box-shadow:0 1px 1px #0005,0 3px 8px #0003; }
+.search-photos > button > span:not(.polaroid),.search-photos small { overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:16px/1.2 var(--hand); }
+/* Search results use the shared polaroid even though the panel sits outside the current stage. */
+.search-photos img { aspect-ratio:3 / 4;height:auto;object-fit:contain;object-position:center top;padding:5.5% 5.5% 17%;background:var(--paper);border-radius:var(--card-round);box-sizing:border-box; }
+@media(max-width:900px) {
+  .photo-search { left:62px;top:10px;width:115px;padding:1px 4px; }
+  .photo-search input { font-size:15px!important; }
+  .photo-search-results { top:calc(var(--hud-height,145px) + 4px);left:12px;width:calc(100vw - 24px);max-height:calc(100dvh - var(--hud-height,145px) - 20px);box-sizing:border-box; }
+}
+body.sea-deep .photo-search { visibility:hidden; }

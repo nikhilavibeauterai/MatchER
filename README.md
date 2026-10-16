@@ -25,7 +25,10 @@ favourites into a tournament. You make quick, small choices; it learns what you 
   animals, food and more into cups of their own.
 - **Find your next profile photo.** Profile mode recognizes you and helps compare expressions, light and framing.
 - **Make the collection yours.** Drag photos together, edit tags, draw on prints and leave sticky notes.
+  Pull out a focused photo's notes corner to write a title, inspect its details or fine-tune its look.
   Undo is there when you change your mind.
+- **Find a photo with words.** Search for “red jacket”, a tag, a filename or your own writing from any stage.
+  Visual search runs locally using the understanding already saved during analysis.
 - **Finish with something useful.** Crown the best take in each stack, play groups and knockouts, then export
   your winners with optional crop, rotation and enhancement. Your original files are never overwritten.
 
@@ -56,6 +59,9 @@ Keep what catches your eye, set aside what doesn't, and teach the filter with Lo
 from each stack. Give the contenders a home, play their groups and follow the bracket to your winners.
 There are no required voting marathons: move on when you're ready, skip a hard choice, and return later.
 Every folder has its own saved progress, trophies and leaderboard.
+
+Stacks shows loose photos alongside piles of takes, so you can drag either onto another to combine them.
+Switch on **Stacks only** when you want to concentrate on existing piles.
 
 | A map you can touch | A shortlist you can finish |
 |---|---|

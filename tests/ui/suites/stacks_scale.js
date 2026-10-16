@@ -24,7 +24,7 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=80000,COUNT=720,TAKES=6;
   await page.route('**/api/groups?*',r=>{
     const q=new URL(r.request().url()).searchParams;
     if(q.get('view')==='suggest')return r.fulfill({json:{suggestions:[]}});
-    if(q.get('view')!=='stacks')return r.continue();
+    if(!['stacks','all'].includes(q.get('view')))return r.continue();
     const page=Number(q.get('page')||0),per=Number(q.get('per')||120);requests.push({page,per});
     return r.fulfill({json:{shots:rows.slice(page*per,(page+1)*per),boxes:{},undo:history.length?'merge':null,
       total:rows.length,page,pages:Math.ceil(rows.length/per)}});
@@ -55,8 +55,8 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=80000,COUNT=720,TAKES=6;
   const before=await page.evaluate(()=>{
     const grid=document.querySelector('.stacker .lookgrid');window.originalGrid=grid;
     window.untouchedCard=grid.querySelector('[data-drag-shot]');window.stackPerf={};
-    window.gridChanges={added:0,removed:0};window.gridObserver=new MutationObserver(records=>{
-      for(const r of records){gridChanges.added+=r.addedNodes.length;gridChanges.removed+=r.removedNodes.length;}
+    window.gridChanges={added:0,removed:0,removedCards:0};window.gridObserver=new MutationObserver(records=>{
+      for(const r of records){gridChanges.added+=r.addedNodes.length;gridChanges.removed+=r.removedNodes.length;for(const node of r.removedNodes)gridChanges.removedCards+=(node.matches?.('[data-drag-shot]')?1:0)+(node.querySelectorAll?.('[data-drag-shot]').length||0);}
     });gridObserver.observe(grid,{childList:true,subtree:true});
     document.addEventListener('drop',()=>{window.stackDropAt=performance.now();},{capture:true});
     new MutationObserver(()=>{window.stackPaintAt=performance.now();}).observe(document.querySelector('[data-stack-total]'),{childList:true,characterData:true,subtree:true});
@@ -73,6 +73,7 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=80000,COUNT=720,TAKES=6;
   if(!result.sameGrid||!result.sameCard)console.error(JSON.stringify({before,result}));
   assert.equal(merges.length,1,'One overview drag makes one merge');
   assert(before.flightCandidates<60,`Offscreen prints must stay out of the flight animation: ${before.flightCandidates}`);
+  assert(before.images<600,`Only nearby cards carry pictures: ${before.images} images for ${before.cards} slots`);
   assert(result.sameGrid&&result.sameCard,'A merge must preserve the grid and untouched photo cards');
   assert.equal(result.cards,COUNT-1);
   assert(result.changes.removed<60,`One merge rebuilt too much of the overview: ${JSON.stringify(result.changes)}`);
@@ -89,6 +90,26 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=80000,COUNT=720,TAKES=6;
   assert(await page.evaluate(()=>untouchedCard.isConnected),'A cross-family merge leaves other cards alive');
   await page.keyboard.press('z');await page.waitForFunction(n=>document.querySelectorAll('.stacker [data-drag-shot]').length===n,COUNT);
   assert.equal(merges.length,2);
+  // Recycling while scrolling is presentation only: it must never launch copies over the stationary grid or
+  // hide a newly visible picture while an old flight catches up with its moving destination.
+  await page.waitForFunction(()=>!World.activeFlights?.size&&!World.arrivals?.size);
+  const scrolling=await page.evaluate(async()=>{
+    const body=document.querySelector('.stacker .screen-body');let flights=0,hidden=0,blank=0;
+    const observer=new MutationObserver(records=>{for(const r of records)for(const node of r.addedNodes)flights+=node.matches?.('.world-fly')?1:0;});
+    observer.observe(document.body,{childList:true});
+    for(const fraction of [0,.5,1,.25,.8,0,1,0]){
+      body.scrollTop=(body.scrollHeight-body.clientHeight)*fraction;
+      await new Promise(r=>setTimeout(r,100));
+      const edge=body.getBoundingClientRect();
+      for(const tile of body.querySelectorAll('[data-drag-shot]')){
+        const rect=tile.getBoundingClientRect();if(rect.bottom<=edge.top||rect.top>=edge.bottom)continue;
+        const image=tile.querySelector('.pile-cover');if(!image)blank++;else if(image.style.opacity==='0'||image.worldFlight)hidden++;
+      }
+    }
+    observer.disconnect();return {flights,hidden,blank};
+  });
+  assert.deepEqual(scrolling,{flights:0,hidden:0,blank:0},`Scrolling keeps every visible card present: ${JSON.stringify(scrolling)}`);
+  await page.screenshot({path:OUT+'/stacks-scale-scrolled.png'});
   // A big family can span several fetched pages. Paging must not create boxes that the first edit then merges.
   rows=rows.map(row=>({...row,family:0}));
   await page.goto(BASE+'/#home');await page.waitForSelector('.journey');await page.goto(BASE+'/#stacks');await page.waitForSelector('.stacker .tile');
@@ -99,12 +120,12 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=80000,COUNT=720,TAKES=6;
   assert.equal(await page.locator('.stacker .lookgrid > .fam-tiles').count(),1,'Paging retains one continuous family box');
   await page.evaluate(()=>{
     originalGrid=document.querySelector('.stacker .lookgrid');untouchedCard=originalGrid.querySelector('[data-drag-shot]');
-    gridObserver.disconnect();gridChanges={added:0,removed:0};gridObserver.observe(originalGrid,{childList:true,subtree:true});
+    gridObserver.disconnect();gridChanges={added:0,removed:0,removedCards:0};gridObserver.observe(originalGrid,{childList:true,subtree:true});
   });
   await page.locator(`[data-drag-shot="${rows.at(-2).rep}"]`).dragTo(page.locator(`[data-drag-shot="${rows.at(-1).rep}"]`));
   await page.waitForFunction(n=>Number(document.querySelector('[data-stack-total]')?.textContent.replaceAll(',',''))===n,COUNT-1);
   const familyChanges=await page.evaluate(()=>({...gridChanges,sameCard:untouchedCard.isConnected}));
-  assert(familyChanges.sameCard&&familyChanges.removed<60,`Merging within a 720-stack family stays local: ${JSON.stringify(familyChanges)}`);
+  assert(familyChanges.sameCard&&familyChanges.removedCards<8,`Merging within a 720-stack family keeps other card slots: ${JSON.stringify(familyChanges)}`);
   await page.keyboard.press('z');await page.waitForFunction(n=>document.querySelectorAll('.stacker [data-drag-shot]').length===n,COUNT);
   assert.deepEqual(problems,[]);console.log(JSON.stringify({before,result,problems}));await browser.close();
 })().catch(e=>{console.error('FAILED:',e.stack);process.exit(1);});

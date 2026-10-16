@@ -171,15 +171,16 @@ def test_tags_merge_delete_and_canonical_correction_undo(client):
     assert first not in tags.effective(s.store)[a]
     post(client, "/api/draw/undo")
     assert tags.effective(s.store) == before
-    empty = post(client, "/api/tags/new", {"label": "Empty", "photos": []}).get_json()["key"]
-    assert any(t["key"] == empty and t["count"] == 0 for t in client.get("/api/tags?all=1").get_json()["tags"])
+    assert post(client, "/api/tags/new", {"label": "Empty", "photos": []}).status_code == 400
+    assert 'u:empty' not in tags.rows(s.store)
+    assert all(t['count']>0 for t in client.get('/api/tags?all=1').get_json()['tags'])
     # A bad selection must not leave a new tag behind.
     assert post(client, "/api/tags/new", {"label": "Invalid", "photos": [999999]}).status_code == 404
     assert "u:invalid" not in tags.rows(s.store)
 
 
 def test_tag_check_is_finite_and_remembers_explicit_calls(client):
-    key = post(client, "/api/tags/new", {"label": "Sunny", "photos": []}).get_json()["key"]
+    key = post(client, "/api/tags/new", {"label": "Sunny", "photos": [single(client,0)]}).get_json()["key"]
     deck = client.get(f"/api/tags/deck?key={key}").get_json()["cards"]
     assert 0 < len(deck) <= 30
     photo = deck[0]["photo"]

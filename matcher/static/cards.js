@@ -42,6 +42,8 @@ const Cards = {
     img.dataset.card = "1";
     const key = (img.getAttribute("src") || "").replace(/\?.*/, "");
     this.phase(img, key);
+    const focus=img.parentElement;
+    if(focus?.matches('.print:not(.world-fly)')&&!img.matches('.under,.world-fly'))this.focus(focus);
     // A card with notes stuck on it wobbles as a group: the group takes its own photo's phase (app.css animates it).
     const group = (img.classList.contains("pile-cover") || img.closest(".window")) && img.closest(".tile-pile");
     if (group) this.phase(group, group.dataset.photo || key);
@@ -50,6 +52,17 @@ const Cards = {
     span.className = "polaroid";
     img.replaceWith(span);
     span.append(img);
+  },
+  // Every focused picture gets the same paper and clipped window, including the large Stacks viewer, Tag check,
+  // the inspector and the sorting games. Their marks and sticky notes stay on the outer card.
+  focus(host) {
+    if(host.querySelector(':scope > .paper'))return;
+    const img=host.querySelector(':scope > img:not(.under)');if(!img)return;
+    const paper=document.createElement('div'),win=document.createElement('div');paper.className='paper';win.className='window';
+    img.replaceWith(paper);paper.append(win);win.append(img);host.classList.add('framed-photo');
+    if(!host.matches('.print,.ps-item'))host.style.aspectRatio='3 / 4';
+    img.style.cssText='position:absolute;width:100%;height:100%;object-fit:contain;object-position:center top';
+    this.phase(paper,host.dataset.photo||img.getAttribute('src'));
   },
 };
 if (typeof document !== "undefined" && document.body) { Cards.init(); if (typeof seaTuningDefaults === "function") Cards.tune(seaTuningDefaults()); }

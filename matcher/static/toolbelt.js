@@ -62,18 +62,18 @@ const Toolbelt = {
     // A browser still sends a click after a pointer gesture. Catch it before a pane can interpret it as a vote,
     // and before a sea print can interpret a double-click or a native drag as the hand tool.
     for(const type of ['click','dblclick','dragstart'])document.addEventListener(type,e=>{
-      const note=e.target.closest?.('.user-note');
+      const note=e.target.closest?.('.user-note,.photo-sticky');
       const host=e.target.closest?.(`${this.HOSTS}, .side, .swipe-card, .shot-select`);
       const control=e.target.closest?.('button,a,input,select,textarea');
       const consumed=this.clickUntil>performance.now()&&e.pointerId===this.clickPointer;
       const armed=host&&(host.dataset.belt||host.querySelector('[data-belt]'));
-      if(consumed||note||this.tool!=='hand'&&armed&&(!control||!host.contains(control))){
+      if(consumed||note?.classList.contains('user-note')||note&&!control||this.tool!=='hand'&&armed&&(!control||!host.contains(control))){
         if(!note||!control)e.preventDefault();e.stopImmediatePropagation();
       }
     },true);
     document.addEventListener('pointerdown',e=>{
       this.clickUntil=0;
-      if(this.tool==='hand'||e.button||e.target.closest?.('.user-note'))return;
+      if(this.tool==='hand'||e.button||e.target.closest?.('.user-note,.photo-notes-paper')||this.tool==='note'&&e.target.closest?.('.photo-sticky'))return;
       const print=e.target.closest?.(this.HOSTS);
       if(!print)return;this.arm(print);
       const control=e.target.closest?.('button,a,input,select,textarea');if(control&&print.contains(control))return;
@@ -91,7 +91,7 @@ const Toolbelt = {
     const pending = new Set();
     this.observer = new MutationObserver(records => {
       for(const record of records){
-        if(record.target.closest?.('svg.marks, .user-note, #toolbelt, #af-defs, #topbar, #journey-dock, #history-hud'))continue;
+        if(record.target.closest?.('svg.marks, .user-note, .photo-notes-paper, .photo-sticky, #toolbelt, #af-defs, #topbar, #journey-dock, #history-hud'))continue;
         const host=record.target.closest?.(this.HOSTS);
         if(host)pending.add(host);
         for(const node of record.addedNodes)if(node.nodeType===1)pending.add(node);
@@ -301,11 +301,11 @@ const Toolbelt = {
     note.addEventListener("pointerdown", (e) => {
       if (e.button || e.target.closest("button, a, input, textarea") || !["hand", "note"].includes(this.tool)) return;
       e.preventDefault(); e.stopPropagation();
-      const unit = print.clientWidth / 100, x0 = Number(note.style.getPropertyValue("--note-x")) || 0, y0 = Number(note.style.getPropertyValue("--note-y")) || 0, start = [e.clientX, e.clientY];
+      const unit = print.getBoundingClientRect().width / 100, x0 = Number(note.style.getPropertyValue("--note-x")) || 0, y0 = Number(note.style.getPropertyValue("--note-y")) || 0, start = [e.clientX, e.clientY];
       let pos = [x0, y0];
       note.setPointerCapture(e.pointerId); note.classList.add("dragging");
       const move = (ev) => {
-        const r = print.getBoundingClientRect(), w = note.offsetWidth, h = note.offsetHeight;
+        const r = print.getBoundingClientRect(), n = note.getBoundingClientRect(), w = n.width, h = n.height;
         const leftPx = Math.max(4, Math.min(innerWidth - w - 4, r.left + x0 * unit + ev.clientX - start[0])), topPx = Math.max(4, Math.min(innerHeight - h - 4, r.top + y0 * unit + ev.clientY - start[1]));
         pos = [(leftPx - r.left) / unit, (topPx - r.top) / unit];
         note.style.setProperty("--note-x", pos[0].toFixed(1)); note.style.setProperty("--note-y", pos[1].toFixed(1));

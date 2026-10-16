@@ -144,7 +144,7 @@ class SigLIP:
 
     SIZE = 224
 
-    def __init__(self, threads: int = 6, text: bool = True):
+    def __init__(self, threads: int = 6, text: bool = True, vision: bool = True):
         import onnxruntime as ort
 
         so = ort.SessionOptions()
@@ -152,7 +152,7 @@ class SigLIP:
         so.inter_op_num_threads = 1
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         prov = ["CPUExecutionProvider"]
-        self.vision = ort.InferenceSession(str(MODELS["siglip_vision"].path), so, providers=prov)
+        self.vision = ort.InferenceSession(str(MODELS["siglip_vision"].path), so, providers=prov) if vision else None
         self.text = ort.InferenceSession(str(MODELS["siglip_text"].path), so, providers=prov) if text else None
         self._tok = None
 

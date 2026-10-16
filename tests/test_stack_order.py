@@ -89,3 +89,29 @@ def test_explicit_reorder_rebuilds_the_view_without_database_edits(client, monke
     after = shots(client, reorder=1)["shots"]
     assert [frozenset(x["members"]) for x in after] == [frozenset(x["members"]) for x in reversed(before)]
     assert session.store.conn().total_changes == writes
+
+
+def test_date_index_jumps_to_a_page_and_keeps_undated_shots_accessible(client):
+    session = client.matcher.session
+    before = shots(client, order="time")["shots"]
+    for i, shot in enumerate(before):
+        day = f"2025-{i+1:02d}-15" if i < len(before)-1 else None
+        for pid in shot["members"]:
+            session.store.conn().execute("UPDATE photos SET taken=? WHERE id=?", (day, pid))
+    session.store.conn().commit()
+    session.groups_cache = {}
+    index = shots(client, order="time", per=2, dates=1)
+    assert len(index["shots"]) == 2 and index["pages"] == 4
+    assert sum(d["count"] for d in index["dates"]) == index["total"]
+    assert index["dates"][-1]["date"] == "undated"
+    target = index["dates"][-2]
+    writes = session.store.conn().total_changes
+    jump = shots(client, order="time", per=2, date=target["date"])
+    assert jump["page"] == target["page"] > 0
+    assert any(s["rep"] == target["photo"] for s in jump["shots"])
+    assert jump["jump"] == target
+    assert shots(client, order="time", per=2, at=target["photo"])["page"] == target["page"]
+    undated = shots(client, order="time", per=2, date="undated")
+    assert any(s["taken"] is None for s in undated["shots"])
+    assert session.store.conn().total_changes == writes
+    assert client.get("/api/groups?order=time&date=nonsense").status_code == 400

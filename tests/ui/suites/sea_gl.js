@@ -18,7 +18,10 @@ const {LINK,LIB,OUT}=process.env;
     const sea=World.sea,photos=[...World.photos.values()];
     const items=Array.from({length:6000},(_,i)=>{const p=photos[i%photos.length];return {id:100000+i,photo:p.id,tags:p.tags||[],n:1,visual:{colorfulness:(i*7%100)/99,brightness:(i*13%100)/99}};});
     sea.setVenn([],items);
-    for(const it of items){const sp=sea.sprites.get(it.photo);if(sp)sea.sprites.set(it.id,sp);}
+    const source=sea.sprites.get(photos[0].id).img,sheets=Array.from({length:6},()=>{
+      const c=document.createElement('canvas');c.width=source.naturalWidth||source.width;c.height=source.naturalHeight||source.height;c.getContext('2d').drawImage(source,0,0);return c;
+    });
+    for(const [i,it]of items.entries()){const sp=sea.sprites.get(it.photo);if(sp)sea.sprites.set(it.id,{...sp,img:sheets[Math.floor(i/1000)]});}
     await new Promise(r=>setTimeout(r,7000));
     const settleBy=performance.now()+30000;
     while(!sea.settled&&performance.now()<settleBy)await new Promise(r=>setTimeout(r,100));
@@ -46,7 +49,8 @@ const {LINK,LIB,OUT}=process.env;
   await page.evaluate(()=>{const s=World.sea;clearInterval(World.watch);s.worker.terminate();s.busy=false;s.kick=()=>{};cancelAnimationFrame(s.raf);s.raf=0;});
   // A fast wheel into the corner print, as a hand scrolls: quick, anchored, only a few originals fetched.
   await page.evaluate(()=>{
-    const s=World.sea;s.__originals=[];
+    const s=World.sea;s.__originals=[];s.__uploads=0;
+    const gl=s.gpu.gl,upload=gl.texImage2D.bind(gl);gl.texImage2D=(...args)=>{s.__uploads++;return upload(...args);};
     s.__originalWatch=new MutationObserver(records=>{
       for(const record of records){
         const img=record.target;if(!(img instanceof HTMLImageElement)||!img.src.includes('m=full'))continue;
@@ -69,7 +73,7 @@ const {LINK,LIB,OUT}=process.env;
     const names=performance.getEntriesByType('resource').map(e=>e.name).filter(n=>/\/img\/[tp]\//.test(n)),full=names.filter(n=>/m=full/.test(n));
     s.__originalWatch.disconnect();
     return {zoom:+s.camera.zoom.toFixed(1),drift:+Math.hypot(w[0]-s.__anchor[0],w[1]-s.__anchor[1]).toFixed(2),deep:!!s.deep,live:s.moving.length,fetched:names.length,full:full.length,originals:s.__originals,
-      cornerLive:!it.density,cornerSrc:it.el.querySelector('.pile-cover')?.getAttribute('src')||'',heapMB:Math.round((performance.memory?.usedJSHeapSize||0)/1048576),hidden:getComputedStyle(document.querySelector('#journey-dock')||document.body).visibility};},[corner.x,corner.y,corner.id]);
+      cornerLive:!it.density,cornerSrc:it.el.querySelector('.pile-cover')?.getAttribute('src')||'',uploads:s.__uploads,sheets:s.gpu.textures.size,heapMB:Math.round((performance.memory?.usedJSHeapSize||0)/1048576),hidden:getComputedStyle(document.querySelector('#journey-dock')||document.body).visibility};},[corner.x,corner.y,corner.id]);
   assert(scriptMs<2500,`Sixty wheel steps on six thousand prints cost the main thread under 2.5 s of script (${scriptMs} ms, ${wheelMs} ms wall)`);
   assert(deep.deep&&deep.zoom>=100,`The corner print fills the view: ${JSON.stringify(deep)}`);
   assert(deep.drift<3,`Zooming at the corner keeps the point under the pointer (drift ${deep.drift})`);
@@ -77,6 +81,7 @@ const {LINK,LIB,OUT}=process.env;
   assert(deep.full<=4&&/m=full/.test(deep.cornerSrc),`Only a few originals are fetched during the zoom: ${JSON.stringify(deep)}`);
   assert(deep.originals.length&&deep.originals.every(it=>it.share>=.8&&it.inView),`Originals belong to prints filling the actual view: ${JSON.stringify(deep.originals)}`);
   assert(deep.live<=120,`Deep in one print few cards are live: ${deep.live}`);
+  assert.equal(deep.uploads,0,'Zooming reuses uploaded sheets');assert.equal(deep.sheets,6,'The off-screen atlas sheets remain cached');
   assert(deep.heapMB<400,`Heap stays bounded after the zoom (${deep.heapMB} MB)`);
   await page.screenshot({path:`${OUT}/sea-gl-deep.png`});
   // Back out: double-click open water. Every print returns to the GPU and no card stays live.

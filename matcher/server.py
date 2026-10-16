@@ -28,6 +28,7 @@ from . import export as exporter
 from . import touchup
 from . import edit_history, filtering, game, library, tags, tournament, visual
 from .draw import Draw
+from .search import PhotoSearch
 from .sample import SampleFetcher
 from .analyze import Analyzer, TooManyPhotos, list_photos
 from .config import DATA_DIR, DEFAULT_SETTINGS, PHOTO_EXTS
@@ -73,6 +74,7 @@ class Session:
         self.analyzer = Analyzer(self.store, source, self.workdir)
         self.analyzer.on_finished = self._invalidate
         self.lock = threading.RLock()
+        self.stack_lock = threading.RLock()  # membership edits publish their rebuild and Crown seeds together
         self.ranker: Ranker | None = None
         self.version = None
         self.cards: OrderedDict[str, dict] = OrderedDict()
@@ -103,6 +105,7 @@ class Session:
         self.groups_cache: dict = {}
         self.stack_orders: dict = {}  # member slots survive cover changes, merges and their undo during this session
         self.draw = Draw(self)
+        self.search = PhotoSearch(self.store)
 
     # ------------------------------------------------------------------ state
     @property
@@ -1010,15 +1013,23 @@ class Session:
                 "shots": int(r.n_active), "k": r.k, "seen": int(((r.post.n_obs > 0) & r.active).sum()),
                 "minutes": round(history.active_ms / 60000, 1), "started": history.first}
 
+    def leaderboard_order(self) -> tuple[list[int], list[int]]:
+        """Read the current board without loading or fitting the ranker just to open a photo's sticky."""
+        r = self.ranker
+        if r is None or r.post is None:
+            return [], []
+        top = r.select(r.post.mu)
+        settled = [i for i in (self._item(pid) for pid in self.finals_order()) if i is not None and r.active[i]]
+        if settled:  # the finals have the last word on the top of the board
+            top = (settled + [i for i in top if i not in settled])[:max(r.k, len(settled))]
+        return top, settled
+
     def shortlist(self) -> dict:
         r = self.ensure_ranker()
         if r is None:
             return {"items": [], "bubble": [], "added": []}
         mu, p = r.post.mu, r.post.p_in
-        top = r.select(mu)
-        settled = [i for i in (self._item(pid) for pid in self.finals_order()) if i is not None and r.active[i]]
-        if settled:  # the finals have the last word on the top of the board
-            top = (settled + [i for i in top if i not in settled])[:max(r.k, len(settled))]
+        top, settled = self.leaderboard_order()
         chosen = set(top)
         favorites = list(dict.fromkeys(self.gidx[self.photo_group[row["id"]]] for row in self.store.q("SELECT id FROM photos WHERE pick=1")
                         if self.photo_group.get(row["id"]) in self.gidx and r.active[self.gidx[self.photo_group[row["id"]]]]))
@@ -1768,9 +1779,28 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                 if any(not isinstance(x, str) if text_items else
                        isinstance(x, bool) or not isinstance(x, int) or not 0 < x <= 10**12 for x in v):
                     abort(400, f"Invalid item in {k}.")
-            elif k in {"hidden", "pinned", "sealed", "wild", "on", "keep", "wait"} and not isinstance(v, bool):
+            elif k in {"hidden", "pinned", "sealed", "wild", "on", "keep", "wait", "exact"} and not isinstance(v, bool):
                 abort(400, f"{k} must be true or false.")
         return b
+
+    @contextmanager
+    def settled(s):
+        """Wait outside the session lock, then read one fully published set of stacks."""
+        with s.stack_lock:
+            while True:
+                s.wait_refresh()
+                with s.lock:
+                    if s._refresh_running:
+                        continue
+                    yield
+                    return
+
+    def stack_edit(fn):
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            with sess().stack_lock:
+                return fn(*args, **kwargs)
+        return wrapped
 
     def locked(fn):
         @wraps(fn)
@@ -1983,7 +2013,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
     @flask_app.post("/api/deal")
     def next_cards():
         s = sess()
-        with s.lock:
+        with settled(s):
             if s.ensure_ranker() is None:
                 abort(409, "Still analyzing.")
             n = max(1, min(3, int(request.args.get("n", 2))))
@@ -2011,6 +2041,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                            draw=s.draw.journey()["groups"])
 
     @flask_app.post("/api/stacks/auto")
+    @stack_edit
     def stacks_auto():
         s = sess()
         _need(s)
@@ -2041,7 +2072,9 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
 
     @flask_app.get("/api/journey")
     def journey():
-        return jsonify(sess().journey())
+        s = sess()
+        with settled(s):
+            return jsonify(s.journey())
 
     @flask_app.post("/api/cup")
     def set_cup():
@@ -2232,13 +2265,30 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         edits = json.loads(old) if old else {}
         if request.method == "GET":
             return jsonify(photo=pid, edits=edits)
+        for field, limit in (("title", 160), ("description", 8000)):
+            if field in b:
+                value = b[field]
+                if value is not None and (not isinstance(value, str) or len(value) > limit):
+                    abort(400, f"{field.capitalize()} is text of at most {limit} characters.")
+                if value and value.strip():
+                    edits[field] = value.strip()
+                else:
+                    edits.pop(field, None)
         if "enhance" in b:
-            edits["enhance"] = bool(b["enhance"])
+            if b["enhance"] is None:
+                edits.pop("enhance", None)
+            elif isinstance(b["enhance"], bool):
+                edits["enhance"] = b["enhance"]
+            else:
+                abort(400, "Enhance is on or off.")
         if "crop" in b:
             crop = "subject" if b["crop"] == "auto" else b["crop"]
             if crop not in (*touchup.CROPS, "none", "off", None):
                 abort(400, "Crop is best, subject, height, width or none.")
-            edits["crop"] = crop
+            if crop is None:
+                edits.pop("crop", None)
+            else:
+                edits["crop"] = "off" if crop in {"none", "off"} else crop
         if "look" in b:  # the knobs on the auto look; only departures from the defaults are kept
             look = b["look"]
             if look is None:
@@ -2319,7 +2369,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                     edits["notes"] = kept
                 else:
                     edits.pop("notes", None)
-        edits = {k: v for k, v in edits.items() if not (k == "enhance" and v is not False) and not (k == "crop" and v not in touchup.CROPS)
+        edits = {k: v for k, v in edits.items() if not (k == "crop" and v not in (*touchup.CROPS, "off"))
                  and not (k == "rotate" and not v)}
         value = json.dumps(edits) if edits else None
         if value != old:
@@ -2336,6 +2386,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         return jsonify(_draw_reply(s, {"photo": pid, "edits": edits}))
 
     @flask_app.post("/api/frame")
+    @stack_edit
     def set_frame():
         """Swap which frame of a burst represents it (from the shortlist)."""
         s = sess()
@@ -2383,6 +2434,57 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         i = s.gidx.get(g)
         crownable = i is not None and bool(s.ranker.active[i]) and len(s.distinct.get(g, [])) >= 2
         return jsonify(members=stack.get("members", [pid]), rep=stack.get("rep", pid), crownable=crownable)
+
+    @flask_app.get("/api/photo/<int:pid>/notes")
+    @locked
+    def photo_notes(pid):
+        """The saved evidence and choices for this exact take; opening its sheet never decodes the original."""
+        s = sess()
+        row = s.store.one("SELECT * FROM photos WHERE id=?", (pid,))
+        if row is None:
+            abort(404, "Unknown photo.")
+        photo = {k: row[k] for k in row.keys() if k not in {"emb", "crop_emb", "sha256", "phash", "mtime_ns"}}
+        for field in ("flags", "subject", "salient", "zs", "recognized_tags", "edits"):
+            photo[field] = json.loads(photo[field]) if photo.get(field) else ({} if field in {"edits", "zs", "recognized_tags"} else [] if field == "flags" else None)
+        meta = tags.rows(s.store)
+        effective = tags.effective(s.store, [pid]).get(pid, set())
+        automatic = {r["tag"]: r["score"] for r in s.store.q("SELECT tag, score FROM photo_tags WHERE photo_id=?", (pid,))}
+        edited = {r["tag"]: bool(r["val"]) for r in s.store.q("SELECT tag, val FROM tag_edits WHERE photo_id=?", (pid,))}
+        photo["tags"] = [{**meta.get(key, {"key": key, "label": key, "emoji": "🏷️"}),
+                          "score": automatic.get(key), "edited": edited.get(key)} for key in sorted(effective)]
+        photo["tag_edits"] = [{"key": key, "label": meta.get(key, {}).get("label", key), "on": value} for key, value in edited.items()]
+        photo["faces"] = [{k: r[k] for k in r.keys() if k not in {"emb", "lm"}}
+                          for r in s.store.q("SELECT * FROM faces WHERE photo_id=? ORDER BY idx", (pid,))]
+        stack = s.store.one("SELECT rep,members FROM groups WHERE id=?", (row["group_id"],))
+        photo["stack"] = {"rep": stack["rep"] if stack else pid, "members": json.loads(stack["members"]) if stack else [pid]}
+        photo["group"] = dict(s.store.one("SELECT id,name,emoji FROM themes WHERE id=?", (row["theme_id"],)) or {})
+        photo["available_groups"] = [dict(r) for r in s.store.q("SELECT id,name,emoji FROM themes ORDER BY COALESCE(pos,id),id")]
+        index = getattr(s, "gidx", {}).get(row["group_id"])
+        if index is not None and s.ranker is not None and s.ranker.post is not None:
+            post = s.ranker.post
+            top, _ = s.leaderboard_order()
+            active = bool(s.ranker.active[index])
+            chosen = set(top)
+            bubble = [int(i) for i in np.argsort(-post.mu) if s.ranker.active[i] and i not in chosen][:24]
+            photo["ranking"] = {"appeal": round(float(post.mu[index]), 3), "inclusion": round(float(post.p_in[index]), 3),
+                                "duels": int(post.n_obs[index]), "rank": top.index(index) + 1 if index in top else None,
+                                "bubble": index in bubble, "active": active}
+        photo["history"] = [dict(r) for r in s.store.q("SELECT id,ts,kind,a,b,winner,undone FROM votes WHERE a=? OR b=? OR winner=? ORDER BY id DESC LIMIT 30", (pid, pid, pid))]
+        return jsonify(photo)
+
+    @flask_app.get("/api/search")
+    def search_photos():
+        query = request.args.get("q", "").strip()
+        if len(query) > 200:
+            abort(400, "Search with up to 200 characters.")
+        s = sess()
+        if not s.analyzed():
+            abort(409, "Let analysis finish before searching your photos.")
+        try:
+            results = s.search.find(query, limit=60)
+        except (OSError, RuntimeError) as error:
+            abort(503, f"Photo search couldn't load its local model: {error}")
+        return jsonify(query=query, photos=results)
 
     @flask_app.post("/api/export")
     def do_export():
@@ -2810,15 +2912,39 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             per = max(1, min(500, int(request.args.get("per", 120 if view == "all" else 24))))
             bounds, start = [], 0
             for k in range(1, len(shots) + 1):
-                if k == len(shots) or (k - start >= per and shots[k].get("family") != shots[k - 1].get("family")) \
+                if k == len(shots) or (k - start >= per and (order == "time" or shots[k].get("family") != shots[k - 1].get("family"))) \
                         or k - start >= 2 * per:
                     bounds.append((start, k))
                     start = k
             page = max(0, int(request.args.get("page", 0)))
+            extra = {}
+            if order == "time" and (request.args.get("dates") == "1" or "date" in request.args):
+                # The whole date index is tiny. Jump straight to its page without fetching every intervening shot.
+                dates = {}
+                for number, (lo, hi) in enumerate(bounds):
+                    for shot in shots[lo:hi]:
+                        day = (shot["taken"] or "")[:10] or "undated"
+                        entry = dates.setdefault(day, {"date": day, "photo": shot["rep"], "page": number, "count": 0})
+                        entry["count"] += 1
+                extra["dates"] = sorted(dates.values(), key=lambda d: (d["date"] == "undated", d["date"]))
+                if "date" in request.args:
+                    day = request.args["date"]
+                    if day != "undated" and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+                        abort(400, "Choose a date in YYYY-MM-DD form.")
+                    entry = dates.get(day) or next((d for d in extra["dates"] if d["date"] >= day), None)
+                    if entry is None and extra["dates"]:
+                        entry = extra["dates"][-1]
+                    if entry:
+                        page = entry["page"]
+                        extra["jump"] = entry
+            if "at" in request.args:
+                pid = int(request.args["at"])
+                index = next((i for i, shot in enumerate(shots) if pid in shot["members"]), None)
+                page = next((p for p, (lo, hi) in enumerate(bounds) if index is not None and lo <= index < hi), min(page, max(0, len(bounds)-1)))
             part = shots[slice(*bounds[page])] if page < len(bounds) else []
             counts["suggest"] = None
             return jsonify(shots=part, counts=counts, page=page, pages=len(bounds), total=len(shots),
-                           undo=s.draw.last_step(),
+                           undo=s.draw.last_step(), **extra,
                            boxes={m: s.view.get(m, {}).get("box") for x in part for m in x["members"]})
 
     @flask_app.get("/api/draw/history")
@@ -2827,6 +2953,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         return jsonify(edit_history.history(sess()))
 
     @flask_app.post("/api/draw/undo")
+    @stack_edit
     def groups_undo():
         """Take back your last change on the Draw or to the stacking (merge, split, move, keep, a call, a group…)."""
         s = sess()
@@ -2853,6 +2980,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             return jsonify(_draw_reply(s, {"ok": True, "undone": r["undone"], "next": r["next"], "history": edit_history.history(s)}))
 
     @flask_app.post("/api/draw/redo")
+    @stack_edit
     def groups_redo():
         s = sess()
         r = _redo_edit(s, "group")
@@ -2877,6 +3005,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             return r
 
     @flask_app.post("/api/groups/merge")
+    @stack_edit
     def groups_merge():
         """Stack the shots containing these photos into one. Yours from now on: nothing else joins it,
         and it plays a mini-tournament to crown its best frame."""
@@ -2910,6 +3039,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             return jsonify(_draw_reply(s, {"ok": True, "size": len(members)}))
 
     @flask_app.post("/api/groups/split")
+    @stack_edit
     def groups_split():
         """Take one photo out of its stack. The rest stays stacked exactly as you saw it."""
         s = sess()
@@ -2936,6 +3066,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             return jsonify(_draw_reply(s, {"ok": True}))
 
     @flask_app.post("/api/groups/move")
+    @stack_edit
     def groups_move():
         """Drag one frame onto another shot: it leaves its stack (the rest stays as you saw it) and joins that shot."""
         s = sess()
@@ -2973,6 +3104,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             return jsonify(_draw_reply(s, {"ok": True, "size": len(joined)}))
 
     @flask_app.post("/api/groups/unstack")
+    @stack_edit
     def groups_unstack():
         """Split a whole stack into separate shots."""
         s = sess()
@@ -2989,6 +3121,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             return jsonify(_draw_reply(s, {"ok": True, "size": len(g["members"])}))
 
     @flask_app.post("/api/groups/reset")
+    @stack_edit
     def groups_reset():
         """Hand shots back to the automatic stacking rules (a stack you made, or a photo you split out)."""
         s = sess()
@@ -3124,7 +3257,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                 meta = tags.rows(s.store)
                 sets = tags.effective(s.store)
                 count = Counter(t for ts in sets.values() for t in ts)
-                value = {"tags": [{**t, "count": count[k], "catchy": tags.catchy_names(k)[:2]} for k, t in meta.items()],
+                value = {"tags": [{**t, "count": count[k], "catchy": tags.catchy_names(k)[:2]} for k, t in meta.items() if count[k]],
                          "visible": tags.choose_visible(sets, meta, limit=24)}
                 s.draw._all_tag_cache = (key, value)
             else:
@@ -3162,7 +3295,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         with s.lock:
             _need(s)
             return jsonify(_draw_reply(s, s.draw.set_tags(b.get("photos", []),
-                                                          [str(t) for t in b.get("on", [])], [str(t) for t in b.get("off", [])])))
+                                                          [str(t) for t in b.get("on", [])], [str(t) for t in b.get("off", [])], b.get("exact", False))))
 
     @flask_app.post("/api/tags/meta")
     def tags_meta():
@@ -3178,7 +3311,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         with s.lock:
             _need(s)
             return jsonify(_draw_reply(s, s.draw.tag_new(b.get("label"), b.get("emoji"),
-                                                         b.get("photos", []))))
+                                                         b.get("photos", []), b.get("exact", False))))
 
     @flask_app.post("/api/tags/group")
     def tags_group():

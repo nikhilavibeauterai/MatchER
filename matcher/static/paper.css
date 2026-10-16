@@ -231,15 +231,15 @@ body.sea-on .side, body.sea-on .twin-arena .side, body.sea-on .swipe-card, .swip
 /* ---------- leaderboard and reveal tiles: the card is the tile. A reveal tile wears its rank; the leaderboard's one
    big card carries a square sticky note with everything the sorter knows, and the group wobbles as one (app.css). */
 .board .tile, .reveal-strip .tile { background: none; border: 0; box-shadow: none; overflow: visible; }
-.tile-pile > .meta.sticky { background: var(--sticky); color: var(--ink); border-radius: 2px 2px 4px 3px; box-shadow: 0 1px 1px #0003, 0 6px 14px #0004; }
-.tile-pile > .meta.sticky::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 14%; background: linear-gradient(#00000012, transparent); pointer-events: none; }
-.tile-pile > .meta.sticky .conf { background: #0000000f; }
-.tile-pile > .meta.sticky .flags .flag { background: transparent; border-bottom: 1.2px solid var(--pencil); border-radius: 0; }
-.board-card .note-rank { font-family: var(--display); color: var(--accent); }
+:is(.tile-pile > .meta.sticky, .photo-sticky) { background: var(--sticky); color: var(--ink); border-radius: 2px 2px 4px 3px; box-shadow: 0 1px 1px #0003, 0 6px 14px #0004; }
+:is(.tile-pile > .meta.sticky, .photo-sticky)::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 14%; background: linear-gradient(#00000012, transparent); pointer-events: none; }
+:is(.tile-pile > .meta.sticky, .photo-sticky) .conf { background: #0000000f; }
+:is(.tile-pile > .meta.sticky, .photo-sticky) .flags .flag { background: transparent; border-bottom: 1.2px solid var(--pencil); border-radius: 0; }
+.photo-sticky .note-rank { font-family: var(--display); color: var(--accent); }
 .edit-sheet .btn[aria-pressed="true"], #toolbelt .btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .user-note .note-text { font-family: var(--hand); color: var(--ink); }
 :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-select) > .meta.sticky.user-note { background: var(--sticky); color: var(--ink); border-radius: 2px 2px 4px 3px; box-shadow: 0 1px 1px #0003, 0 6px 14px #0004; }
-.board-card .note-tags span { white-space: nowrap; }
+.photo-sticky .note-tags span { max-width: 100%; overflow-wrap: anywhere; }
 .board-arrow { font-family: var(--display); }
 .board-arrow.btn.ghost { background: var(--paper); color: var(--ink); border: 1.5px solid var(--ink); }
 .board-arrow.btn.ghost:hover { background: var(--highlight); }

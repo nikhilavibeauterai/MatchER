@@ -46,7 +46,11 @@ async function api(path, body) {
   if (body !== undefined && (/^\/api\/(draw|tags|groups|rescue|sweep|cup|settings|frame|undo|people)/.test(path)
     || /^\/api\/filter\/(apply|decision)$/.test(path) || path==="/api/stacks/auto" || path==="/api/vote"&&(data?.crowned||data?.swap)) && typeof World !== "undefined") World.dirty();
   if(body!==undefined&&path==="/api/undo")DuelSides.undo(data,source);
+  if(body!==undefined&&path==='/api/edit'&&typeof Toolbelt!=='undefined'&&!Toolbelt.jobs.get(body.photo)?.length)
+    Toolbelt.know(body.photo,data.edits||{});
   if(body!==undefined&&typeof HistoryHUD!=="undefined")HistoryHUD.reply(path,data);
+  if(body!==undefined&&typeof window!=='undefined'&&/^\/api\/(edit|tags|groups|draw|rescue|undo|frame|vote|cup|sweep|people|stacks\/auto|filter\/(apply|decision))\b/.test(path))
+    window.dispatchEvent(new CustomEvent('photo-changed',{detail:{path,source}}));
   return data;
 }
 
@@ -1184,6 +1188,15 @@ async function viewHome(main) {
   const nextStage=STAGES.find(([k])=>k===status.next);
   main.innerHTML=`<div class="screen map journey no-rail"><span hidden data-help="${esc('Explore the sea or choose a stage above. The coral Next button and Enter continue your journey. Activities, cups and trophies are in the menu.')}" aria-hidden="true"></span><div class="screen-body map-body"><div class="map-sea" aria-hidden="true"></div></div></div>`;
   setForward({label:`Next: ${nextStage?.[2]||'Reveal'} →`,name:nextStage?.[2]||'Reveal',href:status[status.next].go});
+  $('.map-body',main).insertAdjacentHTML('beforeend','<div class="map-census stat-chip" data-solid role="status"></div>');
+  const census=()=>{
+    const target=$('.map-census',main);if(!target)return;
+    if(World.photosSource!==S.lib.source){target.textContent=`Loading ${fmt(World.photos?.size)} of ${fmt(World.total)} photos…`;return;}
+    const prints=[...World.photos.values()].filter(p=>p.id===p.rep),stacks=prints.filter(p=>p.members.length>1).length;
+    target.textContent=`${plural(World.photos.size,'photo')} · ${plural(stacks,'stack')} · ${fmt(prints.length-stacks)} loose`;
+    target.title='Every photo is represented. Takes in the same stack overlap as one pile; loose photos have their own print.';
+  };
+  window.addEventListener('world-ready',census,{signal});census();
   const sea=World.sea,catalog=sea.catalog;sea.catalog=false;sea.el.classList.add('home-world');
   sea.dock?.classList.remove('tag-dock');sea.dock=null;sea.el.append(sea.tray);sea.tray.hidden=true;
   // The previous tag shelf can catch the pointer while Home loads. Hiding it also releases its hover.
@@ -1261,7 +1274,7 @@ function viewDuel(main, params) {
       get actions(){return S.stacksLeft>1?[{id:'crown-rest',label:'Keep best guesses for remaining stacks',run:crownBestGuesses}]:[];}};
     // Enter advances even after a choice button has focus; it must never cast another vote.
     document.addEventListener('keydown',e=>{
-      if(e.key!=='Enter'||e.ctrlKey||e.metaKey||e.altKey||e.target.isContentEditable||e.target.closest('dialog,input,textarea,select')||$('dialog[open]'))return;
+      if(e.key!=='Enter'||e.ctrlKey||e.metaKey||e.altKey||e.target.isContentEditable||e.target.closest('dialog,input,textarea,select,.photo-note-sheet,.photo-notes-tab')||$('dialog[open]'))return;
       e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)forward();
     },{capture:true,signal:S.events.signal});
   }
@@ -1599,16 +1612,27 @@ function filterMarkup(t) {
     <feColorMatrix type="saturate" values="${t.sat.toFixed(4)}"/>
     ${t.warmth ? `<feColorMatrix type="matrix" values="${r.toFixed(4)} 0 0 0 0  0 1 0 0 0  0 0 ${b.toFixed(4)} 0 0  0 0 0 1 0"/>` : ""}`;
 }
-// One SVG filter per photo (and, with knobs, one live filter per photo rebuilt in place as the knobs move).
+// Bare thumbnails also paint their own paper. Keep it outside the enhancement's mask; focused photos already
+// have a separate clipped window, so their filter covers only the image.
+function paperFilterMask(img) {
+  if(img.closest('.window,.picture,.rank-pop,.save-chip')||!img.naturalWidth)return null;
+  const window=[.055,.04125,.89,.83125];
+  if(img.style.objectViewBox||['fill','cover'].includes(img.style.objectFit))return window;
+  const aspect=img.naturalWidth/img.naturalHeight,W=.89,H=.83125*4/3;
+  const w=Math.min(W,H*aspect),h=w/aspect;
+  return [.055+(W-w)/2,.04125,w,h*3/4];
+}
+// One SVG filter per photo and paper mask (with knobs, rebuilt in place as the knobs move).
 function autoFilterId(img, pid, knobs = null) {
   const source = imageKey();
   if (filterSource !== source) {
     FILTERS.clear(); LOOKS.clear(); $("#af-defs")?.replaceChildren(); filterSource = source;
     $$("img[style*='filter']").forEach((shown) => { shown.style.filter = ""; });
   }
-  const key = knobs ? `${pid}|knobs` : String(pid);
-  if (FILTERS.has(key) && !knobs) return FILTERS.get(key);
   if (!img.complete || !img.naturalWidth) return null;
+  const mask=paperFilterMask(img),maskKey=mask?mask.map(v=>Math.round(v*10000)).join('-'):'';
+  const key = `${pid}${knobs?'|knobs':''}${mask?'|paper'+maskKey:''}`;
+  if (FILTERS.has(key) && !knobs) return FILTERS.get(key);
   if (FILTERS.size >= 1200) {
     const used = new Set($$("img[style*='filter']").map((shown) => /#(af-[\w-]+)/.exec(shown.style.filter)?.[1]));
     for (const [photo, id] of FILTERS) if (!used.has(id)) { $(`#${id}`)?.remove(); FILTERS.delete(photo); }
@@ -1621,10 +1645,16 @@ function autoFilterId(img, pid, knobs = null) {
     document.body.insertAdjacentHTML("beforeend", `<svg id="af-defs" width="0" height="0" style="position:absolute" aria-hidden="true"></svg>`);
     defs = $("#af-defs");
   }
-  const id = FILTERS.get(key) || (knobs ? `af-k${pid}` : `af-${++filterSerial}`);
+  const id = FILTERS.get(key) || (knobs ? `af-k${pid}-${++filterSerial}` : `af-${++filterSerial}`);
   let filter = $(`#${id}`, defs);
   if (!filter) { defs.insertAdjacentHTML("beforeend", `<filter id="${id}" color-interpolation-filters="sRGB"></filter>`); filter = $(`#${id}`, defs); }
-  filter.innerHTML = filterMarkup(tunedLook(look, knobs));
+  const markup=filterMarkup(tunedLook(look, knobs));
+  if(mask){
+    filter.setAttribute('primitiveUnits','objectBoundingBox');filter.setAttribute('x','0');filter.setAttribute('y','0');filter.setAttribute('width','1');filter.setAttribute('height','1');
+    filter.innerHTML=markup+`<feComposite in2="SourceAlpha" operator="in" result="adjusted"/><feFlood flood-color="white" x="${mask[0]}" y="${mask[1]}" width="${mask[2]}" height="${mask[3]}" result="photo-mask"/>
+      <feComposite in="adjusted" in2="photo-mask" operator="in" result="photo"/><feComposite in="SourceGraphic" in2="photo-mask" operator="out" result="paper"/>
+      <feMerge><feMergeNode in="paper"/><feMergeNode in="photo"/></feMerge>`;
+  }else filter.innerHTML=markup;
   FILTERS.set(key, id);
   return id;
 }
@@ -1633,7 +1663,7 @@ function paintFilter(img, pid, on = S.filter, knobs = null) {
   if (!img || !pid) return;
   if (!on) { img.style.filter = ""; return; }
   const id = autoFilterId(img, pid, knobs);
-  if (id) { img.style.filter = ""; void img.offsetWidth; img.style.filter = `url(#${id})`; }  // a rebuilt live filter repaints
+  if (id) img.style.filter = `url(#${id})`;
   else if (!img.complete) img.addEventListener("load", () => paintFilter(img, pid, on, knobs), { once: true });
 }
 
@@ -1675,11 +1705,13 @@ function frameTileImage(img) {
   const apply = () => {
     const iw = img.naturalWidth, ih = img.naturalHeight, mode = normCrop(S.crop);
     if (!iw || !ih || !img.isConnected) return;
-    if (mode === "off") { img.style.objectFit = ""; img.style.objectPosition = ""; img.style.objectViewBox = ""; return; }
+    const refresh=()=>{const id=Number(/\/img\/[pt]\/(\d+)\.jpg/.exec(img.getAttribute('src')||'')?.[1]);if(id)paintFilter(img,id);};
+    if (mode === "off") { img.style.objectFit = ""; img.style.objectPosition = ""; img.style.objectViewBox = ""; refresh();return; }
     let box = null; try { box = JSON.parse(img.dataset.box || "null"); } catch (_) { /* no subject */ }
     const W = img.clientWidth || 3, H = img.clientHeight || 4, { x, y, w, h } = frameRect(W, H, iw, ih, box, mode);
     if (VIEW_BOX) { img.style.objectFit = "fill"; img.style.objectPosition = ""; img.style.objectViewBox = `xywh(${(-x / w * iw).toFixed(1)}px ${(-y / h * ih).toFixed(1)}px ${(W / w * iw).toFixed(1)}px ${(H / h * ih).toFixed(1)}px)`; }
     else { const cover = w >= W - .5 && h >= H - .5; img.style.objectFit = cover ? "cover" : "contain"; img.style.objectPosition = cover && box ? `${((box[0] + box[2] / 2) * 100).toFixed(1)}% ${((box[1] + box[3] / 2) * 100).toFixed(1)}%` : "center top"; }
+    refresh();
   };
   if (img.complete && img.naturalWidth) apply(); else img.addEventListener("load", apply, { once: true });
 }
@@ -1719,6 +1751,7 @@ function toggleFilter() {
   try { localStorage.setItem(`matcher-filter-${MODE()}`, S.filter ? "on" : "off"); } catch (_) { /* private mode */ }
   $$(".filter-btn span").forEach((l) => (l.textContent = S.filter ? "Enhance on" : "Enhance off"));
   paintFilters();
+  window.dispatchEvent(new Event('photo-render-change'));
   toast(S.filter ? "Enhance on" : "Enhance off", 1000);
 }
 
@@ -3188,7 +3221,7 @@ async function exportFlow(kind, b, nextCup = null, share = null) {
 
 // ---------------------------------------------------------------- shortlist (the leaderboard)
 // One card at a time, as big as the stage allows, with everything the sorter knows about it on a square sticky
-// note stuck somewhere on the frame (seeded by the photo, kept away from its subject); ← and → walk the ranks,
+// note hanging from the frame (seeded by the photo, kept clear of its picture); ← and → walk the ranks,
 // then the bubble. The rail keeps the taste card and the hand-picked list; the bar keeps the exports.
 const boardPos = { source: null, at: 0 };
 // "1 May 2024 14:32" from the stored "2024-05-01T14:32:10": the way you would write it on a frame.
@@ -3202,42 +3235,48 @@ function seededRandom(id) {
   let seed = ((Number(id) || 0) * 2654435761) >>> 0;
   return () => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
-// Where the note goes and how big, in card widths from the card's top-left. When the stage has room beside the
-// card it is stuck to the card's edge and hangs beside it, on the side away from the subject, so it covers as little
-// of the picture as possible; on a narrow stage it sits on the card in one of the two spots farthest from the
-// subject. Its vertical spot and turn come from the photo's own randoms. The square grows (then its writing
-// shrinks a little) until everything written on it fits: nothing is ever cut off.
+// The same square sticky follows a focused shot everywhere. Its tags and the sorter's confidence are visible;
+// the longer evidence and editing controls live on the separate notes sheet.
+function photoSticky(it, tagsOn, {change = "", controls = false} = {}) {
+  const ranked=it.p_in!=null, status=it.rank?`#${it.rank}`:it.bubble?"On the bubble":it.active===false?"Set aside":"In the running";
+  return `<div class="note-head"><b class="note-rank">${status}</b>${change?`<span class="note-change">${esc(change)}</span>`:""}</div>
+    ${ranked?`<div class="note-line">${pct(it.p_in)} sure · ${it.duels} duel${it.duels===1?"":"s"}</div>
+      <div class="conf" title="Chance it belongs on the leaderboard: ${pct(it.p_in)}"><i style="width:${pct(it.p_in)}"></i></div>`:""}
+    <div class="note-line">${ranked?`appeal ${(it.appeal>0?"+":"")+Number(it.appeal||0).toFixed(2)} · `:""}${it.frames>1
+      ?controls?`<button class="note-link" data-frames="${it.photo}" title="Swap which take stands in for this stack">${it.frames} takes ⧉</button>`:`${it.frames} takes ⧉`:"one take"}${it.rescued?" · 🧹 rescued":""}</div>
+    ${tagsOn.length?`<div class="note-tags">${tagsOn.map(t=>`<span>${esc(t.emoji||"🏷️")} ${esc(t.label)}</span>`).join("")}</div>`:""}
+    ${it.flags?.length?`<div class="flags">${flagHtml(it.flags)}</div>`:""}
+    ${controls&&it.bubble?`<div class="actions">${it.added?`<button class="btn" data-unpick="${it.photo}">Added ✓</button>`:`<button class="btn" data-pick="${it.photo}" title="It rides along in the export without a rank">+ Add</button>`}</div>`:""}`;
+}
+// Hang the adhesive edge from the bottom of the paper, leaving the picture and its handwriting clear. Focused
+// panes reserve space for the loose end; a sea print keeps its camera size and uses a side edge if needed.
 function placeNote(card) {
-  const note = card?.querySelector(".meta.sticky:not(.user-note)"), fit = card?.parentElement;
-  if (!note || !fit) return;
-  const rnd = seededRandom(card.dataset.photo), r1 = rnd(), r2 = rnd(), r3 = rnd(), cw = card.clientWidth || 1;
-  let box = null;
-  try { box = JSON.parse(card.dataset.box || "null"); } catch (_) { /* no subject */ }
-  if (box && (Number(card.dataset.rotate) || 0)) box = rotateBox(box, Number(card.dataset.rotate));
-  const cx = box ? 5.5 + 89 * (box[0] + box[2] / 2) : 47, cy = box ? 5.5 + 110.8 * (box[1] + box[3] / 2) : 61;
-  const room = (fit.clientWidth - cw) / 2;
-  let saved = null;
-  try { saved = JSON.parse(card.dataset.note || "null"); } catch (_) { /* never moved */ }
-  let size = 38, font = 2.3;
-  const place = () => {
-    note.style.setProperty("--note-size", size); note.style.setProperty("--note-font", font);
-    if (Array.isArray(saved) && saved.length === 2) {  // where you put it last time
-      note.style.setProperty("--note-x", saved[0]); note.style.setProperty("--note-y", saved[1]);
-    } else if (room >= (cw * size) / 100 * 0.75) {
-      const right = box ? cx < 47 : r1 < 0.5, overlap = 12;
-      note.style.setProperty("--note-x", right ? 100 - overlap : overlap - size);
-      note.style.setProperty("--note-y", (4 + r2 * Math.max(0, 129 - size)).toFixed(1));
-    } else {
-      const spots = [[3, 3], [61, 3], [2, 44], [62, 46], [4, 90], [60, 92]]
-        .map(([x, y]) => ({ x: Math.min(x, 100 - size + 12), y: Math.min(y, 133 - size), d: Math.hypot(x + size / 2 - cx, y + size / 2 - cy) })).sort((a, b) => b.d - a.d);
-      const pick = spots[r1 < 0.5 ? 0 : 1];
-      note.style.setProperty("--note-x", pick.x); note.style.setProperty("--note-y", pick.y);
+  const note=card?.querySelector(":scope > .photo-sticky");
+  if(!note||note.classList.contains("dragging"))return;
+  const rnd=seededRandom(card.dataset.photo),r1=rnd(),r2=rnd();
+  let saved=null;
+  try{saved=JSON.parse(card.dataset.note||"null");}catch(_){/* never moved */}
+  let size=38,font=2.3;
+  const place=()=>{
+    note.style.setProperty("--note-size",size);note.style.setProperty("--note-font",font);
+    card.style.setProperty("--sticky-tail",size-1);
+    card.style.setProperty("--sticky-ratio",(1+(size-1)/133.3333).toFixed(4));
+    const cw=card.clientWidth||1,ch=card.clientHeight/cw*100;
+    let x=4+r1*Math.max(0,66-size),y=ch-4;
+    if(Array.isArray(saved)&&saved.length===2)[x,y]=saved;
+    else if(card.matches('.sea-photo-detail')||!card.matches('.board-fit > *, .side > *, .filter-shot > *, .viewer-stage > *')){
+      const r=card.getBoundingClientRect(),w=cw*size/100;
+      if(r.bottom+(size-4)*cw/100>innerHeight-12){
+        if(r.left>=w+12){x=2-size;y=Math.max(6,ch-size-5);}
+        else if(innerWidth-r.right>=w+12){x=98;y=Math.max(6,ch-size-5);}
+      }
     }
-    note.style.setProperty("--note-turn", `${((r3 * 2 - 1) * 7).toFixed(1)}deg`);
+    note.style.setProperty("--note-x",x);note.style.setProperty("--note-y",y);
+    note.style.setProperty("--note-turn",`${((r2*2-1)*3).toFixed(1)}deg`);
   };
   place();
-  for (let guard = 0; guard < 14 && note.scrollHeight > note.clientHeight + 1; guard++) {
-    if (size < 66) size += 4; else if (font > 1.5) font = Math.round((font - 0.2) * 10) / 10; else break;
+  for(let guard=0;guard<24&&note.scrollHeight>note.clientHeight+1;guard++){
+    if(size<78)size+=4;else if(font>1.3)font=Math.round((font-.2)*10)/10;else break;
     place();
   }
 }
@@ -3260,20 +3299,10 @@ async function viewShortlist(main) {
     const w = World.photos?.get(pid), gid = w && w.theme >= 0 ? w.theme : World.sea?.items.get(pid)?.group;
     return (board.groups || []).find((g) => g.id === gid) || null;
   };
-  // The sticky note: everything the app has gathered about the shot, in the app's own words.
   const note = (it) => {
-    const change = it.rank && Object.keys(previous).length && !previous[it.photo] ? "NEW" : it.rank && previous[it.photo] > it.rank ? `▲ ${previous[it.photo] - it.rank}` : "";
-    const tagsOn = (World.photos?.get(it.photo)?.tags || []).map((k) => tagMeta.get(k)).filter(Boolean);
-    return `<div class="meta sticky" title="Drag me where you like">
-      <div class="note-head"><b class="note-rank">${it.rank ? `#${it.rank}` : "On the bubble"}</b>${change ? `<span class="note-change">${change}</span>` : ""}</div>
-      <div class="note-line">${pct(it.p_in)} sure · ${it.duels} duel${it.duels === 1 ? "" : "s"}</div>
-      <div class="conf" title="Chance it belongs on the leaderboard: ${pct(it.p_in)}"><i style="width:${pct(it.p_in)}"></i></div>
-      <div class="note-line">appeal ${(it.appeal > 0 ? "+" : "") + Number(it.appeal || 0).toFixed(2)} · ${it.frames > 1
-        ? `<button class="note-link" data-frames="${it.photo}" title="Swap which take stands in for this stack">${it.frames} takes ⧉</button>` : "one take"}${it.rescued ? " · 🧹 rescued" : ""}</div>
-      ${tagsOn.length ? `<div class="note-tags">${tagsOn.map((t) => `<span>${esc(t.emoji || "🏷️")} ${esc(t.label)}</span>`).join("")}</div>` : ""}
-      ${it.flags?.length ? `<div class="flags">${flagHtml(it.flags)}</div>` : ""}
-      ${it.bubble ? `<div class="actions">${it.added ? `<button class="btn" data-unpick="${it.photo}">Added ✓</button>` : `<button class="btn" data-pick="${it.photo}" title="It rides along in the export without a rank">+ Add</button>`}</div>` : ""}
-    </div>`;
+    const change=it.rank&&Object.keys(previous).length&&!previous[it.photo]?"NEW":it.rank&&previous[it.photo]>it.rank?`▲ ${previous[it.photo]-it.rank}`:"";
+    const tagsOn=(World.photos?.get(it.photo)?.tags||[]).map(k=>tagMeta.get(k)).filter(Boolean);
+    return `<div class="meta sticky photo-sticky" data-note-change="${esc(change)}" data-note-added="${!!it.added}" title="Drag me where you like">${photoSticky(it,tagsOn,{change,controls:true})}</div>`;
   };
   // The card is a pane like a duel's: its picture sits in the paper's window, so this photo's own crop, turn and
   // enhancement show exactly as Save my best will write them.
@@ -3283,22 +3312,9 @@ async function viewShortlist(main) {
     return `<div class="chin">${g ? `<b class="chin-group">${esc(g.emoji || "🗂️")} ${esc(g.name)}</b>` : ""}<span class="chin-file" title="${esc(it.rel || "")}">${esc(file)}${it.taken ? ` · ${esc(prettyDate(it.taken))}` : ""}</span></div>`;
   };
   const cropOf = (e) => CROP_MODES.includes(e.crop) ? e.crop : "off";
-  const card = (it) => { const e = it.edits || {}; return `<div class="tile board-card print tile-pile ${it.frames > 1 ? "stacked" : ""}" ${cardData(it)}
+  const card = (it) => { const e = it.edits || {}; return `<div class="tile board-card print tile-pile has-photo-sticky ${it.frames > 1 ? "stacked" : ""}" ${cardData(it)}
       data-note="${esc(JSON.stringify(e.note || null))}">
       ${pilePhotos(it.photo, it.members)}<div class="paper"><div class="window"><img src="${P(it.photo)}" alt="" data-view="${it.photo}"></div>${chin(it)}</div>${note(it)}</div>`; };
-  const CROP_SHEET = { best: "Best", subject: "Focus subject", height: "Fill height", width: "Fill width", off: "Off" };
-  const knobText = (key, v) => key === "levels" || key === "colour" ? `×${v.toFixed(2)}` : v === 0 ? "0" : `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
-  const sheetHtml = (it) => {
-    const e = it.edits || {}, on = e.enhance !== false, k = knobsOf(e.look), crop = cropOf(e);
-    return `<h3>✨ Enhance</h3>
-      <div class="sheet-row"><button class="btn ghost" data-edit="enhance" aria-pressed="${on}">${on ? "On" : "Off"} <kbd>F</kbd></button>${on && e.look ? `<button class="btn ghost" data-edit="auto">Back to auto</button>` : ""}</div>
-      <div class="sheet-knobs" ${on ? "" : "hidden"}>${Object.entries(KNOBS).map(([key, [lo, hi]]) => `<label class="sheet-knob"><span>${KNOB_WORD[key]}</span>
-        <input type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05" value="${k[key]}" aria-label="${KNOB_WORD[key]}"><output>${knobText(key, k[key])}</output></label>`).join("")}</div>
-      <h3>✂ Crop</h3>
-      <div class="sheet-seg">${CROP_MODES.map((m) => `<button class="btn ghost" data-crop="${m}" aria-pressed="${crop === m}" ${m === "subject" && !it.box ? "hidden" : ""}>${CROP_SHEET[m]}</button>`).join("")}<kbd>C</kbd></div>
-      <h3>↻ Turn</h3>
-      <div class="sheet-row"><button class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><b class="sheet-deg">${e.rotate || 0}°</b><button class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻ <kbd>R</kbd></button></div>`;
-  };
   const phoneFinishing=matchMedia('(max-width: 760px)');
   main.innerHTML = `
     <div class="screen board">
@@ -3316,13 +3332,12 @@ async function viewShortlist(main) {
           knobs for levels, light, contrast, colour and warmth), <b>C</b> walks the crops (best, focus subject, fill height, fill width, off), <b>R</b> turns a
           quarter; each is kept for that shot, shown in the card's window and baked into <b>Save my best</b> (Z takes one back). At most
           ${S.lib.settings.per_scene} per scene, so it stays varied. Add a bubble shot by hand and it rides along in the export without a rank.
-          Click the photo to see it big.`)}
+          Pull out the photo's notes corner for its details and finishing controls. Click the photo to see it big.`)}
       </div>
       <div class="screen-body board-body">
         ${entries.length ? `<div class="board-stage">
           <button class="btn ghost board-arrow" data-step="-1" aria-label="Previous (←)" title="Previous (←)">‹</button>
           <div class="board-fit"></div>
-          <aside class="edit-sheet rail-card" aria-label="Finishing"></aside>
           <button class="btn ghost board-arrow" data-step="1" aria-label="Next (→)" title="Next (→)">›</button>
         </div>` : `<div class="empty">Nothing on the board yet: play some duels first.</div>`}
       </div>
@@ -3342,14 +3357,18 @@ async function viewShortlist(main) {
     </div>`;
   const pick = async (b,on) => {try {await api("/api/pick",{photo:Number(on?b.dataset.pick:b.dataset.unpick),on});if(!left(view))viewShortlist(main);}catch(e){if(!left(view))toast(e.message);}};
   const bind = (root) => {
-    $$("[data-pick]", root).forEach((b) => (b.onclick = () => pick(b,true)));
-    $$("[data-unpick]", root).forEach((b) => (b.onclick = () => pick(b,false)));
-    $$("[data-view]", root).forEach((img) => (img.onclick = () => openViewer(Number(img.dataset.view))));
-    $$("[data-frames]", root).forEach((b) => (b.onclick = () => openFrames(Number(b.dataset.frames), () => viewShortlist(main))));
+    root.onclick = e => {
+      const b=e.target.closest('[data-pick],[data-unpick],[data-view],[data-frames]');if(!b||!root.contains(b))return;
+      e.stopPropagation();
+      if(b.hasAttribute('data-pick'))pick(b,true);
+      else if(b.hasAttribute('data-unpick'))pick(b,false);
+      else if(b.hasAttribute('data-view'))openViewer(Number(b.dataset.view));
+      else openFrames(Number(b.dataset.frames),()=>viewShortlist(main));
+    };
   };
   bind($(".screen-rail", main));
-  const fit = $(".board-fit", main), pos = $(".board-pos", main), sheet = $(".edit-sheet", main);
-  phoneFinishing.addEventListener('change',event=>{$$('.sheet-fold,.board-insights',main).forEach(details=>details.open=!event.matches);},{signal:S.events.signal});
+  const fit = $(".board-fit", main), pos = $(".board-pos", main);
+  phoneFinishing.addEventListener('change',event=>{$$('.board-insights',main).forEach(details=>details.open=!event.matches);},{signal:S.events.signal});
   // The toolbelt (toolbelt.js) draws on the card; it is told this shot's edits so it never has to fetch them, and
   // what it saves (marks, notes) comes back into this view's copy.
   const fromBelt = (pid, edits) => { if (left(view)) { Toolbelt.listeners.delete(fromBelt); return; } const it = entries.find((x) => x.photo === pid); if (it) it.edits = edits; };
@@ -3371,68 +3390,15 @@ async function viewShortlist(main) {
     $$(".board-arrow", main).forEach((b) => { const next = at + Number(b.dataset.step); b.style.visibility = next < 0 || next >= entries.length ? "hidden" : ""; });
     bind(el);
     dragNote(el); Toolbelt.know(it.photo, it.edits || {});
-    if (sheet) {
-      const open=sheet.querySelector('.sheet-fold')?.open??!phoneFinishing.matches;
-      sheet.innerHTML=`<details class="sheet-fold" ${open?'open':''}><summary>Finish this shot</summary>${sheetHtml(it)}</details>`;
-      bindSheet(it, el);
-    }
     const ready = img && !(img.complete && img.naturalWidth) ? img.decode().catch(() => {}) : Promise.resolve();
     ready.then(() => {
       if (!el.isConnected || left(view)) return;
-      frameBoardCard(el); placeNote(el);
+      placeNote(el); frameBoardCard(el);
       el.style.visibility = "";
       if (leaving) el.animate([{ transform: away(Math.random() * 6.2832), opacity: 0.5 }, { transform: "none", opacity: 1 }], { duration: 420, easing: "cubic-bezier(.2,.8,.2,1)" });
     });
   };
-  const bindSheet = (it, el) => {
-    const e = it.edits || {};
-    $("[data-edit=enhance]", sheet).onclick = () => edit({ enhance: e.enhance === false });
-    const auto = $("[data-edit=auto]", sheet); if (auto) auto.onclick = () => edit({ look: null });
-    $$("[data-crop]", sheet).forEach((b) => (b.onclick = () => edit({ crop: b.dataset.crop === "off" ? "none" : b.dataset.crop })));
-    $$("[data-turn]", sheet).forEach((b) => (b.onclick = () => edit({ rotate: (((e.rotate || 0) + Number(b.dataset.turn)) % 360 + 360) % 360 })));
-    const knobsNow = () => Object.fromEntries($$("[data-knob]", sheet).map((r) => [r.dataset.knob, Number(r.value)]));
-    $$("[data-knob]", sheet).forEach((r) => {
-      r.oninput = () => {  // live: the card's window shows the look as the knob moves; nothing is saved yet
-        r.nextElementSibling.textContent = knobText(r.dataset.knob, Number(r.value));
-        el.dataset.look = JSON.stringify(knobsNow()); frameBoardCard(el);
-      };
-      r.onchange = () => edit({ look: knobsNow() });
-      r.addEventListener("pointerup", () => r.blur());  // letting go hands the arrows back to the ranks
-    });
-  };
-  // The note can be moved: drag it anywhere on the stage; where you put it is kept for that photo (not an undo step:
-  // it is where your note is, not a change to the shot).
-  const dragSticky = (note, card, onDrop) => {
-    const body = $(".board-body", main);
-    if (!note || !body) return;
-    note.addEventListener("pointerdown", (e) => {
-      if (e.button || e.target.closest("button, a, input, textarea") || !["hand", "note"].includes(Toolbelt.tool)) return;
-      e.preventDefault();
-      const unit = card.clientWidth / 100, x0 = Number(note.style.getPropertyValue("--note-x")) || 0, y0 = Number(note.style.getPropertyValue("--note-y")) || 0;
-      const start = [e.clientX, e.clientY];
-      let pos = [x0, y0];
-      note.setPointerCapture(e.pointerId); note.classList.add("dragging");
-      const move = (ev) => {
-        const r = card.getBoundingClientRect(), b = body.getBoundingClientRect(), w = note.offsetWidth, h = note.offsetHeight;
-        const leftPx = Math.max(b.left + 4, Math.min(b.right - w - 4, r.left + x0 * unit + ev.clientX - start[0]));  // it stays on the stage
-        const topPx = Math.max(b.top + 4, Math.min(b.bottom - h - 4, r.top + y0 * unit + ev.clientY - start[1]));
-        pos = [(leftPx - r.left) / unit, (topPx - r.top) / unit];
-        note.style.setProperty("--note-x", pos[0].toFixed(1)); note.style.setProperty("--note-y", pos[1].toFixed(1));
-      };
-      const up = () => {
-        note.removeEventListener("pointermove", move); note.removeEventListener("pointerup", up); note.removeEventListener("pointercancel", up);
-        note.classList.remove("dragging");
-        if (Math.hypot(pos[0] - x0, pos[1] - y0) < 0.5) return;
-        onDrop(Math.round(pos[0] * 10) / 10, Math.round(pos[1] * 10) / 10);
-      };
-      note.addEventListener("pointermove", move); note.addEventListener("pointerup", up); note.addEventListener("pointercancel", up);
-    });
-  };
-  const dragNote = (card) => dragSticky(card?.querySelector(".meta.sticky:not(.user-note)"), card, async (x, y) => {
-    const it = entries[at];
-    try { const r = await api("/api/edit", { photo: it.photo, note: [x, y] }); if (!left(view)) { it.edits = r.edits || {}; card.dataset.note = JSON.stringify(it.edits.note || null); } }
-    catch (err) { if (!left(view)) toast(err.message); }
-  });
+  const dragNote = (card) => Toolbelt.dragNote(card.querySelector('.photo-sticky'),card,(x,y)=>Toolbelt.save(Number(card.dataset.photo),{note:[x,y]}));
   // Finishing a shot: this photo's own enhancement and its knobs, crop mode and turn, saved and undoable, baked
   // into Save my best. The card re-renders in place (no slide).
   let editing = false;
@@ -3457,7 +3423,7 @@ async function viewShortlist(main) {
   $$(".board-arrow", main).forEach((b) => (b.onclick = () => show(at + Number(b.dataset.step))));
   show(at);
   if (fit && typeof ResizeObserver !== "undefined") {  // the window's size decides the framing
-    const ro = new ResizeObserver(() => { if (left(view)) { ro.disconnect(); return; } const card = $$(".board-card", fit).at(-1); if (card) { frameBoardCard(card); placeNote(card); } });
+    const ro = new ResizeObserver(() => { if (left(view)) { ro.disconnect(); return; } const card = $$(".board-card", fit).at(-1); if (card) { placeNote(card); frameBoardCard(card); } });
     ro.observe(fit);
   }
   $("#export").onclick = (e) => exportFlow("review", e.currentTarget);
@@ -3480,7 +3446,7 @@ async function viewShortlist(main) {
 function cardData(it, global = false) {
   const e = it?.edits || {}, crop = CROP_MODES.includes(e.crop) ? e.crop : "";
   return `data-frame="own" data-photo="${it.photo}" data-box="${esc(JSON.stringify(it.box || null))}" data-crop="${crop}" data-crop-default="${global ? "global" : "off"}"
-    data-enhance="${e.enhance === false ? "off" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}"`;
+    data-enhance="${e.enhance === false ? "off" : e.enhance === true ? "on" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}"`;
 }
 // A card frames its picture by its own data attributes (see cardData), falling back to the global toggles.
 function frameBoardCard(card) {
@@ -3560,10 +3526,65 @@ document.addEventListener('contextmenu',e=>{
 
 function openViewer(id) {
   const m = $("#modal");
-  m.className = "wide";
-  m.innerHTML = `<div class="viewer"><div class="print"><img src="${P(id)}" alt=""></div><div class="viewer-actions">${photoPathButton(id)}<button class="btn" id="close-modal">Close</button></div></div>`;
-  m.onclick = e => {if(e.target===m||e.target.matches('.viewer>img'))m.close();};
+  m.viewerControls?.abort();
+  const events=new AbortController(),{signal}=events;m.viewerControls=events;
+  m.className = "wide photo-viewer";
+  m.innerHTML = `<div class="viewer"><div class="viewer-stage" role="region" aria-label="Photo preview. Scroll to zoom; drag to pan when zoomed in."><div class="print"><img src="${P(id)}" alt="" draggable="false"></div></div><div class="viewer-actions">${photoPathButton(id)}<button class="btn" data-viewer-reset hidden>Reset view</button><button class="btn" data-viewer-notes hidden>Notes</button><button class="btn" id="close-modal">Close</button></div></div>`;
+  const stage=$('.viewer-stage',m),card=$('.print',stage),img=$('img',card),resetButton=$('[data-viewer-reset]',m),notesButton=$('[data-viewer-notes]',m);
+  let zoom=1,x=0,y=0,drag=null,suppressClick=false,fullTimer=null,fullRequested=false;
+  const paint=()=>{
+    card.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;card.dataset.viewerZoom=String(zoom);
+    stage.classList.toggle('zoomed',zoom>1.001);resetButton.hidden=notesButton.hidden=zoom<=1.001;
+  };
+  const reset=()=>{zoom=1;x=y=0;paint();};
+  const constrain=()=>{
+    const r=card.getBoundingClientRect(),s=stage.getBoundingClientRect(),left=r.left-x,top=r.top-y;
+    const bound=(value,lo,hi,base,size)=>size>hi-lo?Math.max(hi-24-base-size,Math.min(lo+24-base,value)):Math.max(lo+8-base,Math.min(hi-8-base-size,value));
+    x=bound(x,s.left,s.right,left,r.width);y=bound(y,s.top,s.bottom,top,r.height);
+  };
+  const zoomAt=(next,cx,cy)=>{
+    const r=card.getBoundingClientRect(),ratio=next/zoom;
+    x+=(cx-r.left)*(1-ratio);y+=(cy-r.top)*(1-ratio);zoom=next;
+    if(zoom<=1.001)reset();else{paint();constrain();paint();}
+    clearTimeout(fullTimer);
+    // Decode one original after the gesture rests, never on every wheel tick.
+    if(!fullRequested&&zoom>1.001&&card.clientHeight*zoom>=innerHeight*.8)fullTimer=setTimeout(()=>{
+      if(signal.aborted||!m.open)return;fullRequested=true;
+      img.addEventListener('load',()=>{const state=PhotoNotes.hosts.get(card);if(state?.data)PhotoNotes.preview(card,state.data,Toolbelt.current(id));},{once:true,signal});
+      img.src=`${P(id)}&m=full`;
+    },150);
+  };
+  stage.addEventListener('wheel',e=>{
+    if(e.target.closest('.photo-notes-paper'))return;
+    e.preventDefault();e.stopPropagation();
+    const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?stage.clientHeight:1);
+    zoomAt(Math.max(1,Math.min(12,zoom*Math.exp(-Math.max(-500,Math.min(500,delta))*.0015))),e.clientX,e.clientY);
+  },{passive:false,signal});
+  stage.addEventListener('pointerdown',e=>{
+    if(e.button||zoom<=1.001||Toolbelt.tool!=='hand'||e.target.closest('button,a,input,textarea,.photo-sticky,.user-note'))return;
+    e.preventDefault();e.stopPropagation();drag={id:e.pointerId,x:e.clientX,y:e.clientY,px:x,py:y,moved:false};
+    stage.setPointerCapture(e.pointerId);stage.classList.add('panning');
+  },{signal});
+  stage.addEventListener('pointermove',e=>{
+    if(!drag||e.pointerId!==drag.id)return;
+    const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.moved||=Math.hypot(dx,dy)>4;
+    x=drag.px+dx;y=drag.py+dy;paint();constrain();paint();
+  },{signal});
+  const release=e=>{
+    if(!drag||e.pointerId!==drag.id)return;
+    suppressClick=drag.moved;drag=null;stage.classList.remove('panning');
+    if(stage.hasPointerCapture(e.pointerId))stage.releasePointerCapture(e.pointerId);
+  };
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])stage.addEventListener(type,release,{signal});
+  stage.addEventListener('dblclick',e=>{if(Toolbelt.tool==='hand'&&!e.target.closest('button,input,textarea,.photo-sticky,.user-note')){e.preventDefault();e.stopPropagation();reset();}},{signal});
+  stage.addEventListener('click',e=>{if(e.target.closest('.photo-notes-tab'))reset();},{capture:true,signal});
+  window.addEventListener('resize',reset,{signal});resetButton.onclick=reset;
+  notesButton.onclick=()=>{reset();PhotoNotes.open(card);};
+  m.onclick = e => {if(suppressClick){suppressClick=false;e.preventDefault();return;}if(!e.target.closest('.print,.viewer-actions,.photo-note-sheet'))m.close();};
   $('#close-modal',m).onclick=()=>m.close();
+  // A dialog's close event is queued: reopening it before that event arrives must keep the new viewer alive.
+  m.addEventListener('close',()=>{if(!m.open)events.abort();},{signal});signal.addEventListener('abort',()=>clearTimeout(fullTimer),{once:true});
+  reset();
   m.showModal();
 }
 
@@ -3594,13 +3615,81 @@ async function openFrames(photo, done) {
 function viewStacks(main, params) {
   return params.get("check") ? twinCheck(main) : stacksPage(main);
 }
+const shotDate = shot => (shot.taken||'').slice(0,10)||'undated';
+const dateWord = day => day==='undated'?'No date':new Date(`${day}T12:00:00`).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
 
 async function stacksPage(main) {
   const view = S.view;
   let shots = [], boxes = {}, twins = 0, undo = null, pairs = [], total = 0, nextPage = 1, pages = 0, paging = false;
   let order = (() => { try { return localStorage.getItem("matcher-stacks-order") === "time" ? "time" : "look"; } catch (_) { return "look"; } })();
+  let firstPage=0,dates=[],dateRaf=0;
+  let stacksOnly = (() => { try { return localStorage.getItem('matcher-stacks-only') === '1'; } catch (_) { return false; } })();
   const byRep = new Map();
+  let cardObserver = null;
+  const observed = new Set(), mounted = new Set();
   let loadEpoch = 0, shownPairs = '';
+  const query = () => `/api/groups?view=${stacksOnly?'stacks':'all'}&order=${order}&per=120`;
+  function mountCard(tile) {
+    if(!tile?.classList.contains('sleeping'))return;
+    const shot=byRep.get(Number(tile.dataset.dragShot));if(!shot)return;
+    tile.innerHTML=shotTileContents(shot,null,boxes);tile.classList.remove('sleeping');mounted.add(tile);
+  }
+  function restCard(tile) {
+    if(tile.near||tile.classList.contains('open')||tile.contains(document.activeElement)||tile.matches(':active')||tile.contains(Toolbelt.gesture?.print))return;
+    tile.replaceChildren();tile.classList.add('sleeping');delete tile.dataset.belt;mounted.delete(tile);
+  }
+  // Keep each card's place in the grid; only nearby cards carry pictures, notes and drawing surfaces.
+  function watchCards() {
+    const body=$('.stacker .screen-body',main);if(!body)return;
+    if(cardObserver?.root!==body){
+      cardObserver?.disconnect();observed.clear();mounted.clear();
+      cardObserver=new IntersectionObserver(entries=>{if(left(view))return;for(const {target,isIntersecting} of entries){
+        if(!target.isConnected)continue;target.near=isIntersecting;if(isIntersecting)mountCard(target);else restCard(target);
+      }dateNow();},{root:body,rootMargin:'300px 0px'});
+      body.addEventListener('focusout',()=>queueMicrotask(()=>{for(const tile of mounted)restCard(tile);}));
+    }
+    for(const tile of observed)if(!tile.isConnected){cardObserver.unobserve(tile);observed.delete(tile);mounted.delete(tile);}
+    for(const tile of $$('[data-drag-shot]',body))if(!observed.has(tile)){observed.add(tile);cardObserver.observe(tile);}
+  }
+  S.events.signal.addEventListener('abort',()=>cardObserver?.disconnect(),{once:true});
+  function dateNow(){
+    if(order!=='time'||dateRaf)return;
+    dateRaf=requestAnimationFrame(()=>{
+      dateRaf=0;if(left(view))return;
+      const body=$('.stacker .screen-body',main),select=$('[data-date-jump]',main);if(!body||!select)return;
+      const edge=body.getBoundingClientRect(),near=[...mounted].filter(t=>t.isConnected&&t.near).map(tile=>({tile,r:tile.getBoundingClientRect()}))
+        .filter(x=>x.r.bottom>edge.top&&x.r.top<edge.bottom).sort((a,b)=>a.r.top-b.r.top||a.r.left-b.r.left)[0];
+      if(near&&document.activeElement!==select)select.value=shotDate(byRep.get(Number(near.tile.dataset.dragShot))||{});
+      const i=dates.findIndex(d=>d.date===select.value);
+      $('[data-date-step="-1"]',main)?.classList.toggle('invisible',i<=0);
+      $('[data-date-step="1"]',main)?.classList.toggle('invisible',i<0||i>=dates.length-1);
+    });
+  }
+  function dateMarkers(){
+    const grid=$('.lookgrid',main);if(!grid)return;
+    for(const h of $$(':scope > .date-divider',grid))h.remove();
+    if(order!=='time')return;
+    let last=null;
+    for(const tile of $$(':scope > .tile[data-drag-shot]',grid)){
+      const day=shotDate(byRep.get(Number(tile.dataset.dragShot))||{});if(day===last)continue;last=day;
+      const h=document.createElement('h3');h.className='date-divider';h.dataset.date=day;h.textContent=dateWord(day);grid.insertBefore(h,tile);
+    }
+    dateTail();dateNow();
+  }
+  function dateTail(){
+    const grid=$('.lookgrid',main),last=$$('.date-divider',grid||main).at(-1),tile=$$('[data-drag-shot]',grid||main).at(-1),body=$('.stacker .screen-body',main);
+    if(grid&&body)grid.style.setProperty('--date-tail',`${order==='time'&&nextPage>=pages&&last&&tile?Math.max(0,body.clientHeight-(tile.getBoundingClientRect().bottom-last.getBoundingClientRect().top)):0}px`);
+  }
+  function dateJump(){
+    if(order!=='time'||!dates.length)return '';
+    let month=null;
+    const options=dates.map(d=>{
+      const key=d.date.slice(0,7),label=d.date==='undated'?'No date':new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined,{month:'long',year:'numeric'});
+      const group=key!==month?`${month===null?'':'</optgroup>'}<optgroup label="${esc(label)}">`:'';month=key;
+      return `${group}<option value="${d.date}">${esc(dateWord(d.date))} · ${plural(d.count,'shot')}</option>`;
+    }).join('')+'</optgroup>';
+    return `<div class="date-jump" role="group" aria-label="Browse dates"><button class="btn ghost" data-date-step="-1" aria-label="Previous date">‹</button><label><span>Jump to</span><select data-date-jump aria-label="Jump to date">${options}</select></label><button class="btn ghost" data-date-step="1" aria-label="Next date">›</button></div>`;
+  }
   function sizeFamilies() {
     const grid = $(".stacker .lookgrid", main);if(!grid)return;
     const columns = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length;
@@ -3608,34 +3697,40 @@ async function stacksPage(main) {
       const n=Math.min(columns,f.children.length);
       f.style.gridColumn=`span ${n}`;f.style.gridTemplateColumns=`repeat(${n},minmax(0,1fr))`;
     });
+    if(order==='time')dateTail();
   }
   window.addEventListener('resize',sizeFamilies,{signal:S.events.signal});
-  async function load(keep, reorder = false) {
+  async function load(keep, reorder = false, day = null) {
     if (left(view)) return;
     const request = ++loadEpoch;
     paging = false;
-    const body = $(".screen-body", main), y = body?.scrollTop || 0, loadedPages = keep ? nextPage : 1;
+    const body = $(".screen-body", main), y = body?.scrollTop || 0, loadedPages = keep ? nextPage-firstPage : 1;
+    if(!keep)firstPage=0;
     const expanded = keep && byRep.get(Number($(".tile.open", main)?.dataset.dragShot));
     const edge = body?.getBoundingClientRect(), visible = keep && edge ? $$(".tile[data-drag-shot]", body)
       .map(el=>({shot:byRep.get(Number(el.dataset.dragShot)),box:el.getBoundingClientRect()}))
       .filter(x=>x.shot&&x.box.bottom>edge.top&&x.box.top<edge.bottom)
       .sort((a,b)=>Number(b.shot===expanded)-Number(a.shot===expanded)||Math.abs(a.box.top-edge.top)-Math.abs(b.box.top-edge.top))[0] : null;
     const anchor = visible && {members:visible.shot.members,offset:visible.box.top-edge.top};
+    let jump=null;
     try {
-      const query = `/api/groups?view=stacks&order=${order}&per=120`;
-      const [sug, first] = await Promise.all([api("/api/groups?view=suggest"), api(`${query}&page=0${reorder?'&reorder=1':''}`)]);
+      const url = query();
+      const [sug, first] = await Promise.all([api("/api/groups?view=suggest"), api(`${url}&page=${firstPage}${reorder?'&reorder=1':''}${order==='time'?'&dates=1':''}${day?`&date=${encodeURIComponent(day)}`:''}${keep&&order==='time'&&anchor?`&at=${anchor.members[0]}`:''}`)]);
       if (left(view) || request !== loadEpoch) return;
-      const batches = [first, ...await Promise.all(Array.from({length:Math.max(0,Math.min(loadedPages,first.pages)-1)},(_,i)=>api(`${query}&page=${i+1}`)))];
+      firstPage=first.page;
+      if(first.dates)dates=first.dates;
+      jump=first.jump;
+      const batches = [first, ...await Promise.all(Array.from({length:Math.max(0,Math.min(loadedPages,first.pages-firstPage)-1)},(_,i)=>api(`${url}&page=${firstPage+i+1}`)))];
       // Splitting at a page boundary can move the reached-for stack onto the next page.
-      while(anchor && batches.length<first.pages && !batches.some(b=>b.shots.some(x=>x.members.some(m=>anchor.members.includes(m))))) {
-        batches.push(await api(`${query}&page=${batches.length}`));
+      while(anchor && firstPage+batches.length<first.pages && !batches.some(b=>b.shots.some(x=>x.members.some(m=>anchor.members.includes(m))))) {
+        batches.push(await api(`${url}&page=${firstPage+batches.length}`));
         if(left(view)||request!==loadEpoch)return;
       }
       if (left(view) || request !== loadEpoch) return;
       twins = sug.suggestions.length;
       pairs = sug.suggestions;
       shots = batches.flatMap(b=>b.shots); boxes = Object.assign({},...batches.map(b=>b.boxes)); undo = first.undo; total = first.total;
-      nextPage = batches.length; pages = first.pages;
+      nextPage = firstPage+batches.length; pages = first.pages;
     } catch (e) { if (!left(view) && request === loadEpoch) main.innerHTML = FAILED(e.message); return; }
     if (left(view)) return;
     byRep.clear();
@@ -3643,7 +3738,7 @@ async function stacksPage(main) {
     render(keep);
     if (expanded) {
       const members = new Set(expanded.members), match = shots.map(x=>({shot:x,n:x.members.filter(m=>members.has(m)).length})).sort((a,b)=>b.n-a.n)[0];
-      if(match?.n && match.shot.members.length>1){const button=$(`[data-expand="${match.shot.rep}"]`,main);if(button&&!button.closest('.tile.open'))expandStack(main,match.shot,button,boxes,false);}
+      if(match?.n && match.shot.members.length>1){mountCard($(`[data-drag-shot="${match.shot.rep}"]`,main));const button=$(`[data-expand="${match.shot.rep}"]`,main);if(button&&!button.closest('.tile.open'))expandStack(main,match.shot,button,boxes,false);}
     }
     if (keep) {
       // Reattach the shared tag shelf before restoring scroll; its height changes the bottom scroll limit.
@@ -3652,27 +3747,51 @@ async function stacksPage(main) {
       const tile = match && $(`[data-drag-shot="${match.rep}"]`,main);
       body.scrollTop = tile ? tile.getBoundingClientRect().top-body.getBoundingClientRect().top+body.scrollTop-anchor.offset : y;
     }
+    if(jump)requestAnimationFrame(()=>{
+      if(left(view)||request!==loadEpoch)return;
+      const tile=$(`[data-drag-shot="${jump.photo}"]`,main),body=$('.screen-body',main);if(!tile||!body)return;
+      const header=tile.previousElementSibling?.matches('.date-divider')?tile.previousElementSibling:tile;
+      body.scrollTop+=header.getBoundingClientRect().top-body.getBoundingClientRect().top;
+      const select=$('[data-date-jump]',main);if(select)select.value=jump.date;dateNow();
+    });
+    dateNow();
   }
   async function moreStacks() {
     if (paging || nextPage >= pages || left(view)) return;
     paging = true;
     const request = loadEpoch;
     try {
-      const r = await api(`/api/groups?view=stacks&order=${order}&per=120&page=${nextPage}`);
+      const r = await api(`${query()}&page=${nextPage}`);
       if (left(view) || request !== loadEpoch) return;
       nextPage++;
       shots.push(...r.shots); Object.assign(boxes, r.boxes);
       for (const x of r.shots) byRep.set(x.rep, x);
-      const grid = $(".lookgrid", main); if (grid) { patchShotTiles(grid,shots,null,boxes);sizeFamilies(); }
+      const grid = $(".lookgrid", main); if (grid) { patchShotTiles(grid,shots,null,boxes,true);dateMarkers();sizeFamilies();watchCards(); }
     } catch (e) { if (!left(view) && request === loadEpoch) toast(e.message); }
     finally { if (request === loadEpoch) paging = false; }
+  }
+  async function earlierStacks(){
+    if(paging||firstPage<=0||left(view))return;
+    paging=true;const request=loadEpoch,body=$('.screen-body',main),edge=body.getBoundingClientRect();
+    const anchor=$$('[data-drag-shot]',body).find(tile=>tile.getBoundingClientRect().bottom>edge.top),offset=anchor?.getBoundingClientRect().top-edge.top;
+    try{
+      const r=await api(`${query()}&page=${firstPage-1}`);if(left(view)||request!==loadEpoch)return;
+      firstPage--;shots.unshift(...r.shots);Object.assign(boxes,r.boxes);for(const shot of r.shots)byRep.set(shot.rep,shot);
+      patchShotTiles($('.lookgrid',main),shots,null,boxes,true);dateMarkers();sizeFamilies();watchCards();
+      if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-body.getBoundingClientRect().top-offset;
+    }catch(e){if(!left(view))toast(e.message);}finally{if(request===loadEpoch)paging=false;}
   }
   function render(keep = false) {
     const current=keep&&$('.stacker',main);
     if(current&&shots.length&&$('.lookgrid',current)){
-      patchShotTiles($('.lookgrid',current),shots,null,boxes);
+      patchShotTiles($('.lookgrid',current),shots,null,boxes,true);
+      dateMarkers();
+      if(order==='time'){
+        const old=$('.date-jump',current),markup=dateJump();if(old)old.outerHTML=markup;
+        bindDates();
+      }
       $('[data-stack-total]',current).textContent=fmt(total||shots.length);
-      $('[data-stack-word]',current).textContent=(total||shots.length)===1?'stack':'stacks';
+      $('[data-stack-word]',current).textContent=stacksOnly?((total||shots.length)===1?'stack':'stacks'):((total||shots.length)===1?'shot':'shots');
       $('[data-stack-twins]',current).innerHTML=twins?`🧐 <b>${fmt(twins)}</b> possible ${twins===1?'twin':'twins'} to check`:'✅ all checked';
       const button=$('#g-undo',current);button.hidden=!undo;
       $('.desktop-label',button).textContent=undo?`Undo ${DRAW_WORD[undo]||undo}`:'Undo';
@@ -3685,27 +3804,30 @@ async function stacksPage(main) {
       current.classList.toggle('no-rail',!pairs.length);
       $('.bar-right',current).innerHTML=twinsAction();
       setForward(twins?null:{label:'Next: Crown →',name:'Crown',href:'#duel?stage=stacks'});
-      sizeFamilies();
+      sizeFamilies();watchCards();
       return;
     }
     main.innerHTML = `
-      <div class="screen sorter stacker ${pairs.length ? '' : 'no-rail'}">
+      <div class="screen sorter stacker ${order==='time'?'by-date':''} ${pairs.length ? '' : 'no-rail'}">
         <div class="screen-head">
           <h1>🧩 Stacks</h1>
-          <span class="stat-chip"><b data-stack-total>${fmt(total || shots.length)}</b> <span data-stack-word>${(total||shots.length)===1?'stack':'stacks'}</span></span>
+          <span class="stat-chip"><b data-stack-total>${fmt(total || shots.length)}</b> <span data-stack-word>${stacksOnly?((total||shots.length)===1?'stack':'stacks'):((total||shots.length)===1?'shot':'shots')}</span></span>
           <span class="stat-chip" data-stack-twins>${twins ? `🧐 <b>${fmt(twins)}</b> possible ${twins === 1 ? "twin" : "twins"} to check` : "✅ all checked"}</span>
           <span class="grow"></span>
+          <button class="chip ${stacksOnly?'on':''}" data-stacks-only aria-pressed="${stacksOnly}">Stacks only</button>
           <span class="seg" role="group" aria-label="Stack order">
             <button class="seg-btn ${order === "look" ? "on" : ""}" data-stack-order="look" title="Put similar stacks next to each other">Similar</button>
             <button class="seg-btn ${order === "time" ? "on" : ""}" data-stack-order="time" title="Sort stacks by capture time">By date</button>
           </span>
+          ${dateJump()}
           ${helpBtn(`The same picture (a crop, a copy) or a burst of nearly the same shot belongs in <b>one stack</b>, so it competes
             as one shot showing its best take. The obvious ones are stacked already.<br><br><b>Twin check</b> shows the pairs that look
             like the same shot but weren't stacked. Here, <b>⧉</b> opens a stack (keep a different take, split one out, split it
-            all), and dragging one stack onto another merges them. <b>Z</b> undoes.`)}
+            all), and dragging one photo or stack onto another combines them. Loose photos are stacks of one;
+            <b>Stacks only</b> hides them. <b>Z</b> undoes.`)}
         </div>
         <div class="screen-body">
-          ${shots.length ? `<div class="lookgrid gsec-tiles">${shotTiles(shots, null, boxes)}</div>` : `<div class="empty">No stacks: every shot stands alone.</div>`}
+          ${shots.length ? `<div class="lookgrid gsec-tiles">${shotTiles(shots, null, boxes,true)}</div>` : `<div class="empty">${stacksOnly?'No stacks yet. Turn off Stacks only to combine loose photos.':'No shots to stack yet.'}</div>`}
         </div>
         ${twinsRail()}
         <div class="screen-bar action-bar">
@@ -3717,6 +3839,11 @@ async function stacksPage(main) {
     setForward(twins ? null : { label: "Next: Crown →", name: "Crown", href: "#duel?stage=stacks" });
     shownPairs=JSON.stringify(pairs);
     $("#g-undo").onclick = () => drawUndo(() => load(true));
+    $('[data-stacks-only]',main).onclick=async()=>{
+      stacksOnly=!stacksOnly;
+      try{localStorage.setItem('matcher-stacks-only',stacksOnly?'1':'0');}catch(_){ /* private mode */ }
+      main.innerHTML=LOADING();await load(false);$('[data-stacks-only]',main)?.focus();
+    };
     $$("[data-stack-order]", main).forEach((b) => (b.onclick = async () => {
       if (b.dataset.stackOrder === order) return;
       order = b.dataset.stackOrder;
@@ -3727,7 +3854,9 @@ async function stacksPage(main) {
     const body = $(".screen-body", main);
     rememberShotTiles($('.lookgrid',main),shots,boxes);
     sizeFamilies();
-    body.onscroll = () => { if (body.scrollHeight-body.scrollTop-body.clientHeight < 500) moreStacks(); };
+    dateMarkers();bindDates();
+    watchCards();
+    body.onscroll = () => { dateNow();if(body.scrollTop<250&&firstPage>0)earlierStacks();else if (body.scrollHeight-body.scrollTop-body.clientHeight < 500) moreStacks(); };
     const page = $(".stacker", main);
     page.onclick = (e) => {
       const t = e.target.closest("[data-expand],[data-keep],[data-split],[data-unstack],[data-reset],[data-view]");
@@ -3742,7 +3871,7 @@ async function stacksPage(main) {
       if (t.dataset.view) return openViewer(Number(t.dataset.view));
     };
     // X, or the bar's button, sets a whole stack aside with every take (the Set aside page can bring it back).
-    const setAsideStack = (rep) => { const x = byRep.get(rep); if (!x) return; act("/api/filter/decision", { photos: x.members, action: "aside" }, `Set aside with all ${x.members.length} takes.`); };
+    const setAsideStack = (rep) => { const x = byRep.get(rep); if (!x) return; act("/api/filter/decision", { photos: x.members, action: "aside" }, x.members.length===1?'Set aside.':`Set aside with all ${x.members.length} takes.`); };
     S.onKey = (e) => {
       if (e.repeat) return;
       if (["z", "Z", "Backspace"].includes(e.key)) { e.preventDefault(); drawUndo(() => load(true)); return; }
@@ -3777,7 +3906,13 @@ async function stacksPage(main) {
       if (d.kind === "frame") return act("/api/groups/move", { photo: d.id, target: Number(z.dataset.drop) }, "Moved into that stack.");
       act("/api/groups/merge", { photos: [d.id, Number(z.dataset.drop)] }, "Merged into one stack.");
     };
-    page.ondragend=()=>{drag=null;$$('.drop-hot',page).forEach(tile=>tile.classList.remove('drop-hot'));};
+    page.ondragend=()=>{drag=null;$$('.drop-hot',page).forEach(tile=>tile.classList.remove('drop-hot'));for(const tile of mounted)restCard(tile);};
+  }
+  function bindDates(){
+    const select=$('[data-date-jump]',main);if(!select)return;
+    const jump=day=>{main.innerHTML=LOADING();load(false,false,day);};
+    select.onchange=()=>jump(select.value);
+    for(const button of $$('[data-date-step]',main))button.onclick=()=>{const i=dates.findIndex(d=>d.date===select.value)+Number(button.dataset.dateStep);if(dates[i])jump(dates[i].date);};
   }
   function twinsRail(){return pairs.length?`<aside class="screen-rail"><div class="rail-card grow"><h3>🧐 Possible twins</h3>
     <div class="twin-list">${pairs.map(x=>`<a class="twin-row" href="#stacks?check=1" title="${Math.round(x.similarity*100)}% alike">
@@ -4234,6 +4369,33 @@ function viewDraw(main, params) {
   return drawSorter(main, params.get("g"));
 }
 
+let tagPickerId=0;
+// Search friendly names while keeping the exact tag key behind each choice, including duplicate names.
+function tagPicker(root,list,choose,{label='Find a tag',exclude=null}={}) {
+  const id=`tag-picker-${++tagPickerId}`;
+  root.innerHTML=`<label>${esc(label)}<input class="hint-input" type="search" role="combobox" aria-autocomplete="list" aria-controls="${id}" aria-expanded="false" autocomplete="off"></label><div class="tag-options rail-card" role="listbox" id="${id}" hidden></div>`;
+  const input=$('input',root),options=$('.tag-options',root);let matches=[],at=-1;
+  const close=()=>{options.hidden=true;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');};
+  const pick=t=>{close();input.value='';choose(t);};
+  const paint=()=>{
+    const q=input.value.trim().toLocaleLowerCase();matches=list.filter(t=>t.key!==exclude&&t.label.toLocaleLowerCase().includes(q)).slice(0,100);at=-1;
+    options.innerHTML=matches.length?matches.map((t,i)=>`<button type="button" role="option" id="${id}-${i}" aria-selected="false" tabindex="-1" data-tag-option="${i}">${esc(t.emoji||'🏷️')} ${esc(t.label)}</button>`).join(''):'<span class="muted">No matching tags</span>';
+    options.hidden=false;input.setAttribute('aria-expanded','true');input.removeAttribute('aria-activedescendant');
+    for(const button of $$('[data-tag-option]',options)){button.onpointerdown=e=>e.preventDefault();button.onclick=()=>pick(matches[Number(button.dataset.tagOption)]);}
+  };
+  input.oninput=input.onfocus=paint;
+  input.onkeydown=e=>{
+    if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();return;}
+    if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();e.stopPropagation();if(options.hidden)paint();if(!matches.length)return;
+      at=at<0?(e.key==='ArrowDown'?0:matches.length-1):(at+(e.key==='ArrowDown'?1:-1)+matches.length)%matches.length;
+      $$('[role=option]',options).forEach((b,i)=>b.setAttribute('aria-selected',String(i===at)));
+      const active=$(`#${id}-${at}`,options);input.setAttribute('aria-activedescendant',active.id);active.scrollIntoView({block:'nearest'});
+    }else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();if(!options.hidden&&(at>=0||matches.length===1))pick(matches[at>=0?at:0]);}
+  };
+  root.addEventListener('focusout',e=>{if(!root.contains(e.relatedTarget))close();});
+  return input;
+}
+
 // Every tag has an editable roster and a finite set of borderline calls to teach it.
 async function viewTags(main, params) {
   const view = S.view, play = params.get("play");
@@ -4242,7 +4404,8 @@ async function viewTags(main, params) {
   try { data = await api("/api/tags?all=1"); await World.allPhotos(); }
   catch (e) { if (!left(view)) main.innerHTML = FAILED(e.message); return; }
   if (left(view)) return;
-  const list = data.tags.sort((a,b)=>b.count-a.count || a.label.localeCompare(b.label));
+  const list = data.tags.filter(t=>t.count>0).sort((a,b)=>b.count-a.count || a.label.localeCompare(b.label));
+  const selected=new Set();
   let key = play || params.get("key") || list[0]?.key, shown = 80, busy = false;
   if (!list.some((t)=>t.key===key)) key=list[0]?.key;
   const update = (r) => { if (r.game) { updateHudQuiet(r.game); paintSaveChip(); } };
@@ -4297,34 +4460,38 @@ async function viewTags(main, params) {
       <div class="tag-list" id="tag-list"></div><form id="tag-new"><label>New tag<input class="hint-input" name="label" maxlength="40" required></label><button class="btn">＋ Create tag</button></form></aside>
     <div class="screen-bar action-bar"><div class="bar-left"><a class="btn" href="#draw">Groups</a><button class="btn ghost" id="tags-undo">Undo <kbd>Z</kbd></button></div>
       <div class="bar-mid"></div><div class="bar-right"><a class="btn primary big" id="tag-play">Check this tag → <kbd>Enter</kbd></a></div></div></div>`;
-  const paintList=()=> { const q=$("#tag-search").value.toLowerCase(); $("#tag-list").innerHTML=list.filter((t)=>t.label.toLowerCase().includes(q))
+  const paintList=()=> { const q=$("#tag-search").value.toLowerCase(); $("#tag-list").innerHTML=`<button class="tag-row ${!key?'on':''}" data-tag-all>All photos</button>`+list.filter((t)=>t.label.toLowerCase().includes(q))
     .map((t)=>`<button class="tag-row ${t.key===key?"on":""}" data-tag="${esc(t.key)}"><span>${esc(t.emoji || "🏷️")} ${esc(t.label)}</span><b>${fmt(t.count)}</b></button>`).join("");
+    $('[data-tag-all]',main).onclick=()=>{key=null;shown=80;paintList();paint();};
     $$("[data-tag]",main).forEach((b)=>b.onclick=()=>{key=b.dataset.tag;shown=80;paintList();paint();}); };
   const paint=()=>{
     const t=list.find((t)=>t.key===key), roster=$("#tag-roster");
     $("#tag-play").hidden=!t;
-    if(!t){roster.innerHTML=`<div class="empty">Create a tag to begin.</div>`;return;}
-    $("#tag-play").href=`#tags?play=${encodeURIComponent(key)}`;
-    const photos=[...World.photos.values()].filter((p)=>p.tags.includes(key));
-    roster.innerHTML=`<div class="tag-edit" data-solid><form id="tag-edit"><button type="button" class="btn" id="tag-emoji">${esc(t.emoji||"🏷️")}</button>
+    if(t)$("#tag-play").href=`#tags?play=${encodeURIComponent(key)}`;
+    const photos=[...World.photos.values()].filter((p)=>!t||p.tags.includes(key));
+    roster.innerHTML=`${t?`<div class="tag-edit" data-solid><form id="tag-edit"><button type="button" class="btn" id="tag-emoji">${esc(t.emoji||"🏷️")}</button>
       <label>Name<input class="hint-input" name="label" value="${esc(t.label)}" maxlength="40" required></label><button class="btn">Save name</button></form>
-      <div class="row wrap"><label>Merge into<select id="tag-merge"><option value="">Choose a tag…</option>
-        ${list.filter((x)=>x.key!==key).map((x)=>`<option value="${esc(x.key)}">${esc(x.emoji||"🏷️")} ${esc(x.label)}</option>`).join("")}</select></label><button class="btn ghost danger" id="tag-delete">Delete tag</button></div>
-      <p class="muted">${plural(photos.length,"photo")} · includes takes and photos set aside</p></div>
-      <div class="grid tag-photos">${photos.slice(0,shown).map((p)=>`<button class="tag-photo ${p.cut?"dim":""}" type="button" data-tag-photo="${p.id}" aria-label="Open photo"><img src="${T(p.id)}" alt="" loading="lazy" draggable="false"></button>`).join("")}</div>
+      <div class="row wrap"><div class="tag-picker" id="tag-merge"></div><button class="btn ghost danger" id="tag-delete">Delete tag</button></div>
+      <p class="muted">${plural(photos.length,"photo")} · includes takes and photos set aside</p></div>`:'<p>Select photos to give them a new tag.</p>'}
+      <div class="grid tag-photos">${photos.slice(0,shown).map((p)=>`<div class="tag-photo-card"><button class="tag-photo ${p.cut?"dim":""}" type="button" data-tag-photo="${p.id}" aria-label="Open photo"><img src="${T(p.id)}" alt="" loading="lazy" draggable="false"></button><label class="tag-photo-pick"><input type="checkbox" data-tag-pick="${p.id}" aria-label="Select photo for a new tag" ${selected.has(p.id)?'checked':''}></label></div>`).join("")}</div>
       ${photos.length>shown?`<button class="btn" id="tag-more">More photos (${fmt(photos.length-shown)} left)</button>`:""}`;
-    $("#tag-edit").onsubmit=(e)=>{e.preventDefault();act("/api/tags/meta",{key,label:new FormData(e.target).get("label")},"Renamed. Z undoes it.");};
+    if(t){$("#tag-edit").onsubmit=(e)=>{e.preventDefault();act("/api/tags/meta",{key,label:new FormData(e.target).get("label")},"Renamed. Z undoes it.");};
     $("#tag-emoji").onclick=(e)=>emojiPicker(e.currentTarget,(emoji)=>act("/api/tags/meta",{key,emoji},"New emoji. Z undoes it."));
-    $("#tag-merge").onchange=(e)=>{if(e.target.value)act("/api/tags/merge",{source:key,key:e.target.value},"Tags merged. Z undoes it.");};
-    $("#tag-delete").onclick=()=>act("/api/tags/delete",{source:key},"Deleted. Z restores the tag.");
+    tagPicker($('#tag-merge'),list,t=>act('/api/tags/merge',{source:key,key:t.key},'Tags merged. Z undoes it.'),{label:'Merge into',exclude:key});
+    $("#tag-delete").onclick=()=>act("/api/tags/delete",{source:key},"Deleted. Z restores the tag.");}
+    for(const box of $$('[data-tag-pick]',roster))box.onchange=()=>{const id=Number(box.dataset.tagPick);box.checked?selected.add(id):selected.delete(id);newTagState();};
     $$("[data-tag-photo]",roster).forEach((b)=>b.onclick=()=>World.inspect(Number(b.dataset.tagPhoto)));
     if($("#tag-more"))$("#tag-more").onclick=()=>{shown+=80;paint();};
   };
+  const newTagState=()=>{const button=$('#tag-new button');button.disabled=!selected.size;button.textContent=selected.size?`＋ Tag ${plural(selected.size,'photo')}`:'Select photos to make a tag';};
+  const newTagInput=$('#tag-new input');
+  newTagInput.onfocus=newTagInput.oninput=()=>$('.tags-page',main).classList.add('choosing-tag-photos');
+  newTagInput.onblur=()=>{if(!newTagInput.value.trim()&&!selected.size)$('.tags-page',main).classList.remove('choosing-tag-photos');};
   $("#tag-search").oninput=paintList;
-  $("#tag-new").onsubmit=(e)=>{e.preventDefault();act("/api/tags/new",{label:new FormData(e.target).get("label"),photos:[]},"Tag created. Z undoes it.");};
+  $("#tag-new").onsubmit=(e)=>{e.preventDefault();if(selected.size)act("/api/tags/new",{label:new FormData(e.target).get("label"),photos:[...selected]},"Tag created. Z undoes it.");};
   $("#tags-undo").onclick=()=>act("/api/draw/undo",{},"Undone.");
   S.onKey=(e)=>{if(e.key==="z"||e.key==="Z"){e.preventDefault();$("#tags-undo").click();}else if(e.key==="Enter"){e.preventDefault();$("#tag-play").click();}};
-  paintList();paint();
+  paintList();paint();newTagState();
 }
 
 // Real takes peek out from under the kept print. Stable offsets keep a pile still while you reach for it.
@@ -4334,17 +4501,22 @@ function pilePhotos(rep, members = []) {
 }
 const fanStyle = (i,n) => `--i:${i};--fan-turn:${Math.max(-12,Math.min(12,(i-(n-1)/2)*4))}deg;--fan-y:${Math.min(16,Math.abs(i-(n-1)/2)*2)}px`;
 // A shot (or a stack, ⧉ n) as a tile: click selects it, drag it onto another to stack them, ⤢ views it larger.
-function shotTile(x, selected, boxes = null) {
+function shotTile(x, selected, boxes = null, defer = false) {
   const on = selected && selected.has(x.rep);
   return `
-    <div class="tile pick ${on ? "picked" : ""} ${x.members.length > 1 ? "stacked" : ""}" data-sel="${x.rep}" draggable="true" data-drag-shot="${x.rep}"
+    <div class="tile pick ${defer?'sleeping':''} ${on ? "picked" : ""} ${x.members.length > 1 ? "stacked" : ""}" data-sel="${x.rep}" draggable="true" data-drag-shot="${x.rep}"
       data-drop="${x.rep}" role="group" title="${x.taken ? esc(x.taken.replace("T", " ")) : "no date"}">
+      ${defer?'':shotTileContents(x,selected,boxes)}
+    </div>`;
+}
+function shotTileContents(x,selected,boxes=null){
+  const on=selected&&selected.has(x.rep);
+  return `
       <button class="shot-select" aria-label="Select shot" aria-pressed="${!!on}">${pilePhotos(x.rep,x.members)}<img class="pile-cover" src="${T(x.rep)}" alt="Shot" loading="lazy" draggable="false" data-box="${esc(JSON.stringify(boxes?.[x.rep] || null))}">${selected ? `<span class="shot-selected" aria-hidden="true" title="Selected" ${on ? "" : "hidden"}>✓</span>` : ""}</button>
       ${x.members.length > 1 ? `<span class="kept-crown" title="The take that stands in for this stack">👑</span>
         <button class="badge expand" data-expand="${x.rep}" title="Show all ${x.members.length} takes" aria-expanded="false">⧉ ${x.members.length}</button>` : ""}
       ${x.solo ? `<button class="rank undo-split" data-reset="${x.rep}" title="Hand it back to automatic stacking">split by you · undo</button>` : ""}
-      <button class="zoom" data-view="${x.rep}" title="View larger" aria-label="View larger">⤢</button>
-    </div>`;
+      <button class="zoom" data-view="${x.rep}" title="View larger" aria-label="View larger">⤢</button>`;
 }
 function shotFamilies(list) {
   const out = [];
@@ -4355,9 +4527,9 @@ function shotFamilies(list) {
   }
   return out;
 }
-function shotTiles(list, selected, boxes = null) {  // consecutive look-alikes (2+) share a dashed box
-  return shotFamilies(list).map((k) => (k.items.length > 1 ? `<div class="fam-tiles" data-family="${esc(k.family)}">${k.items.map((x) => shotTile(x, selected, boxes)).join("")}</div>`
-    : shotTile(k.items[0], selected, boxes))).join("");
+function shotTiles(list, selected, boxes = null, defer = false) {  // consecutive look-alikes (2+) share a dashed box
+  return shotFamilies(list).map((k) => (k.items.length > 1 ? `<div class="fam-tiles" data-family="${esc(k.family)}">${k.items.map((x) => shotTile(x, selected, boxes,defer)).join("")}</div>`
+    : shotTile(k.items[0], selected, boxes,defer))).join("");
 }
 const shotSnapshot = (shot,boxes) => JSON.stringify([shot,boxes?.[shot.rep]||null]);
 function rememberShotTiles(grid,shots,boxes) {
@@ -4366,7 +4538,7 @@ function rememberShotTiles(grid,shots,boxes) {
   for(const tile of $$('[data-drag-shot]',grid))if(keys.has(Number(tile.dataset.dragShot)))tile.shotSnapshot=keys.get(Number(tile.dataset.dragShot));
 }
 // A merge changes two piles. Reuse the rest, including their decoded pictures, notes and keyboard focus.
-function patchShotTiles(grid,shots,selected,boxes) {
+function patchShotTiles(grid,shots,selected,boxes,defer=false) {
   const tiles=new Map($$('[data-drag-shot]',grid).map(tile=>[Number(tile.dataset.dragShot),tile]));
   const families=new Map();
   for(const family of $$(':scope > .fam-tiles',grid)){
@@ -4381,7 +4553,7 @@ function patchShotTiles(grid,shots,selected,boxes) {
     const children=group.items.map(shot=>{
       const key=shotSnapshot(shot,boxes);let tile=tiles.get(shot.rep);
       if(!tile||tile.shotSnapshot!==key){
-        const holder=document.createElement('template');holder.innerHTML=shotTile(shot,selected,boxes);
+        const holder=document.createElement('template');holder.innerHTML=shotTile(shot,selected,boxes,defer);
         tile=holder.content.firstElementChild;tile.shotSnapshot=key;
       }
       return tile;
@@ -6271,17 +6443,18 @@ const World = {
       if (source !== S.lib?.source || this.mode === "live" || this.mode==='hidden') return;
       this.board = b;
       this.tagMeta = new Map(tags.tags.map((t) => [t.key, t]));
-      await this.allPhotos(() => {
-        if (source !== S.lib?.source || this.mode === "live" || this.mode==='hidden') return;
-        const items = this.extras([]);
-        this.sea.setVenn(tags.tags.filter((t)=>t.count||t.user).map((t)=>({id:t.key,label:t.label,emoji:t.emoji,catchy:t.catchy,ring:tags.visible.includes(t.key),
-          html:`${esc(t.emoji||"🏷️")} ${esc(t.label)} <span class="ps-count">${fmt(t.count)}</span>`})), items, [...b.groups.map((g) => ({ id: `g${g.id}`, kind: "group",bin:g.id,
-          html: `${esc(g.emoji || "🗂️")} ${esc(g.name)} · ${g.adv || 0} through` })),
-          ...this.categories(items), { id: "gcut", kind: "group", html: "🫙 Set aside" }]);
-        for (const pid of this.lifted) this.tileOf(pid)?.classList.add("lifted");
-        for (const it of this.sea.items.values()) this.badge(it);
-        this.fence();
-      });
+      // Publish the complete collection once. Rehoming after each metadata page makes the map visibly reorganize
+      // several times; atlas sheets can still download in parallel while the existing geography remains on view.
+      await this.allPhotos();
+      if (source !== S.lib?.source || this.mode === "live" || this.mode==='hidden') return;
+      const items = this.extras([]);
+      this.sea.setVenn(tags.tags.filter((t)=>t.count||t.user).map((t)=>({id:t.key,label:t.label,emoji:t.emoji,catchy:t.catchy,ring:tags.visible.includes(t.key),
+        html:`${esc(t.emoji||"🏷️")} ${esc(t.label)} <span class="ps-count">${fmt(t.count)}</span>`})), items, [...b.groups.map((g) => ({ id: `g${g.id}`, kind: "group",bin:g.id,
+        html: `${esc(g.emoji || "🗂️")} ${esc(g.name)} · ${g.adv || 0} through` })),
+        ...this.categories(items), { id: "gcut", kind: "group", html: "🫙 Set aside" }]);
+      for (const pid of this.lifted) this.tileOf(pid)?.classList.add("lifted");
+      for (const it of this.sea.items.values()) this.badge(it);
+      this.fence();window.dispatchEvent(new Event('world-ready'));
     })().catch((e) => { failed=true;this.stale = true; toast(e.message); }).finally(() => {
       this.loading = null;
       if(this.stale){this.photosSource=null;if(!failed && this.mode!=="hidden" && this.mode!=="live")setTimeout(()=>this.sync(),1200);}
@@ -6396,7 +6569,9 @@ const World = {
     const best=new Map(),clips=new Map();
     for(const img of root?.querySelectorAll('img[src*="/img/"]') || []) {
       const match=img.getAttribute("src").match(/\/img\/[pt]\/(\d+)\.jpg/);
-      if(!match||img.closest(".under, .screen-rail, .board-card"))continue;  // the Leaderboard's card slides instead
+      // Scrolling an overview changes which cards are mounted, not where the photos belong. Treating that as a
+      // scene change launches ghost copies to and from the sea and hides the freshly mounted thumbnails.
+      if(!match||img.closest(".under, .screen-rail, .board-card, .stacker .lookgrid"))continue;
       const pid=Number(match[1]),rect=img.getBoundingClientRect();
       if(!rect.width||!rect.height||rect.bottom<=0||rect.top>=innerHeight||rect.right<=0||rect.left>=innerWidth)continue;
       // A long overview can contain thousands of pictures. Only prints visible through its scrollports fly.

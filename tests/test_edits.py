@@ -28,9 +28,9 @@ def test_edits_are_saved_normalised_and_undone_one_at_a_time(client):
     assert top_edits(client) == {"rotate": 90, "enhance": False}
     r = post(client, "/api/edit", {"photo": top["photo"], "crop": "auto"}).get_json()
     assert r["edits"] == {"rotate": 90, "enhance": False, "crop": "subject"}  # "auto" is the old word for subject
-    # Back to the defaults is stored as nothing at all.
+    # Explicit defaults stay with the photo even when the global preview uses a different crop or look.
     r = post(client, "/api/edit", {"photo": top["photo"], "rotate": 360, "enhance": True, "crop": "none"}).get_json()
-    assert r["edits"] == {} and top_edits(client) == {}
+    assert r["edits"] == {"enhance": True, "crop": "off"} and top_edits(client) == r["edits"]
     assert post(client, "/api/draw/undo").get_json()["undone"] == "edit"
     assert top_edits(client) == {"rotate": 90, "enhance": False, "crop": "subject"}
     assert post(client, "/api/draw/undo").get_json()["undone"] == "edit"
@@ -75,7 +75,8 @@ def test_crop_modes_and_look_knobs_are_kept_normalised(client):
     top = client.get("/api/shortlist").get_json()["items"][0]
     for word, kept in (("auto", "subject"), ("best", "best"), ("height", "height"), ("width", "width")):
         assert post(client, "/api/edit", {"photo": top["photo"], "crop": word}).get_json()["edits"]["crop"] == kept
-    assert post(client, "/api/edit", {"photo": top["photo"], "crop": "off"}).get_json()["edits"] == {}
+    assert post(client, "/api/edit", {"photo": top["photo"], "crop": "off"}).get_json()["edits"] == {"crop": "off"}
+    assert post(client, "/api/edit", {"photo": top["photo"], "crop": None}).get_json()["edits"] == {}
     assert post(client, "/api/edit", {"photo": top["photo"], "crop": "square"}).status_code == 400
     r = post(client, "/api/edit", {"photo": top["photo"], "look": {"levels": 1.5, "light": 0, "warmth": -3}}).get_json()
     assert r["edits"] == {"look": {"levels": 1.5, "warmth": -1.0}} and r["undo"] == "edit"

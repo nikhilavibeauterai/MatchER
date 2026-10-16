@@ -32,7 +32,8 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=120000;
     window.lodSea=s;
     window.lodCoverage=()=>{
       s.drawDensity(W,H);
-      const items=[...s.items.values()].filter(it=>!it.lifted&&!it.pileLifted);
+      const c=s.camera,x0=-c.tx/c.zoom,y0=-c.ty/c.zoom;
+      const items=[...s.items.values()].filter(it=>!it.lifted&&!it.pileLifted&&s.inView(it,x0,y0,x0+W/c.zoom,y0+H/c.zoom,0));
       const ready=items.filter(it=>!it.density&&!it.imagePending&&it.el.isConnected&&it.el.querySelector('.pile-cover')?.naturalWidth).length;
       const drawn=(s.densityStats.gpu||0)+(s.densityStats.blank||0)+ready;
       return {total:items.length,drawn,ready,pending:items.filter(it=>!it.density&&it.imagePending).length,live:s.moving.length};
@@ -87,7 +88,7 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=120000;
       const atlas=document.createElement('canvas');atlas.width=atlas.height=16;
       const source=s.atlasCell(atlas,0,dims),ctx=atlas.getContext('2d');ctx.fillStyle='#ef241a';ctx.fillRect(0,0,16,16);
       const canvas=document.createElement('canvas'),gpu=new SpriteLayer(canvas);
-      const data=new Float32Array([120,100,120,source.x,source.y,16,16,1,.5,.5,.5,source.aspect]);
+      const data=new Float32Array([120,100,120,source.x,source.y,16,16,1,.5,.5,.5,source.aspect,0]);
       gpu.draw({W:240,H:240,dpr:1,zoom:1,tx:0,ty:0,time:0,wobble:[5600,0,0,0,0]},[{image:atlas,version:0,data,n:1,upload:true}]);
       const pixels=new Uint8Array(240*240*4);gpu.gl.readPixels(0,0,240,240,gpu.gl.RGBA,gpu.gl.UNSIGNED_BYTE,pixels);
       const flipped=new Uint8Array(pixels.length);for(let y=0;y<240;y++)flipped.set(pixels.subarray(y*960,(y+1)*960),(239-y)*960);

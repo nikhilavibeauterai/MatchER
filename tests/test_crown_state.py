@@ -1,4 +1,7 @@
 """Crown follows the editable stacks and groups, including changes made during a run."""
+import threading
+from concurrent.futures import ThreadPoolExecutor, wait
+
 import pytest
 
 from matcher import library
@@ -40,6 +43,36 @@ def finish(c, card, winner=None):
 
 def group(c, photos):
     return call(c, "/api/draw/new", {"photos": photos})["theme"]["id"]
+
+
+def test_crown_and_hud_wait_for_a_merge_that_is_still_rebuilding(client, monkeypatch):
+    a, b = stacks(client)
+    call(client, "/api/stacks/auto")
+    assert client.get("/api/journey").get_json()["stages"]["crown"]["left"] == 0
+    rebuilding, release = threading.Event(), threading.Event()
+    original = library.regroup
+
+    def delayed(store):
+        rebuilding.set()
+        assert release.wait(10), "The test must release its own rebuild"
+        return original(store)
+
+    monkeypatch.setattr(library, "regroup", delayed)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        merge = pool.submit(call, client, "/api/groups/merge", {"photos": [a["rep"], b["rep"]]})
+        try:
+            assert rebuilding.wait(5)
+            crown = pool.submit(call, client, "/api/deal?stage=stacks&n=1")
+            hud = pool.submit(lambda: client.get("/api/journey").get_json())
+            done, _ = wait([crown, hud], timeout=.2)
+            assert not done, "Crown and the HUD must not publish the pre-merge stacks"
+        finally:
+            release.set()
+        assert merge.result()["size"] == len(a["members"]) + len(b["members"])
+        result = crown.result()
+        assert result["left"] == 1 and result["cards"][0]["type"] == "mini"
+        assert set(result["cards"][0]["frames"]) == set(a["members"] + b["members"])
+        assert hud.result()["stages"]["crown"]["left"] == 1
 
 
 def test_skip_defers_a_challenger_without_a_vote_or_crown_and_survives_reload(client):

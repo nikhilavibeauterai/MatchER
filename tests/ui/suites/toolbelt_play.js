@@ -51,6 +51,9 @@ let page;
   await page.waitForSelector('#stage .user-note textarea');await page.keyboard.type('lovely light');
   await tool('hand');await page.evaluate(()=>Toolbelt.flush());
   assert.equal((await edits()).notes[0].text,'lovely light');assert.equal(await votes(),before,'Typing on a photo never votes');
+  await page.locator('#stage .user-note textarea').click();
+  assert.equal(await votes(),before,'Clicking an existing note with the hand never chooses its photo');
+  await page.locator('#stage .user-note textarea').blur();
   await history('z');assert(!((await edits()).notes||[]).length,'One Z removes the new note');
   await history('Shift+Z');assert.equal((await edits()).notes[0].text,'lovely light');
   // An interrupted gesture is discarded; its later release cannot click the contender underneath.

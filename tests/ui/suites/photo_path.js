@@ -33,9 +33,11 @@ let page;const problems=[],result={};
   });
   const copyButton=root=>root.getByRole('button',{name:/copy.*path/i});
   // Prints deliberately wobble. Use a real pointer hit instead of waiting for animation to stop forever.
-  const clickPrint=async(locator,button='left')=>{await locator.evaluate(el=>el.scrollIntoView({block:'nearest'}));const r=await locator.boundingBox();await page.mouse.click(r.x+r.width/2,r.y+r.height/3,{button});};
+  const clickPrint=async(locator,button='left')=>{await locator.evaluate(el=>{el.closest('.ftile')?.focus({preventScroll:true});el.scrollIntoView({block:'nearest'});});await page.waitForTimeout(220);const r=await locator.boundingBox();await page.mouse.click(r.x+r.width/2,r.y+r.height/3,{button});};
   // The button rides on a wobbling print: hover pauses the wobble, then a real pointer hit lands on it.
   const copied=async(button,id)=>{
+    // A fan overlaps: keyboard focus raises this take before targeting a control otherwise behind its neighbour.
+    await button.focus();await page.waitForTimeout(220);
     const before=await page.evaluate(()=>pathCopies.length);
     const r=await button.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+r.height/2);await page.waitForTimeout(120);
     const hit=await button.boundingBox();await page.mouse.click(hit.x+hit.width/2,hit.y+hit.height/2);await page.waitForFunction(n=>pathCopies.length===n+1,before);

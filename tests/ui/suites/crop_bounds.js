@@ -11,7 +11,10 @@ let page;
   const stack=await page.evaluate(async()=>{
     localStorage.setItem('matcher-crop-gallery','best');S.crop='best';
     await api('/api/stacks/auto',{});
-    return (await api('/api/groups?view=stacks&per=100')).shots.find(x=>x.crownable).rep;
+    const stack=(await api('/api/groups?view=stacks&per=100')).shots.find(x=>x.crownable);
+    // The offline sample is small: leave enough independent shots to exercise an elimination round too.
+    for(const photo of stack.members.filter(id=>id!==stack.rep).slice(0,2))await api('/api/groups/split',{photo});
+    return stack.rep;
   });
   // Deterministic tight crops on public photos reproduce a wide cover crossing the neighbouring pane.
   await page.route('**/api/deal*',async route=>{
