@@ -19,9 +19,9 @@
 .tile.open > .shot-pile { height:auto;aspect-ratio:3 / 4;align-self:center; }
 .shot-pile .kept-crown { left:auto;right:7%;top:auto;bottom:4%;font-size:11cqw; }
 :is(.photo-sea .ps-item,.print,.shot-pile) button.stack-clip { pointer-events:auto;cursor:pointer; }
-.shot-pile button.stack-clip::before { content:'';position:absolute;inset:-3cqw; }
+button.stack-clip::before { content:'';position:absolute;inset:-3cqw; }
 .tile .badge.expand.stack-clip:is(:hover,[aria-expanded=true]) { background:transparent;color:var(--paper-ink); }
 .shot-pile button.stack-clip:is(:hover,[aria-expanded=true]) .stack-slip { background:#ffebaa; }
-.shot-pile button.stack-clip:focus-visible { outline: .7cqw solid var(--accent);outline-offset:1cqw; }
+button.stack-clip:focus-visible { outline: .7cqw solid var(--accent);outline-offset:1cqw; }
 .photo-sea .ps-item:is(.is-tiny,.is-small) > .stack-clip { display:none; }
 @media(max-width:760px) { .tile.open > .shot-pile { width:72px; } }

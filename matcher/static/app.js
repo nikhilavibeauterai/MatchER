@@ -644,7 +644,7 @@ function viewAnalyze(main) {
     const box = document.createElement("div");
     box.className = "an-grab";
     box.dataset.photo = id;
-    box.innerHTML = `<div class="an-grab-photo print ${members.length > 1 ? "stacked" : ""}">${pilePhotos(id,members)}<div class="paper"><div class="window"><div class="picture"><img class="${members.length > 1 ? "pile-cover" : ""}" src="${P(id)}" alt="">${overlay}</div></div></div></div><div class="an-grab-chrome">${chrome}</div>`;
+    box.innerHTML = `<div class="an-grab-photo print ${members.length > 1 ? "stacked" : ""}">${pilePhotos(id,members,members.length,false)}<div class="paper"><div class="window"><div class="picture"><img class="${members.length > 1 ? "pile-cover" : ""}" src="${P(id)}" alt="">${overlay}</div></div></div></div><div class="an-grab-chrome">${chrome}</div>`;
     const photo=$('.an-grab-photo',box),cover=$('.an-grab-photo .picture > img',box),picture=$('.an-grab-photo .picture',box);
     photo.style.opacity='0';
     field.append(box);
@@ -4521,9 +4521,9 @@ async function viewTags(main, params) {
 }
 
 // Real takes peek out from under the kept print. Stable offsets keep a pile still while you reach for it.
-function pilePhotos(rep, members = [], count = members.length) {
+function pilePhotos(rep, members = [], count = members.length, open = true) {
   return members.filter((p)=>p!==rep).slice(0,4).reverse().map((p,i)=>`<img class="pile-take under" src="${T(p)}" alt="" loading="lazy" draggable="false"
-    style="--pile-x:${[5,-6,7,-3][i]}%;--pile-y:${[4,-3,-5,6][i]}%;--pile-turn:${[7,-8,3,-4][i]}deg;--pile-z:${i}">`).join("")+Cards.stack(count);
+    style="--pile-x:${[5,-6,7,-3][i]}%;--pile-y:${[4,-3,-5,6][i]}%;--pile-turn:${[7,-8,3,-4][i]}deg;--pile-z:${i}">`).join("")+Cards.stack(count,open?rep:null);
 }
 const fanStyle = (i,n) => `--i:${i};--fan-turn:${Math.max(-12,Math.min(12,(i-(n-1)/2)*4))}deg;--fan-y:${Math.min(16,Math.abs(i-(n-1)/2)*2)}px`;
 // A shot (or a clipped stack) as a tile: click selects it, drag it onto another to stack them, ⤢ views it larger.
@@ -4750,6 +4750,7 @@ async function drawSorter(main, focus) {
         onSelect: (it, e) => { if (World.stackWith) return World.stackPick(it.id);
           if (e?.altKey || e?.detail > 1) return World.inspect(it.id, null, () => load(true));
           selected.has(it.id) ? selected.delete(it.id) : selected.add(it.id); updateSelection(); },
+        onStack: (it,source)=>World.inspect(it.id,[it.id],()=>load(true),{stackOpen:true,source}),
         onDrop: (ids, t) => {
           if (t.kind === "photo") return act("/api/groups/merge", { photos: [...ids, t.id] }, "Stacked: same shot, one stack.", true);
           if (t.kind === "bin") return moveTo(ids, t.id === "new" ? "new" : String(t.id));
@@ -6697,8 +6698,13 @@ const World = {
     try { const r = await api("/api/groups/merge", {photos:[first,Number(pid)]}); updateHudQuiet(r.game); paintSaveChip(); toastOnce("stacked", "Stacked. Z undoes it."); }
     catch(e) {toast(e.message);}
   },
-  async inspect(pid, selection, changed) {
-    if (this.stackWith) return this.stackPick(pid);
+  openStack(pid,source) {
+    const it=this.sea?.items.get(Number(pid));if(!it)return;
+    if(this.mode==='live'&&this.handlers?.onStack)return this.handlers.onStack(it,source);
+    return this.inspect(pid,[Number(pid)],null,{stackOpen:true,source});
+  },
+  async inspect(pid, selection, changed, {stackOpen=false,source=null} = {}) {
+    if (this.stackWith&&!stackOpen) return this.stackPick(pid);
     const tile = this.tileOf(pid), it = this.sea && this.sea.items.get(Number(pid));
     if (!tile || !it || this.inspecting) return;
     this.inspecting = true;
@@ -6712,13 +6718,13 @@ const World = {
     const tags = meta.tags.filter((t)=>(it.tags||[]).includes(t.key));
     const movable=this.groupSelection(chosen,b.cup);
     const ov = document.createElement("div");
-    ov.className = "inspect";
+    ov.className = `inspect${stackOpen?' stack-open':''}`;
     ov.innerHTML = `<div class="inspect-card">
         <div class="inspect-pictures">${chosen.slice(0,4).map((p)=>`<div class="print"><img class="inspect-photo" src="${P(p)}" alt=""></div>`).join("")}</div>
         <div class="inspect-chrome">
           <div class="inspect-line">${g ? `<span class="team-chip static">${esc(g.emoji || "🗂️")} ${esc(g.name)}</span>` : `<span class="muted">Not in a group yet</span>`}
             ${rank ? `<span class="stat-chip good">#<b>${rank}</b> on the board</span>` : ""}${chosen.length>1?`<span class="stat-chip">${plural(chosen.length,"photo")} selected</span>`:""}
-            ${stack.members.length > 1 ? `<button class="btn ghost" data-in="stack">⧉ Open ${plural(stack.members.length,"take")}</button>` : ""}</div>
+            ${stack.members.length > 1 ? `<button class="btn ghost" data-in="stack" aria-expanded="false">Open ${plural(stack.members.length,"take")}</button>` : ""}</div>
           ${tags.length ? `<div class="inspect-tags">${tags.map((t, i) => `<span class="tag-chip on" style="--i:${i}">${esc(t.emoji || "🏷️")} ${esc(t.label)}</span>`).join("")}</div>` : ""}
           <div class="inspect-edit">${movable.length?`<details><summary>Move ${plural(movable.length,"shot")} to a group</summary><div class="inspect-bins">${binsHtml(b.bins,null,null)}</div></details>`:""}
             <details><summary>Edit tags</summary><div class="inspect-tag-edit">${meta.tags.map((t)=>`<button class="tag-chip ${(it.tags||[]).includes(t.key)?"on":""}" data-in-tag="${esc(t.key)}">${esc(t.emoji||"🏷️")} ${esc(t.label)}</button>`).join("")}</div>
@@ -6735,8 +6741,9 @@ const World = {
     ov.style.visibility='hidden';img.style.opacity='0';
     await Promise.all($$('.inspect-photo',ov).map(photo=>photo.decode().catch(()=>{})));
     if(left(view)){ov.remove();this.inspecting=false;return;}
-    const from=this.rect(tile.querySelector('.pile-cover')||tile);
+    const from=this.rect(source?.querySelector('.pile-cover,.window img')||tile.querySelector('.pile-cover')||tile),wasLifted=tile.classList.contains('lifted');
     tile.classList.add("lifted");
+    this.sea.presentation?.follow(); // A deep, resting sea has no physics tick to withdraw its old notes layer.
     ov.style.visibility='';
     ov.classList.add("open");
     const keys = S.onKey;
@@ -6746,14 +6753,16 @@ const World = {
       done = true;
       if (S.onKey === handler) S.onKey = keys;
       const back = this.tileOf(pid);
+      const destination=source?.isConnected?source:back;
       const origin={...(this.flights?.get(pid)?.rect||this.rect(img))};
       this.flights?.get(pid)?.cancel();
       ov.classList.remove("open");
       img.style.opacity='0';
-      const cleanup=()=>{ov.remove();back?.classList.remove('lifted');this.inspecting=false;
+      const cleanup=()=>{ov.remove();back?.classList.toggle('lifted',wasLifted);this.inspecting=false;
+        if(typeof PhotoNotes!=='undefined')PhotoNotes.camera();
         if(this.closeInspect===cancel)this.closeInspect=null;if(dirty&&!left(view))changed?.();};
-      if(immediate||!back||!origin.width){cleanup();return;}
-      this.fly(img.currentSrc||img.src,origin,()=>this.rect(back.querySelector('.pile-cover')||back),{
+      if(immediate||!destination||!origin.width){cleanup();return;}
+      this.fly(img.currentSrc||img.src,origin,()=>this.rect(destination.querySelector('.pile-cover,.window img')||destination),{
         pid,kind:'inspect-sink',ms:420,valid:()=>ov.isConnected&&!left(view),finish:cleanup});
     };
     const cancel=()=>close(true);this.closeInspect=cancel;
@@ -6787,13 +6796,14 @@ const World = {
     $("[data-in=undo]",ov).onclick=()=>act("/api/draw/undo",{});
     $("[data-in=merge]",ov).onclick=()=>{if(chosen.length>1)act("/api/groups/merge",{photos:chosen});else{close();this.stackWith=Number(pid);toast("Choose another photo in the sea to stack with this one.");}};
     const fan=$(".inspect-fan",ov), open=$("[data-in=stack]",ov);
-    if(open)open.onclick=()=>{fan.hidden=!fan.hidden;if(!fan.hidden){
+    if(open)open.onclick=()=>{fan.hidden=!fan.hidden;open.setAttribute('aria-expanded',String(!fan.hidden));open.textContent=`${fan.hidden?'Open':'Hide'} ${plural(stack.members.length,'take')}`;if(!fan.hidden){
       fan.classList.add("photo-fan");fan.style.setProperty("--takes",stack.members.length);
       fan.innerHTML=stack.members.map((p,i)=>`<div class="ftile" tabindex="0" style="${fanStyle(i,stack.members.length)}"><img src="${T(p)}" alt="Take" loading="lazy"><div class="ftile-actions">
         ${p===stack.rep?"👑 Kept":`<button data-in-keep="${p}">Keep</button>`}<button data-in-split="${p}">Split out</button>${photoPathButton(p)}</div></div>`).join("");
       $$("[data-in-keep]",fan).forEach((x)=>x.onclick=()=>act("/api/frame",{photo:Number(x.dataset.inKeep)}));
       $$("[data-in-split]",fan).forEach((x)=>x.onclick=()=>act("/api/groups/split",{photo:Number(x.dataset.inSplit)}));
     }};
+    if(stackOpen)open?.click();
     $("[data-in=toss]", ov).onclick = async () => {
       if(it.cut)return act("/api/rescue",{ids:chosen,on:true});
       if(await act("/api/draw/toss",{photos:chosen}))Sound.play("toss");

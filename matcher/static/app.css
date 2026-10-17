@@ -1592,12 +1592,13 @@ body[data-world] #world .ps-item:is(.lifted,.pile-lifted) { pointer-events:none;
 .inspect-photo { max-width: min(1000px, 90vw); max-height: 62vh; border-radius: 16px; transform-origin: 0 0; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
   --wamp: 1; }
 .inspect-chrome { display: grid; gap: 10px; justify-items: center; opacity: 0; transform: translateY(-8px); transition: opacity 0.25s 0.25s, transform 0.25s 0.25s;
-  background: rgba(11, 12, 14, 0.9); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
+  background: var(--paper); color:var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
 .inspect.open .inspect-chrome { opacity: 1; transform: none; }
 .inspect-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
 .inspect-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 760px; }
 .inspect-tags .tag-chip { cursor: default; animation: popin 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; animation-delay: calc(0.3s + var(--i) * 50ms); }
 .inspect-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.inspect.stack-open .inspect-actions { position:sticky;bottom:0;z-index:15;padding:8px;background:var(--paper); }
 .team-chip.static { position: static; pointer-events: auto; }
 @media (prefers-reduced-motion: reduce) { .inspect.open .inspect-photo { animation: none; } }
 .decider { display: inline-block; margin-left: 8px; padding: 2px 10px; border-radius: 99px; background: rgba(255, 216, 107, 0.16); border: 1px solid rgba(255, 216, 107, 0.6);
@@ -2071,6 +2072,7 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
 .viewer .print { height: min(calc(90dvh - 130px), 120vw); margin: 0 auto; }
 .inspect-pictures .print { height: min(48vh, 120vw); }
 .inspect-pictures:has(.print:nth-child(2)) .print { height: min(48vh, 29vw); }
+.inspect.stack-open .inspect-pictures .print { height:min(32vh,96vw); } /* Leave room for the whole fan and its controls. */
 .filter-shot { container-type: size; }
 .print { container-type: inline-size; }
 .print > .paper { position: absolute; inset: 0; z-index: 6; background: var(--paper); border-radius: var(--card-round); box-shadow: 0 1px 1px #0005, 0 10px 26px #0007; }
@@ -2117,7 +2119,7 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
 :is(#main, #world, #sea, #modal, .inspect) img.pile-take[src] { animation: none; }
 .game-paused :is(img, .paper, .tile-pile), body.sea-deep :is(img, .paper, .tile-pile) { animation-play-state: paused !important; }
 /* Zoomed in until one print fills the view, the sea is that picture: the chrome hides until you zoom back out. */
-body.sea-deep > :not(#world, #modal, #af-defs, .sea-photo-detail-layer, .photo-note-sheet, script, style), body.sea-deep #world :is(.vn-density-labels, .vn-catalog, .focus-bar, .sea-tags) { visibility: hidden; }
+body.sea-deep > :not(#world, #modal, #af-defs, .inspect, .sea-photo-detail-layer, .photo-note-sheet, script, style), body.sea-deep #world :is(.vn-density-labels, .vn-catalog, .focus-bar, .sea-tags) { visibility: hidden; }
 /* The picture stays clear in deep zoom. Reaching for the belt reveals it; a tool in use keeps it open. */
 body.sea-deep #toolbelt { visibility: visible; opacity: 0; transition: opacity .15s; }
 body.sea-deep #toolbelt:is(:hover, :focus-within), body.sea-deep:not([data-tool="hand"]) #toolbelt { opacity: 1; }

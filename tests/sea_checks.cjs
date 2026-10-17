@@ -12,6 +12,15 @@ test('atlas cells retain the photo aspect independently of their square texture 
   }
   assert.equal(proto.atlasCell({},0,null).aspect,1);
 });
+test('the click camera destination loads originals despite fractional card sizes and rounding',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype');
+  for(const height of [568,650,720,844,900,1080,1152])for(const size of [4.0236220472440944,6.291338582677166,3.9448818897637796,72]){
+    const sea=Object.assign(Object.create(proto),{el:{clientHeight:height},s:72,camera:{zoom:.8*height/(size*4/3)}}),it={size};
+    assert(sea.fullSize(it),`The exact 80% destination shows the original (${height}px screen, ${size}px card)`);
+    sea.camera.zoom*=.98;assert(!sea.fullSize(it),'Smaller prints still stop at previews');
+    sea.camera.zoom*=3;assert(sea.fullSize(it),'An enlarged part of a print still shows its original');
+  }
+});
 test('camera pans capture the pointer and release it when a two-finger pinch takes over',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),classes=new Set(),captured=new Set();
   const proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype',{
@@ -509,7 +518,7 @@ test('destroying a sea cancels its fade and releases both raster buffers',()=>{
     document:{removeEventListener(){}},clearTimeout(){},cancelAnimationFrame:id=>cancelled.push(id)
   });
   const current={width:2400,height:1500},spare={width:2400,height:1500};
-  const sea=Object.assign(Object.create(proto),{alive:true,paintRaf:18,contourFadeRaf:19,raf:20,contourRaster:{current,spare,previous:spare},
+  const sea=Object.assign(Object.create(proto),{alive:true,items:new Map(),paintRaf:18,contourFadeRaf:19,raf:20,contourRaster:{current,spare,previous:spare},
     worker:{terminate(){}},tray:{remove(){}},events:{abort(){}},ro:{disconnect(){}}});
   sea.destroy();assert.deepEqual(cancelled,[18,19,20]);assert.equal(sea.contourFadeRaf,null);assert.equal(sea.contourRaster,null);
   assert.equal(current.width+current.height+spare.width+spare.height,0);assert.equal(sea.alive,false);

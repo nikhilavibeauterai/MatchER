@@ -105,6 +105,8 @@ const PhotoNotes = {
         const pose={sea,item:it,photo:it.photo,zoom,size,follow:()=>this.followSea()};this.seaPose=pose;sea.presentation=pose;this.followSea();
         if(!this.seaDetail)return;
         it.el.classList.add('photo-detail-source');Cards.focus(detail);
+        // The real clip stays on its pile; this matching control remains reachable above the focused notes layer.
+        if(it.n>1)detail.insertAdjacentHTML('beforeend',Cards.stack(it.n,it.photo));
         this.attach(detail);Toolbelt.arm(detail);
         requestAnimationFrame(()=>requestAnimationFrame(()=>{if(detail.isConnected)detail.style.transition='';}));
       }).catch(()=>{});

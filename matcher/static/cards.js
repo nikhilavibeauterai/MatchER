@@ -10,14 +10,23 @@ const Cards = {
     const n=Math.max(0,Math.floor(Number(count)||0));
     return `<span class="stack-slip" aria-hidden="true" style="--stack-digits:${String(n).length}">${n}</span><svg class="stack-paperclip" viewBox="0 0 40 100" aria-hidden="true" focusable="false" fill="none"><path class="clip-shadow" d="M26 24v52a8 8 0 0 1-16 0V20a12 12 0 0 1 24 0v57a16 16 0 0 1-32 0V29"/><path class="clip-wire" d="M26 24v52a8 8 0 0 1-16 0V20a12 12 0 0 1 24 0v57a16 16 0 0 1-32 0V29"/><path class="clip-shine" d="M25 25v51a7 7 0 0 1-14 0V20a11 11 0 0 1 22 0v57"/></svg>`;
   },
-  stack(count) {
-    const n=Math.max(0,Math.floor(Number(count)||0));
-    return n>1?`<span class="ps-stack stack-clip" role="img" aria-label="Stack of ${n} takes">${this.stackFace(n)}</span>`:'';
+  stack(count, photo = null) {
+    const n=Math.max(0,Math.floor(Number(count)||0)),pid=Math.floor(Number(photo)||0);
+    return n>1?pid>0?`<button type="button" class="ps-stack stack-clip" data-open-stack="${pid}" aria-label="Pull up all ${n} takes" title="Pull up the whole stack">${this.stackFace(n)}</button>`:
+      `<span class="ps-stack stack-clip" role="img" aria-label="Stack of ${n} takes">${this.stackFace(n)}</span>`:'';
   },
   init() {
     if (this.observer) return;
     this.observer = new MutationObserver((records) => { for (const r of records) for (const node of r.addedNodes) if (node.nodeType === 1) this.dress(node); });
     this.observer.observe(document.body, { childList: true, subtree: true });
+    // A clip is a separate handle: opening the pile must never also pan, select its cover or cast a vote.
+    for(const type of ['pointerdown','click','dblclick','keydown'])document.addEventListener(type,e=>{
+      const clip=e.target.closest?.('[data-open-stack]');if(!clip)return;
+      if(type==='keydown'&&!['Enter',' '].includes(e.key))return;
+      e.stopImmediatePropagation();
+      if(type==='click'){e.preventDefault();World.openStack(Number(clip.dataset.openStack),clip.closest('.print,.ps-item'));}
+      else if(type==='dblclick'||type==='keydown'&&e.repeat)e.preventDefault();
+    },true);
     this.dress(document.body);
   },
   dress(root) {

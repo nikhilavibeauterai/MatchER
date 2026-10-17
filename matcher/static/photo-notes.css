@@ -4,7 +4,7 @@
 .sea-photo-detail { position:absolute;max-width:none;aspect-ratio:3 / 4;pointer-events:auto;transition:transform var(--sea-glide,50ms) linear; }
 .sea-photo-detail.pinned { transition:none; }
 .photo-detail-source { pointer-events:none!important; }
-.photo-detail-source > :is(svg.marks,.user-note) { visibility:hidden; }
+.photo-detail-source > :is(svg.marks,.user-note,.stack-clip) { visibility:hidden; }
 /* The real print stays in the world. This layer carries only its writing, stickies and notes controls. */
 .sea-photo-detail > .paper { animation:none;visibility:hidden; }
 .photo-sea .ps-item.framed-photo > .paper { box-shadow:none; }

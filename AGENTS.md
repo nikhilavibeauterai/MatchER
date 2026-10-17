@@ -132,7 +132,7 @@ the suites in step with deliberate UI changes (see `tests/ui/README.md` for what
   sprites, focused and held prints, tiles, thumbnails, Filter's spotlight, Stacks, Groups, duels, Finals, the
   podium and flights between them. A landscape and a portrait compare as equals; a stack is a pile of the same
   cards, held by a metal paperclip at the top-left with the count handwritten on a small paper slip. The clip
-  opens a stack in the tile editors; other captions and seeds sit on the chin. Faces and avatars are the only round images. The card's
+  pulls up the whole stack with all its takes open (in place in the tile editors); other captions and seeds sit on the chin. Faces and avatars are the only round images. The card's
   rounding, paper and window are proportional to the card, so zoom never changes the look, and the window behind a
   contained picture is paper. `static/cards.js` is the one place that touches every card after the fact (wrappers
   for bare images in rows, the seeded wobble offsets); the idle wobble is one global rule on the card itself, laid

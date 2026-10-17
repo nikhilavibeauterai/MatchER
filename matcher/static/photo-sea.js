@@ -30,7 +30,7 @@ class PhotoSea {
     this.ro = new ResizeObserver(() => this.layout());
     this.ro.observe(el);
   }
-  destroy() { this.alive = false; this.events.abort(); this.ro.disconnect(); cancelAnimationFrame(this.raf); }
+  destroy() { this.alive = false;for(const it of this.items.values())this.cancelImage(it);this.events.abort(); this.ro.disconnect(); cancelAnimationFrame(this.raf); }
   local(e) { const r = this.el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
   toWorld(sx,sy){const c=this.camera;return [(sx-c.tx)/c.zoom,(sy-c.ty)/c.zoom];}
   toScreen(x,y){const c=this.camera;return [x*c.zoom+c.tx,y*c.zoom+c.ty];}
@@ -66,6 +66,7 @@ class PhotoSea {
   // Keep the atlas print visible until its replacement has decoded. A slow or failed preview must not leave a hole.
   watchImage(it){
     const img=it.el.querySelector('.pile-cover');if(!img)return;
+    this.cancelImage(it);
     const valid=()=>this.alive&&this.items.get(it.id)===it&&!it.density&&it.el.querySelector('.pile-cover')===img;
     const pending=on=>{if(!valid())return;it.imagePending=on;it.el.classList.toggle('image-pending',on);this.densityDirty=this.spritesDirty=true;this.paintSoon?.();this.kick();
       if(!on&&this.el.id==='world'&&this.cameraOn&&this.fullSize(it))window.dispatchEvent(new Event('sea-image-ready'));};
@@ -75,6 +76,29 @@ class PhotoSea {
     img.addEventListener('load',ready);img.addEventListener('error',()=>pending(true));
     it.imagePending=true;it.el.classList.add('image-pending');
     if(img.complete&&img.naturalWidth)ready();
+  }
+  cancelImage(it){clearTimeout(it.imageRetry);it.imageRetry=null;if(it.imageRequest)it.imageRequest.img.src='';it.imageRequest=null;it.wantedImage=null;}
+  requestImage(it,source,attempt=0){
+    const img=it.el.querySelector('.pile-cover');if(!img)return;
+    if(it.wantedImage!==source){clearTimeout(it.imageRetry);it.imageRetry=null;it.wantedImage=source;}
+    if(it.imageRequest||it.imageRetry||img.getAttribute('src')===source&&(!img.complete||img.naturalWidth))return;
+    // The visible picture changes only after decoding. A failed original must not replace a good preview with
+    // an atlas cell, and rapid camera changes share one pending image instead of decoding each intermediate size.
+    const next=new Image(),task={img:next,source};it.imageRequest=task;next.src=source;
+    const valid=()=>this.alive&&this.items.get(it.id)===it&&!it.density&&it.el.querySelector('.pile-cover')===img;
+    next.decode().then(()=>{
+      if(valid()&&it.wantedImage===source)img.src=source;
+    }).catch(()=>{
+      if(valid()&&it.wantedImage===source&&source.includes('m=full')&&attempt<2){
+        it.imageRetry=setTimeout(()=>{
+          it.imageRetry=null;const c=this.camera,W=this.el.clientWidth,H=this.el.clientHeight;
+          if(valid()&&it.wantedImage===source&&this.fullSize(it)&&this.inView(it,-c.tx/c.zoom,-c.ty/c.zoom,(W-c.tx)/c.zoom,(H-c.ty)/c.zoom,0))this.requestImage(it,source,attempt+1);
+        },400*(attempt+1));
+      }
+    }).finally(()=>{
+      if(it.imageRequest===task)it.imageRequest=null;
+      if(valid()&&it.wantedImage!==source)this.requestImage(it,it.wantedImage);
+    });
   }
   // Live tuning: the worker, the print size and the camera limits all read the new values at once.
   tune(values,persist=true){
@@ -128,7 +152,7 @@ class PhotoSea {
   }
   // A print whose card fills four fifths of the screen's height or more shows the original file (the owner's rule);
   // at most a couple of prints can at once, so the originals stay bounded.
-  fullSize(it){return (it.size||this.s)*4/3*this.camera.zoom>=.8*this.el.clientHeight;}
+  fullSize(it){return (it.size||this.s)*4/3*this.camera.zoom>=.8*this.el.clientHeight-.5;}  // tolerate subpixel rounding at the click's exact 80% destination
   // Deep in one print the physics tick (which refreshes a live print's picture) stops, so that print, promoted if
   // it was a sprite, is given its original here.
   deepSource(){
@@ -136,7 +160,7 @@ class PhotoSea {
     for(const it of this.items.values()){
       if(it.take||!this.inView(it,x0,y0,x1,y1,0))continue;
       if(it.density)this.promote(it.id,false);
-      const cover=it.el.querySelector('.pile-cover'),src=M(it.photo,(it.size||this.s)*c.zoom,this.fullSize(it));if(cover&&cover.getAttribute('src')!==src)cover.src=src;
+      this.requestImage(it,M(it.photo,(it.size||this.s)*c.zoom,this.fullSize(it)));
       return;
     }
   }
@@ -204,10 +228,10 @@ class PhotoSea {
       // Prints come up live a few dozen per pass (each is an element and a picture to fetch) and the rest stay
       // sprites until the next pass, so a deep zoom never stalls a frame.
       if(want&&it.density){if(budget<=0){more=true;continue;}budget--;it.density=false;it.el.innerHTML=`<img class="pile-cover" src="${M(it.photo,(it.size||this.s)*c.zoom)}" alt="" draggable="false">${pilePhotos(it.photo,it.members,it.n)}${it.badge?`<span class="ps-badge">${esc(it.badge)}</span>`:""}`;it.imageKey=imageKey();this.watchImage(it);this.layer.append(it.el);this.paintItem?.(it,true);changed=true;}
-      else if(!want&&!it.density&&!keep(it)){it.density=true;this.smallPreview(it);it.el.replaceChildren();it.el.remove();changed=true;}
+      else if(!want&&!it.density&&!keep(it)){it.density=true;this.cancelImage(it);this.smallPreview(it);it.el.replaceChildren();it.el.remove();changed=true;}
       // A live print on screen carries the pyramid level its size needs, both ways as the camera moves; off screen
       // it keeps what it has. One filling four fifths of the screen gets the original file.
-      if(!it.density&&this.inView(it,x0,y0,x1,y1,pad)){const cover=it.el.querySelector('.pile-cover'),src=M(it.photo,(it.size||this.s)*c.zoom,this.inView(it,x0,y0,x1,y1,0)&&this.fullSize(it));if(cover&&cover.getAttribute('src')!==src)cover.src=src;}
+      if(!it.density&&this.inView(it,x0,y0,x1,y1,pad))this.requestImage(it,M(it.photo,(it.size||this.s)*c.zoom,this.fullSize(it)));
     }
     if(changed){this.moving=[...this.items.values()].filter(it=>!it.density);this.densityDirty=this.spritesDirty=true;this.el.dataset.density=this.items.size-this.moving.length;this.presentation?.follow();this.kick();}
     if(more)this.scheduleCull(force);
@@ -288,6 +312,7 @@ class PhotoSea {
     for (const [id, it] of this.items) {
       if (partial || keep.has(id)) continue;
       it.el.classList.add("leaving");  // stacked into another photo, or gone: it fades where it is
+      this.cancelImage(it);
       setTimeout(() => it.el.remove(), 500);
       this.items.delete(id);
     }
@@ -339,7 +364,7 @@ class PhotoSea {
     for (const it of all) {
       const density = !dom.has(it.id);
       if (density) {
-        if (!it.density) { this.smallPreview(it); it.el.replaceChildren(); it.el.remove(); }
+        if (!it.density) { this.cancelImage(it);this.smallPreview(it); it.el.replaceChildren(); it.el.remove(); }
       } else {
         if (!it.el.isConnected) { this.layer.append(it.el); repaint.add(it.id); }
         if (repaint.has(it.id)) {
@@ -379,7 +404,7 @@ class PhotoSea {
     if (!it || !it.density) return it;
     const eligible=x=>!x.focused&&x.id!==this.held&&!this.drag?.members.has(x)&&!x.el.classList.contains('lifted');
     const old = this.moving.length>=this.domLimit ? this.moving.find(x=>eligible(x)&&!x.selected) || this.moving.find(eligible) : null;  // room is made only at the cap
-    if (old) { old.density = true; this.smallPreview(old); old.el.remove(); old.el.replaceChildren(); }
+    if (old) { old.density = true;this.cancelImage(old);this.smallPreview(old); old.el.remove(); old.el.replaceChildren(); }
     it.density = false; it.el.innerHTML = `<img class="pile-cover" src="${M(it.photo,(it.size||this.s)*(this.camera?.zoom||1))}" alt="" draggable="false">${it.take ? "" : pilePhotos(it.photo,it.members,it.n)}`;
     this.layer.append(it.el); this.moving = [...this.items.values()].filter((x) => !x.density);
     this.watchImage(it);this.densityDirty=this.spritesDirty=true;
@@ -1052,7 +1077,7 @@ class VennSea extends PhotoSea {
     let promoted=false;for(const id of wanted){const it=this.items.get(id);if(it.density){this.promote(id,false);promoted=true;}}
     if(promoted)this.layout();
     const cap=this.bigCap();
-    if(this.items.size>400){for(const it of this.moving)if(this.moving.length>cap&&!it.focused&&!it.selected&&it.id!==this.held&&!this.drag?.members.has(it)&&!it.el.classList.contains('lifted')){it.density=true;this.smallPreview(it);it.el.replaceChildren();it.el.remove();this.moving=this.moving.filter(x=>x!==it);this.densityDirty=this.spritesDirty=true;if(this.presentation?.item===it)this.presentation.follow();}}
+    if(this.items.size>400){for(const it of this.moving)if(this.moving.length>cap&&!it.focused&&!it.selected&&it.id!==this.held&&!this.drag?.members.has(it)&&!it.el.classList.contains('lifted')){it.density=true;this.cancelImage(it);this.smallPreview(it);it.el.replaceChildren();it.el.remove();this.moving=this.moving.filter(x=>x!==it);this.densityDirty=this.spritesDirty=true;if(this.presentation?.item===it)this.presentation.follow();}}
     for(const it of this.moving){const lifted=it.el.classList.contains('lifted');if(it.imagePending&&it.lifted!==lifted)this.densityDirty=this.spritesDirty=true;it.lifted=lifted;}
     for(const it of this.takes||[]){
       // A metadata update can separate a take before the debounced body list catches up.
@@ -1071,7 +1096,7 @@ class VennSea extends PhotoSea {
       it.el.classList.toggle('focused',!!it.focused);it.el.classList.toggle('is-tiny',size<this.tuning.tinyMax);it.el.classList.toggle('is-small',size<this.tuning.badgeMin);
       // Only a print on screen fetches the level its size needs; one filling four fifths of the screen the original.
       const onScreen=this.inView(it,x0,y0,x1,y1,0);
-      const img=onScreen?it.el.querySelector('.pile-cover'):null;if(img){const full=this.fullSize(it),source=it.focused&&size>64&&!full?P(it.photo):M(it.photo,size,full);if(img.getAttribute('src')!==source)img.src=source;}
+      if(onScreen){const full=this.fullSize(it);this.requestImage(it,it.focused&&size>64&&!full?P(it.photo):M(it.photo,size,full));}
     }
     const count=this.focusBar.querySelector('[data-focus-count]'),text=`${fmt(m.focusCount)} shots`;if(count&&count.textContent!==text)count.textContent=text;
     const select=this.focusBar.querySelector('[data-select-matches]');if(select)select.hidden=!m.focusCount;
