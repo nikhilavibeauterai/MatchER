@@ -83,3 +83,20 @@ def test_sheet_tags_affect_one_take_and_empty_tags_disappear_until_undo(client):
     assert next(t for t in client.get("/api/tags?all=1").get_json()["tags"] if t["key"] == key)["count"] == 1
     post(client, "/api/draw/undo")
     assert key not in {t["key"] for t in client.get("/api/tags?all=1").get_json()["tags"]}
+
+
+def test_sheet_can_set_aside_one_take_without_tossing_its_stack_and_undo(client):
+    s = client.matcher.session
+    s.ensure_ranker()
+    members = next(g["members"] for g in s.groups.values() if len(g["members"]) > 2)
+    post(client, "/api/rescue", {"ids": members, "on": True})
+    s.wait_refresh()
+    before = {pid: s.store.one("SELECT override FROM photos WHERE id=?", (pid,))["override"] for pid in members}
+    pid = members[-1]
+    reply = post(client, "/api/rescue", {"ids": [pid], "on": False, "reason": "tossed"})
+    assert reply.status_code == 200 and reply.get_json()["undo"]
+    assert s.store.one("SELECT override FROM photos WHERE id=?", (pid,))["override"] == "toss"
+    assert all(s.store.one("SELECT override FROM photos WHERE id=?", (other,))["override"] == before[other]
+               for other in members if other != pid)
+    post(client, "/api/draw/undo")
+    assert {member: s.store.one("SELECT override FROM photos WHERE id=?", (member,))["override"] for member in members} == before

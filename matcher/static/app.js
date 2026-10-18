@@ -4496,15 +4496,16 @@ function viewDraw(main, params) {
 
 let tagPickerId=0;
 // Search friendly names while keeping the exact tag key behind each choice, including duplicate names.
-function tagPicker(root,list,choose,{label='Find a tag',exclude=null}={}) {
+function tagPicker(root,list,choose,{label='Find a tag',exclude=null,create=null}={}) {
   const id=`tag-picker-${++tagPickerId}`;
   root.innerHTML=`<label>${esc(label)}<input class="hint-input" type="search" role="combobox" aria-autocomplete="list" aria-controls="${id}" aria-expanded="false" autocomplete="off"></label><div class="tag-options rail-card" role="listbox" id="${id}" hidden></div>`;
   const input=$('input',root),options=$('.tag-options',root);let matches=[],at=-1;
   const close=()=>{options.hidden=true;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');};
-  const pick=t=>{close();input.value='';choose(t);};
+  const pick=t=>{close();input.value='';t.create?create(t.label):choose(t);};
   const paint=()=>{
-    const q=input.value.trim().toLocaleLowerCase();matches=list.filter(t=>t.key!==exclude&&t.label.toLocaleLowerCase().includes(q)).slice(0,100);at=-1;
-    options.innerHTML=matches.length?matches.map((t,i)=>`<button type="button" role="option" id="${id}-${i}" aria-selected="false" tabindex="-1" data-tag-option="${i}">${esc(t.emoji||'🏷️')} ${esc(t.label)}</button>`).join(''):'<span class="muted">No matching tags</span>';
+    const value=input.value.trim(),q=value.toLocaleLowerCase();matches=list.filter(t=>!(exclude instanceof Set?exclude.has(t.key):t.key===exclude)&&t.label.toLocaleLowerCase().includes(q)).slice(0,100);at=-1;
+    if(create&&value&&!list.some(t=>t.label.toLocaleLowerCase()===q))matches.push({label:value,create:true});
+    options.innerHTML=matches.length?matches.map((t,i)=>`<button type="button" role="option" id="${id}-${i}" aria-selected="false" tabindex="-1" data-tag-option="${i}">${t.create?`＋ Create “${esc(t.label)}”`:`${esc(t.emoji||'🏷️')} ${esc(t.label)}`}</button>`).join(''):'<span class="muted">No matching tags</span>';
     options.hidden=false;input.setAttribute('aria-expanded','true');input.removeAttribute('aria-activedescendant');
     for(const button of $$('[data-tag-option]',options)){button.onpointerdown=e=>e.preventDefault();button.onclick=()=>pick(matches[Number(button.dataset.tagOption)]);}
   };
@@ -6394,7 +6395,7 @@ const World = {
     if (!this.el) return;
     this.el.removeAttribute("aria-hidden");
     this.sea = new VennSea(this.el, {catalog:true});
-    this.plain = { onSelect: (it, e) => { if (e?.shiftKey) { it.selected = !it.selected; this.sea.select([...this.sea.items.values()].filter((x) => x.selected).map((x) => x.id)); } else this.inspect(it.id); },
+    this.plain = { clickToZoom:true,onSelect: (it, e) => { if (e?.shiftKey) { it.selected = !it.selected; this.sea.select([...this.sea.items.values()].filter((x) => x.selected).map((x) => x.id)); } else this.inspect(it.id); },
       onDrop:(ids,target)=>this.drop(ids,target),
       onCircle:(key,anchor)=>this.tagMenu(key,anchor),onLasso:(id,anchor)=>{if(id.startsWith("gcup:"))return this.tagMenu(`kind:${id.slice(5)}`,anchor);location.hash=id==="gcut"?"#cuts":`#draw?g=${id.slice(1)}`;} };
     Object.assign(this.sea, this.plain);
@@ -6459,7 +6460,7 @@ const World = {
   // The Groups page works the sea itself: it feeds it (tags as circles, groups and suggestions) and handles its drops.
   live(handlers) {
     this.handlers = handlers;
-    Object.assign(this.sea, handlers);
+    Object.assign(this.sea, {clickToZoom:true}, handlers);
     this.setMode("live");
     return this.sea;
   },

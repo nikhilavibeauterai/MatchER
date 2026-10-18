@@ -65,6 +65,35 @@ test('the click camera destination loads originals despite fractional card sizes
   assert.equal(sea.imageSize(it),480);assert(!sea.fullSize(it));
   it.renderScale=1.15;assert.equal(sea.imageSize(it),552);assert(sea.fullSize(it),'Hover enlargement counts toward original detail');
 });
+test('a live editor can select another take while retaining wheel and pan controls',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype');
+  const calls=[],item={id:7},event={type:'pointerup'};
+  const sea=Object.assign(Object.create(proto),{cameraOn:true,zoomToPrint:it=>calls.push(['zoom',it]),onSelect:(it,e)=>calls.push(['select',it,e])});
+  sea.clickPrint(item,event);assert.deepEqual(calls.pop(),['zoom',item]);
+  sea.clickToZoom=false;sea.clickPrint(item,event);assert.deepEqual(calls.pop(),['select',item,event]);
+  assert(sea.cameraOn,'Selecting a Filter take must not disable manual camera gestures');
+  sea.clickToZoom=true;sea.cameraOn=false;sea.clickPrint(item,event);assert.deepEqual(calls.pop(),['select',item,event]);
+});
+test('resetting, wheeling, panning or leaving a mode cancels an unfinished click zoom',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),frames=[];
+  const proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype',{
+    reduceMotion:false,performance:{now:()=>0},requestAnimationFrame:fn=>frames.push(fn)
+  });
+  const sea=Object.assign(Object.create(proto),{alive:true,cameraOn:true,camera:{zoom:1,tx:0,ty:0},tuning:{zoomMax:100},
+    el:{clientWidth:1200,clientHeight:900,setPointerCapture(){}},s:60,setCamera(zoom,tx,ty){this.camera={zoom,tx,ty};}});
+  const item={x:300,y:250,size:60};
+  sea.zoomToPrint(item);sea.resetCamera();frames.shift()(80);
+  assert.deepEqual(sea.camera,{zoom:1,tx:0,ty:0},'A reset at overview must cancel even before the first frame');
+  for(const cancel of [()=>sea.resetCamera(),()=>sea.zoomAt(.8,100,100),
+    ()=>sea.panStart({pointerId:1,clientX:200,clientY:300,preventDefault(){}}),()=>sea.enableCamera(false)]){
+    sea.cameraOn=true;sea.pan=null;sea.zoomToPrint(item);frames.shift()(80);assert(sea.camera.zoom>1);
+    cancel();const camera={...sea.camera};frames.shift()(160);
+    assert.deepEqual(sea.camera,camera,'A stale animation cannot override the newer gesture or mode');
+  }
+  sea.cameraOn=true;sea.zoomToPrint(item);const old=frames.shift();sea.zoomToPrint({...item,x:800});
+  const camera={...sea.camera};old(320);assert.deepEqual(sea.camera,camera,'A second selection owns the glide');
+  frames.shift()(320);assert.equal(sea.cameraGlide,null);assert(sea.camera.tx<0);
+});
 test('camera pans capture the pointer and release it when a two-finger pinch takes over',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),classes=new Set(),captured=new Set();
   const proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype',{

@@ -1,7 +1,7 @@
 // A focused print carries its writing and sticky notes. The longer story stays on the sheet underneath it.
 // Only focused, live cards load that story; the thousands of thumbnails and sea sprites stay lightweight.
 const PhotoNotes = {
-  hosts:new Map(), cache:new Map(), pending:new Map(), source:null, paperID:0,
+  hosts:new Map(), cache:new Map(), pending:new Map(), drafts:new Map(), source:null, paperID:0, page:'notes',
   init() {
     const queue=()=>{if(this.queued)return;this.queued=requestAnimationFrame(()=>{this.queued=0;this.scan();});};
     this.queue=queue;
@@ -14,6 +14,7 @@ const PhotoNotes = {
     window.addEventListener('sea-image-ready',()=>{if(!this.seaDetail)this.camera();});
     window.addEventListener('resize',()=>{queue();requestAnimationFrame(()=>{this.repaint();this.position();});});
     window.addEventListener('photo-render-change',()=>this.repaint());
+    document.addEventListener('visibilitychange',()=>{if(document.hidden&&this.active)this.saveWriting(this.active);});
     window.addEventListener('hashchange',()=>{this.close(false);this.clearSea();queue();});
     document.addEventListener('close',e=>{if(e.target.contains(this.sheet))this.close(false);},true);
     // Escape dismisses this local layer first. Inputs and the searchable picker keep their native keys.
@@ -30,7 +31,7 @@ const PhotoNotes = {
     },true);
     window.addEventListener('photo-changed',e=>{
       if(e.detail.source!==S.lib?.source)return;
-      this.cache.clear();clearTimeout(this.refreshTimer);
+      this.cache.clear();this.pending.clear();clearTimeout(this.refreshTimer);
       if(this.busy)return; // The sheet action refreshes its card and sheet together.
       this.refreshTimer=setTimeout(()=>{
         this.scan();
@@ -40,7 +41,11 @@ const PhotoNotes = {
     Toolbelt.listeners.add((pid,edits)=>{
       const sea=World.sea;for(const it of sea?.moving||[])if(it.photo===pid)sea.frameImage(it);
       for(const [host,state] of this.hosts)if(state.pid===pid){if(state.data)state.data.edits=edits;this.decorate(host,state);}
-      if(this.active?.pid===pid&&this.active.data){this.active.data.edits=edits;this.controls();}
+      if(this.active?.pid===pid&&this.active.data){
+        const active=this.active;active.data.edits=edits;
+        if(active.draft&&!active.dirty&&!active.writing){active.draft=this.writingOf(edits);this.fillWriting();}
+        this.controls();
+      }
     });
     queue();
   },
@@ -140,7 +145,7 @@ const PhotoNotes = {
     if(this.pending.has(pid))return this.pending.get(pid);
     const source=this.source;
     const task=api(`/api/photo/${pid}/notes`).then(data=>{
-      if(source!==this.source)return null;
+      if(source!==this.source||this.pending.get(pid)!==task)return null;
       if(this.cache.size>=100)this.cache.delete(this.cache.keys().next().value);
       this.cache.set(pid,data);return data;
     }).finally(()=>{if(this.pending.get(pid)===task)this.pending.delete(pid);});
@@ -193,6 +198,7 @@ const PhotoNotes = {
     this.controls();
   },
   preview(host,p,edits) {
+    if(this.active?.host===host&&this.active.comparing)edits={crop:'off',rotate:0,enhance:false};
     let img=host.querySelector('.window img');
     if(!img){
       Cards.focus(host);img=host.querySelector('.window img');if(!img)return;
@@ -215,14 +221,18 @@ const PhotoNotes = {
     sheet.classList.remove('notes-returning');sheet.classList.add('photo-note-sheet','notes-opening');
     sheet.setAttribute('role','dialog');sheet.setAttribute('aria-label','Photo notes');sheet.tabIndex=-1;sheet.dataset.solid='';
     sheet.innerHTML='<button class="btn notes-close" aria-label="Close photo notes">×</button><p role="status">Opening notes…</p>';
-    this.sheet=sheet;this.active={...state,host};state.tab.setAttribute('aria-expanded','true');state.tab.setAttribute('aria-controls',sheet.id);
+    this.sheet=sheet;this.active={...state,host,source:this.source,page:this.page,draft:null,dirty:false};state.tab.setAttribute('aria-expanded','true');state.tab.setAttribute('aria-controls',sheet.id);
     sheet.onkeydown=e=>e.stopPropagation();
     $('.notes-close',sheet).onclick=()=>this.close();this.position();sheet.getBoundingClientRect();sheet.classList.add('is-open');sheet.focus({preventScroll:true});
     this.afterMotion(host,state,()=>sheet.classList.remove('notes-opening'));
-    try{await this.reload();}catch(e){if(this.sheet===sheet)$('p',sheet).textContent=e.message;}
+    try{await this.reload();}catch(e){if(this.sheet===sheet){$('p',sheet).textContent=e.message;
+      const retry=document.createElement('button');retry.className='btn';retry.textContent='Try again';retry.onclick=()=>this.reload().catch(error=>toast(error.message));sheet.append(retry);}}
   },
   close(focus=true) {
     const active=this.active;this.sheet=null;this.active=null;if(!active)return;
+    this.compare(false,active);
+    if(active.dirty&&active.writeState!=='error')this.saveWriting(active);
+    clearTimeout(active.writeTimer);
     const {host,paper,tab}=active,state=this.hosts.get(host);if(state)state.motion++;
     paper.classList.remove('is-open','photo-note-sheet','notes-opening');paper.classList.add('notes-returning');paper.inert=true;
     host.style.removeProperty('--notes-shift');tab.setAttribute('aria-expanded','false');tab.removeAttribute('aria-controls');
@@ -256,75 +266,270 @@ const PhotoNotes = {
   },
   async reload() {
     const active=this.active,sheet=this.sheet;if(!active||!sheet)return;
-    const [data,tags,history]=await Promise.all([this.get(active.pid),api('/api/tags?all=1'),api('/api/history?stage=home')]);
-    if(this.active!==active||!data)return;
-    active.data={...data,edits:Toolbelt.edits.has(active.pid)?Toolbelt.current(active.pid):data.edits};active.tags=tags.tags;active.bins=data.available_groups||[];active.history=history;
+    const version=active.loadVersion=(active.loadVersion||0)+1;
+    await active.writing;
+    // A tucked-away sheet may still be saving this photo. Reopening reads its confirmed result.
+    await Toolbelt.saving.get(active.pid);
+    if(this.active!==active||version!==active.loadVersion)return;
+    const [data,tags,history]=await Promise.all([this.get(active.pid),api('/api/tags?all=1'),api('/api/draw/history')]);
+    if(this.active!==active||version!==active.loadVersion||!data)return;
+    if(!Toolbelt.jobs.get(active.pid)?.length)Toolbelt.know(active.pid,data.edits);
+    active.data={...data,edits:Toolbelt.current(active.pid)};active.tags=tags.tags;active.bins=data.available_groups||[];active.history=history;
+    if(!active.draft){
+      active.draft=this.drafts.get(this.draftKey(active))||this.writingOf(active.data.edits);
+      active.dirty=!this.sameWriting(active.draft,active.data.edits);
+      active.writeState=active.dirty?'unsaved':'saved';
+    }
     for(const [host,state] of this.hosts)if(state.pid===active.pid){state.data=active.data;this.decorate(host,state);}
     this.render();
+    if(active.dirty&&active.writeState!=='error')this.queueWriting(active);
+  },
+  writingOf(edits={}) { return {title:edits.title||'',description:edits.description||''}; },
+  sameWriting(a,b) { return ['title','description'].every(k=>(a[k]||'').trim()===(b[k]||'').trim()); },
+  draftKey(active) { return JSON.stringify([active.source,active.pid]); },
+  queueWriting(active) {
+    clearTimeout(active.writeTimer);
+    active.writeTimer=setTimeout(()=>this.saveWriting(active),650);
+  },
+  async saveWriting(active=this.active) {
+    if(!active?.draft)return true;
+    clearTimeout(active.writeTimer);
+    if(active.writing)return active.writing;
+    if(!active.dirty)return true;
+    if(active.source!==S.lib?.source)return false;
+    const task=(async()=>{
+      while(active.dirty&&active.source===S.lib?.source){
+        const sent=active.draft,patch=Object.fromEntries(Object.entries(sent).map(([k,v])=>[k,v.trim()]));
+        active.writeState='saving';this.writingStatus(active);
+        try{await Toolbelt.save(active.pid,patch);}
+        catch(_){active.writeState='error';this.writingStatus(active);return false;}
+        if(active.source!==S.lib?.source)return false;
+        if(!this.sameWriting(patch,Toolbelt.edits.get(active.pid)||{})){
+          active.writeState='error';this.writingStatus(active);return false;
+        }
+        if(this.drafts.get(this.draftKey(active))===sent)this.drafts.delete(this.draftKey(active));
+        active.dirty=!this.sameWriting(active.draft,patch);
+      }
+      active.writeState='saved';this.writingStatus(active);return true;
+    })();
+    active.writing=task;
+    try{return await task;}
+    finally{active.writing=null;if(this.active===active)this.refreshHistory(active);}
+  },
+  fillWriting() {
+    if(!this.sheet||!this.active?.draft)return;
+    for(const [key,value] of Object.entries(this.active.draft)){
+      const input=$(`[name=${key}]`,this.sheet);if(input&&document.activeElement!==input)input.value=value;
+    }
+  },
+  writingStatus(active=this.active) {
+    if(!this.sheet||this.active!==active)return;
+    const status=$('.notes-save-state',this.sheet);if(!status)return;
+    status.textContent={saving:'Saving…',unsaved:'Not saved yet',error:'Couldn’t save',saved:'Saved to this photo'}[active.writeState]||'Saved to this photo';
+    status.dataset.state=active.writeState;
+    const retry=$('[data-retry-writing]',this.sheet);retry.hidden=active.writeState!=='error';
+    const save=$('.notes-writing [type=submit]',this.sheet);if(save){save.hidden=!active.dirty||active.writeState==='saving';save.textContent=active.writeState==='error'?'Retry saving':'Save now';}
+  },
+  async refreshHistory(active=this.active) {
+    if(!active||this.active!==active||active.source!==S.lib?.source)return;
+    try{const history=await api('/api/draw/history');if(this.active===active){active.history=history;this.controls();}}
+    catch(_){/* The saved writing stays saved if history is temporarily unavailable. */}
   },
   async edit(patch) {
     const active=this.active;if(!active)return;
     await Toolbelt.save(active.pid,patch);
-    if(this.active===active){active.data.edits=Toolbelt.current(active.pid);this.controls();this.preview(active.host,active.data,active.data.edits);}
+    if(this.active===active){active.data.edits=Toolbelt.current(active.pid);this.controls();this.preview(active.host,active.data,active.data.edits);this.refreshHistory(active);}
   },
   async action(path,body) {
     const active=this.active;if(!active||this.busy)return;this.busy=true;
-    try{const r=await api(path,body);updateHudQuiet(r.game);refreshHud(true);this.cache.delete(active.pid);if(this.active===active)await this.reload();}
-    catch(e){toast(e.message);}finally{this.busy=false;this.scan();}
+    this.sheet.setAttribute('aria-busy','true');
+    try{
+      if(!await this.saveWriting(active)||this.active!==active)return;
+      await Toolbelt.flush();
+      const r=await api(path,body);if(active.source!==S.lib?.source)return;
+      updateHudQuiet(r.game);refreshHud(true);this.cache.delete(active.pid);
+      if(this.active===active){
+        if(/\/draw\/(undo|redo)$/.test(path)){active.draft=null;active.dirty=false;}
+        await this.reload();
+      }
+    }catch(e){toast(e.message);}finally{this.busy=false;this.sheet?.removeAttribute('aria-busy');this.controls();this.scan();}
   },
-  render() {
-    const {data:p,tags,bins}=this.active,sheet=this.sheet,e=p.edits||{};
-    const facts=rows=>`<dl class="notes-facts">${rows.filter(([,v])=>v!==null&&v!==undefined&&v!=='').map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
-    const num=n=>typeof n==='number'?Number(n.toFixed(3)):n;
-    const words=k=>FLAG_LABELS[k]||TASTE_LABELS[k]||k.replace(/_/g,' ');
-    const scores=obj=>facts(Object.entries(obj||{}).filter(([,v])=>typeof v==='number').sort((a,b)=>b[1]-a[1]).map(([k,v])=>[words(k),num(v)]));
-    sheet.innerHTML=`<div class="notes-heading"><h2>Photo notes</h2><button class="btn notes-close" aria-label="Close photo notes">×</button></div>
-      <form class="notes-writing"><label>Title<input name="title" type="text" maxlength="160" value="${esc(e.title||'')}" placeholder="Write on the frame"></label>
-        <label>Private notes<textarea name="description" maxlength="8000" rows="3" placeholder="Anything else about this photo">${esc(e.description||'')}</textarea></label><button class="btn">Save writing</button><span class="notes-saved" role="status"></span></form>
-      <section><h3>Tags</h3><div class="notes-tags">${p.tags.map(t=>`<button class="chip" data-remove-tag="${esc(t.key)}" title="Remove ${esc(t.label)} from this take">${esc(t.emoji||'🏷️')} ${esc(t.label)} ×</button>`).join('')||'<p class="muted">No tags yet.</p>'}</div>
-        <div class="tag-picker notes-tag-picker"></div><form class="notes-new-tag"><input name="label" type="text" maxlength="40" aria-label="New tag name" placeholder="New tag" required><button class="btn">Add</button></form></section>
-      <details class="notes-finishing" open><summary>Finish this photo</summary><div class="edit-sheet">
-        <h3>Enhance</h3><div class="sheet-row"><button class="btn ghost" data-edit="enhance">On</button><button class="btn ghost" data-edit="auto">Back to auto</button></div>
-        <div class="sheet-knobs">${Object.entries(KNOBS).map(([key,[lo,hi]])=>`<label class="sheet-knob"><span>${KNOB_WORD[key]}</span><input type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05" aria-label="${KNOB_WORD[key]}"><output></output></label>`).join('')}</div>
-        <h3>Crop</h3><div class="sheet-seg">${[['best','Best'],['subject','Focus subject'],['height','Fill height'],['width','Fill width'],['off','Off']].map(([key,label])=>`<button class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div>
-        <h3>Turn</h3><div class="sheet-row"><button class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><b class="sheet-deg"></b><button class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div></div></details>
-      <section><h3>Place in the game</h3>${facts([['Status',p.cut?`Set aside: ${words(p.cut)}`:'In the running'],['Your decision',p.override],['Stack',`${p.stack.members.length} ${p.stack.members.length===1?'take':'takes'}${p.stack.rep===p.id?' · kept take':''}`],['Group',p.group.name],['Hand added to export',p.pick?'Yes':null],['Appeal',num(p.ranking?.appeal)],['Shortlist confidence',p.ranking?pct(p.ranking.inclusion):null],['Duels',p.ranking?.duels]])}
-        <div class="row wrap">${p.stack.members.length>1?`${p.stack.rep!==p.id?'<button class="btn" data-photo-action="keep">Keep this take</button>':''}<button class="btn" data-photo-action="split">Split out</button>`:''}<button class="btn ${p.cut?'':'danger'}" data-photo-action="${p.cut?'rescue':'toss'}">${p.cut?'Bring back':'Set aside'}</button></div>
-        ${bins.length?`<label>Group<select class="notes-group"><option value="">No group</option>${bins.map(g=>`<option value="${g.id}" ${g.id===p.group.id?'selected':''}>${esc(g.emoji||'🗂️')} ${esc(g.name)}</option>`).join('')}</select></label>`:''}</section>
-      <details><summary>File & metadata</summary>${facts([['File',p.rel],['Date',p.taken?.replace('T',' ')],['Date source',p.taken_src],['Camera',[p.make,p.model].filter(Boolean).join(' ')],['Dimensions',p.width&&p.height?`${p.width} × ${p.height}`:null],['Format',p.fmt],['File size',p.size?`${(p.size/1048576).toFixed(2)} MB`:null],['Read status',p.status],['Problem',p.error]])}${photoPathButton(p.id)}</details>
-      <details><summary>What the analysis found</summary>${facts([['Observations',(p.flags||[]).map(words).join(', ')],['Faces',p.n_faces],['Brightness',num(p.luma)],['Dark tones',num(p.luma_lo)],['Light tones',num(p.luma_hi)],['Sharpness',num(p.sharp)],['Colour range',num(p.chroma)],['Saturation',num(p.saturation)],['Hue',num(p.hue)],['Starting appeal',num(p.prior)],['Subject region',p.subject?.map(num).join(', ')],['Salient region',p.salient?.map(num).join(', ')]])}
-        <h4>Recognition scores</h4>${scores(p.recognized_tags?.tags||p.recognized_tags)}${scores(p.zs)}
-        ${p.faces.map((f,i)=>`<h4>Face ${i+1}${f.label?` · ${esc(f.label)}`:''}</h4>${facts(Object.entries(f).filter(([k])=>!['id','photo_id','idx'].includes(k)).map(([k,v])=>[words(k),num(v)]))}`).join('')}</details>
-      <details><summary>Your saved changes</summary>${facts([['Title',e.title],['Notes',e.description],['Pen & marker strokes',e.marks?.length],['Sticky notes',e.notes?.map(n=>n.text).join(' · ')],['Crop',e.crop],['Turn',e.rotate!==undefined?`${e.rotate}°`:null],['Enhance',e.enhance!==undefined?e.enhance?'On':'Off':null]])}
-        ${p.tag_edits.length?facts(p.tag_edits.map(t=>[t.label,t.on?'Added by you':'Removed by you'])):'<p class="muted">No tag corrections.</p>'}</details>
-      <details><summary>Recent calls</summary>${p.history.length?`<ol class="notes-history">${p.history.map(h=>`<li>${esc(words(h.kind))}${h.winner===p.id?' · won':''}${h.undone?' · undone':''}<time>${esc(new Date(h.ts*1000).toLocaleString())}</time></li>`).join('')}</ol>`:'<p class="muted">No calls for this take yet.</p>'}</details>
-      <div class="notes-footer"><button class="btn ghost" data-notes-undo>Undo <kbd>Z</kbd></button><span>Kept with this photo</span></div>`;
-    $('.notes-close',sheet).onclick=()=>this.close();
-    $('.notes-writing',sheet).onsubmit=async event=>{
-      event.preventDefault();const form=new FormData(event.target),pid=p.id,patch={title:form.get('title').trim(),description:form.get('description').trim()};
-      await this.edit(patch);
-      if(this.sheet===sheet){const saved=Toolbelt.current(pid);$('.notes-saved',sheet).textContent=Object.entries(patch).every(([k,v])=>(saved[k]||'')===v)?'Saved':'Could not save';}
-    };
-    tagPicker($('.notes-tag-picker',sheet),tags.filter(t=>!p.tags.some(on=>on.key===t.key)),t=>this.action('/api/tags/set',{photos:[p.id],on:[t.key],exact:true}),{label:'Add a tag'});
-    for(const b of $$('[data-remove-tag]',sheet))b.onclick=()=>this.action('/api/tags/set',{photos:[p.id],off:[b.dataset.removeTag],exact:true});
-    $('.notes-new-tag',sheet).onsubmit=event=>{event.preventDefault();this.action('/api/tags/new',{label:new FormData(event.target).get('label'),photos:[p.id],exact:true});};
-    $('[data-edit=enhance]',sheet).onclick=()=>this.edit({enhance:!this.enhanced()});
-    $('[data-edit=auto]',sheet).onclick=()=>this.edit({look:null});
-    for(const b of $$('[data-crop]',sheet))b.onclick=()=>this.edit({crop:b.dataset.crop==='off'?'none':b.dataset.crop});
-    for(const b of $$('[data-turn]',sheet))b.onclick=()=>this.edit({rotate:((this.active.data.edits.rotate||0)+Number(b.dataset.turn)+360)%360});
-    const knobs=()=>Object.fromEntries($$('[data-knob]',sheet).map(r=>[r.dataset.knob,Number(r.value)]));
-    for(const r of $$('[data-knob]',sheet)){
-      r.oninput=()=>{r.nextElementSibling.textContent=Number(r.value).toFixed(2);this.preview(this.active.host,p,{...this.active.data.edits,look:knobs()});};
-      r.onchange=()=>this.edit({look:knobs()});
+  render() { this.renderSheet(); },
+  renderSheet() {
+    const active=this.active,sheet=this.sheet,p=active.data;
+    if(!$('.notes-nav',sheet)){
+      const pages=[['notes','Notes'],['tags','Tags'],['look','Look'],['details','Details']];
+      sheet.innerHTML=`<header class="notes-heading"><h2 id="${sheet.id}-title">Photo notes</h2><button type="button" class="btn notes-close" aria-label="Close photo notes">×</button></header>
+        <nav class="notes-nav" role="tablist" aria-label="Photo notes pages">${pages.map(([key,label])=>`<button type="button" role="tab" id="${sheet.id}-${key}-tab" data-notes-page="${key}" aria-controls="${sheet.id}-${key}">${label}</button>`).join('')}</nav>
+        <div class="notes-body">${pages.map(([key])=>`<section class="notes-page" role="tabpanel" id="${sheet.id}-${key}" data-notes-panel="${key}" aria-labelledby="${sheet.id}-${key}-tab" tabindex="0" hidden></section>`).join('')}</div>
+        <footer class="notes-footer"><div class="notes-save"><span class="notes-save-state" role="status" aria-live="polite"></span><button type="button" class="btn" data-retry-writing hidden>Retry</button></div>
+          <div class="notes-history-actions"><button type="button" class="btn ghost" data-notes-undo hidden aria-label="Undo last photo change">↶ <span>Undo</span></button><button type="button" class="btn ghost" data-notes-redo hidden aria-label="Redo last photo change">↷ <span>Redo</span></button></div></footer>`;
+      sheet.setAttribute('aria-labelledby',`${sheet.id}-title`);
+      $('.notes-close',sheet).onclick=()=>this.close();
+      $('[data-retry-writing]',sheet).onclick=()=>this.saveWriting(active);
+      for(const button of $$('[data-notes-page]',sheet)){
+        button.onclick=()=>this.showPage(button.dataset.notesPage);
+        button.onkeydown=event=>{
+          if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+          event.preventDefault();event.stopPropagation();const tabs=$$('[data-notes-page]',sheet),at=tabs.indexOf(button);
+          const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(at+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+          this.showPage(tabs[next].dataset.notesPage);tabs[next].focus({preventScroll:true});
+        };
+      }
+      for(const kind of ['undo','redo'])$(`[data-notes-${kind}]`,sheet).onclick=()=>this.action(`/api/draw/${kind}`,{});
+      sheet.onkeydown=event=>{
+        if(!event.repeat&&event.key.toLowerCase()==='z'&&!event.target.closest('input,textarea,select')&&!event.ctrlKey&&!event.metaKey){
+          const kind=event.shiftKey?'redo':'undo',button=$(`[data-notes-${kind}]`,sheet);
+          if(!button.hidden){event.preventDefault();button.click();}
+        }
+        event.stopPropagation();
+      };
+      this.renderWriting();this.renderLook();
     }
-    for(const b of $$('[data-photo-action]',sheet))b.onclick=()=>{
-      const name=b.dataset.photoAction;
-      this.action(name==='keep'?'/api/frame':name==='split'?'/api/groups/split':name==='rescue'?'/api/rescue':'/api/draw/toss',name==='rescue'?{ids:[p.id],on:true}:{photo:p.id});
+    const tagInput=$('.notes-new-tag input',sheet),query=tagInput?.value||'',tagFocused=tagInput===document.activeElement;
+    const disclosures=new Set($$('details[open][data-notes-detail]',sheet).map(d=>d.dataset.notesDetail));
+    this.renderTags();this.renderDetails();
+    for(const detail of $$('details[data-notes-detail]',sheet))detail.open=disclosures.has(detail.dataset.notesDetail);
+    const input=$('.notes-new-tag input',sheet);input.value=query;
+    if(tagFocused)input.focus({preventScroll:true});
+    this.fillWriting();
+    $('.notes-context',sheet).innerHTML=`<span class="notes-status ${p.cut?'is-aside':''}">${p.cut?'Set aside':'In the running'}</span><button type="button" class="notes-context-link">${p.stack.members.length>1?`${p.stack.members.length} takes in this stack`:'One loose photo'}${p.group.name?` · ${esc(p.group.name)}`:''} →</button>`;
+    $('.notes-context-link',sheet).onclick=()=>{this.showPage('details');$('.notes-collection',sheet).scrollIntoView({block:'start'});};
+    this.showPage(active.page);this.controls();this.position();
+  },
+  showPage(page) {
+    if(!this.sheet||!this.active)return;
+    this.compare(false);
+    if(page==='details'&&this.active.page!==page){
+      const panel=$('[data-notes-panel=details]',this.sheet),open=new Set($$('details[open]',panel).map(d=>d.dataset.notesDetail));
+      this.renderDetails();
+      for(const detail of $$('details',panel))detail.open=open.has(detail.dataset.notesDetail);
+    }
+    this.page=this.active.page=page;
+    for(const button of $$('[data-notes-page]',this.sheet)){
+      const selected=button.dataset.notesPage===page;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;
+    }
+    for(const panel of $$('[data-notes-panel]',this.sheet))panel.hidden=panel.dataset.notesPanel!==page;
+    this.sheet.dataset.page=page;
+  },
+  renderWriting() {
+    const active=this.active,panel=$('[data-notes-panel=notes]',this.sheet);
+    panel.innerHTML=`<p class="notes-intro">A title on the frame. The story on this sheet.</p>
+      <form class="notes-writing"><label class="notes-title-label">Title on the frame<input name="title" type="text" maxlength="160" placeholder="Give this photo a title" autocomplete="off"></label>
+        <label class="notes-story-label">The story<textarea name="description" maxlength="8000" rows="7" placeholder="A place, a memory, a reason to keep it…"></textarea></label>
+        <div class="notes-writing-bar"><span class="notes-private">Your writing stays in MatchER.</span><button type="submit" class="btn" hidden>Save now</button></div></form>
+      <div class="notes-context"></div>`;
+    const form=$('.notes-writing',panel);
+    form.oninput=()=>{
+      active.draft={title:form.elements.title.value,description:form.elements.description.value};
+      active.dirty=!this.sameWriting(active.draft,Toolbelt.edits.get(active.pid)||{});
+      active.writeState=active.dirty?'unsaved':'saved';
+      if(active.dirty){this.drafts.set(this.draftKey(active),active.draft);this.queueWriting(active);}
+      else{this.drafts.delete(this.draftKey(active));clearTimeout(active.writeTimer);}
+      this.writingStatus(active);this.previewTitle(active);
     };
-    const group=$('.notes-group',sheet);if(group)group.onchange=()=>this.action('/api/draw/move',{photos:[p.id],theme:group.value?Number(group.value):null});
-    $('[data-notes-undo]',sheet).onclick=()=>HistoryHUD.act('undo');
-    sheet.onkeydown=event=>{if(event.key.toLowerCase()==='z'&&!event.target.closest('input,textarea,select')&&!event.ctrlKey&&!event.metaKey){event.preventDefault();HistoryHUD.act('undo');}event.stopPropagation();};
-    this.controls();this.position();
+    form.onsubmit=event=>{event.preventDefault();this.saveWriting(active);};
+    form.addEventListener('focusout',event=>{if(!form.contains(event.relatedTarget))this.saveWriting(active);});
+  },
+  previewTitle(active) {
+    const title=active.draft.title.trim();
+    for(const [host,state] of this.hosts)if(state.pid===active.pid){
+      const chin=host.querySelector('.chin'),writing=$(':scope > .photo-writing',host);
+      if(chin){let label=$('.chin-title',chin);if(!title)label?.remove();else{if(!label){label=document.createElement('span');label.className='chin-title';chin.prepend(label);}label.textContent=title;}}
+      else if(writing){writing.textContent=title||state.data?.rel.split(/[\\/]/).at(-1)||'';writing.hidden=!writing.textContent;}
+    }
+  },
+  renderTags() {
+    const {data:p,tags}=this.active,panel=$('[data-notes-panel=tags]',this.sheet),current=new Set(p.tags.map(t=>t.key));
+    const families=[['what','What’s in it'],['people','People'],['look','How it looks'],['when','When'],['other','Your other tags']];
+    const groups=new Map(families.map(([key])=>[key,[]]));
+    for(const tag of p.tags)groups.get(groups.has(tag.family)?tag.family:'other').push(tag);
+    panel.innerHTML=`<p class="notes-intro">Make the description yours. Corrections apply to this take.</p>
+      <form class="notes-new-tag"><div class="tag-picker notes-tag-picker"></div><button type="submit" class="btn" aria-label="Add this tag">Add</button></form>
+      <div class="notes-tags">${p.tags.length?families.filter(([key])=>groups.get(key).length).map(([key,label])=>`<section class="notes-tag-family"><h3>${label}</h3><ul>${groups.get(key).map(t=>{
+        const manual=t.edited===true||t.user&&t.score==null;
+        return `<li class="notes-tag ${manual?'is-personal':''}"><span class="notes-tag-name"><span aria-hidden="true">${esc(t.emoji||'🏷️')}</span> ${esc(t.label)}<small>${manual?'Added by you':'From analysis'}</small></span>
+          <button type="button" class="notes-tag-remove" data-remove-tag="${esc(t.key)}" aria-label="Remove ${esc(t.label)} from this take" title="Remove this tag">×</button></li>`;
+      }).join('')}</ul></section>`).join(''):'<p class="notes-empty">No tags yet. Add what makes this photo easy to find.</p>'}</div>
+      ${p.tag_edits.some(t=>!t.on)?`<details class="notes-removed" data-notes-detail="removed"><summary>Removed from this take</summary><ul>${p.tag_edits.filter(t=>!t.on).map(t=>`<li><span>${esc(t.label)}</span><button type="button" class="btn ghost" data-restore-tag="${esc(t.key)}">Put back</button></li>`).join('')}</ul></details>`:''}`;
+    const add=t=>this.action('/api/tags/set',{photos:[p.id],on:[t.key],exact:true});
+    const create=label=>this.action('/api/tags/new',{label,photos:[p.id],exact:true});
+    const input=tagPicker($('.notes-tag-picker',panel),tags,add,{label:'Find or add a tag',exclude:current,create});
+    input.name='label';input.maxLength=40;input.placeholder='Search tags or write a new one';
+    $('.notes-new-tag',panel).onsubmit=event=>{
+      event.preventDefault();const label=input.value.trim();if(!label)return;
+      const match=tags.find(t=>t.label.toLocaleLowerCase()===label.toLocaleLowerCase());
+      if(match&&current.has(match.key)){toast('That tag is already on this take.');return;}
+      match?add(match):create(label);
+    };
+    for(const button of $$('[data-remove-tag]',panel))button.onclick=()=>this.action('/api/tags/set',{photos:[p.id],off:[button.dataset.removeTag],exact:true});
+    for(const button of $$('[data-restore-tag]',panel))button.onclick=()=>add({key:button.dataset.restoreTag});
+  },
+  renderLook() {
+    const p=this.active.data,panel=$('[data-notes-panel=look]',this.sheet);
+    panel.innerHTML=`<div class="notes-look-intro"><p class="notes-intro">Fine-tune this photo. Watch the print as you work.</p><button type="button" class="btn notes-compare" data-notes-compare aria-pressed="false">Hold for original</button></div>
+      <div class="notes-finishing edit-sheet"><fieldset><legend>Framing</legend><div class="sheet-seg">${[['best','Best'],['subject','Subject'],['height','Height'],['width','Width'],['off','Whole photo']].map(([key,label])=>`<button type="button" class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div><p class="notes-crop-hint"></p></fieldset>
+      <fieldset><legend>Light & colour</legend><div class="sheet-row"><button type="button" class="btn" data-edit="enhance">Enhance</button><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
+        <div class="sheet-knobs">${Object.entries(KNOBS).map(([key,[lo,hi]])=>`<div class="sheet-knob"><label for="${this.sheet.id}-${key}">${KNOB_WORD[key]}</label><input id="${this.sheet.id}-${key}" type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05"><output for="${this.sheet.id}-${key}"></output><button type="button" class="notes-knob-reset" data-knob-reset="${key}" aria-label="Reset ${KNOB_WORD[key]}" hidden>↶</button></div>`).join('')}</div></fieldset>
+      <fieldset><legend>Turn</legend><div class="sheet-row notes-turn"><button type="button" class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><output class="sheet-deg"></output><button type="button" class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div></fieldset></div>`;
+    const compare=$('[data-notes-compare]',panel),end=()=>this.compare(false);
+    compare.onpointerdown=event=>{if(event.button)return;event.preventDefault();compare.setPointerCapture(event.pointerId);this.compare(true);};
+    for(const type of ['pointerup','pointercancel','lostpointercapture','blur'])compare.addEventListener(type,end);
+    compare.onkeydown=event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();this.compare(true);}};
+    compare.onkeyup=event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();end();}};
+    $('[data-edit=enhance]',panel).onclick=()=>this.edit({enhance:!this.enhanced()});
+    $('[data-edit=auto]',panel).onclick=()=>this.edit({look:null});
+    for(const button of $$('[data-crop]',panel))button.onclick=()=>this.edit({crop:button.dataset.crop});
+    for(const button of $$('[data-turn]',panel))button.onclick=()=>this.edit({rotate:((this.active.data.edits.rotate||0)+Number(button.dataset.turn)+360)%360});
+    const knobs=()=>Object.fromEntries($$('[data-knob]',panel).map(r=>[r.dataset.knob,Number(r.value)]));
+    for(const range of $$('[data-knob]',panel)){
+      range.oninput=()=>{this.knobValue(range);this.preview(this.active.host,this.active.data,{...this.active.data.edits,look:knobs()});};
+      range.onchange=()=>this.edit({look:knobs()});
+    }
+    for(const button of $$('[data-knob-reset]',panel))button.onclick=()=>this.edit({look:{...knobs(),[button.dataset.knobReset]:KNOBS[button.dataset.knobReset][2]}});
+  },
+  compare(on,active=this.active) {
+    if(!active?.data)return;
+    active.comparing=on;
+    if(active.host?.isConnected)this.preview(active.host,active.data,on?{crop:'off',rotate:0,enhance:false}:active.data.edits);
+    if(this.active===active&&this.sheet){const button=$('[data-notes-compare]',this.sheet);if(button){button.setAttribute('aria-pressed',String(on));button.textContent=on?'Original':'Hold for original';}}
+  },
+  knobValue(range) {
+    const key=range.dataset.knob,value=Number(range.value);
+    range.nextElementSibling.textContent=['levels','colour'].includes(key)?`${Math.round(value*100)}%`:`${value>0?'+':''}${value.toFixed(2)}`;
+    range.parentElement.querySelector('[data-knob-reset]').hidden=value===KNOBS[key][2];
+  },
+  facts(rows) {
+    return `<dl class="notes-facts">${rows.filter(([,v])=>v!==null&&v!==undefined&&v!=='').map(([key,value])=>`<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join('')}</dl>`;
+  },
+  word(key) { return FLAG_LABELS[key]||TASTE_LABELS[key]||String(key).replace(/_/g,' '); },
+  renderDetails() {
+    const p=this.active.data,e=p.edits||{},panel=$('[data-notes-panel=details]',this.sheet),count=p.stack.members.length;
+    const number=n=>typeof n==='number'?Number(n.toFixed(3)):n;
+    const scoreRows=obj=>this.facts(Object.entries(obj||{}).filter(([,v])=>typeof v==='number').sort((a,b)=>b[1]-a[1]).map(([key,value])=>[this.word(key),number(value)]));
+    const date=p.taken?new Date(p.taken):null,dateLabel=date&&!Number.isNaN(date.valueOf())?date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):p.taken;
+    const size=p.size>=1048576?`${(p.size/1048576).toFixed(1)} MB`:p.size?`${Math.max(1,Math.round(p.size/1024))} KB`:null;
+    panel.innerHTML=`<section class="notes-file"><h3>Original file</h3><p class="notes-filename">${esc(p.rel)}</p>
+      ${this.facts([['Taken',dateLabel],['Date from',({exif:'Camera metadata',filename:'File name'})[p.taken_src]],['Camera',[p.make,p.model].filter(Boolean).join(' ')],['Size',p.width&&p.height?`${p.width.toLocaleString()} × ${p.height.toLocaleString()} px`:null],['File',[p.fmt,size].filter(Boolean).join(' · ')],['Problem',p.error]])}${photoPathButton(p.id)}</section>
+      <section class="notes-collection"><h3>In your collection</h3><p class="notes-status ${p.cut?'is-aside':''}">${p.cut?`Set aside${p.override==='toss'?' by you':`: ${esc(this.word(p.cut))}`}`:p.override==='keep'?'Kept by you':'In the running'}</p>
+        ${count>1?`<p>${count} takes in this stack${p.stack.rep===p.id?' · This is the cover.':''}</p><div class="sheet-row">${p.stack.rep!==p.id?'<button type="button" class="btn" data-photo-action="keep">Use as cover</button>':''}<button type="button" class="btn ghost" data-photo-action="split">Split from stack</button></div>`:'<p class="muted">A loose photo, ready to keep or stack.</p>'}
+        ${this.active.bins.length?`<label>${count>1?'File the stack in':'File in a group'}<select class="notes-group"><option value="">No group</option>${this.active.bins.map(group=>`<option value="${group.id}" ${group.id===p.group.id?'selected':''}>${esc(group.emoji||'🗂️')} ${esc(group.name)}</option>`).join('')}</select></label>${count>1?'<p class="notes-hint">All takes in this stack stay in the same group.</p>':''}`:''}
+        <button type="button" class="btn ${p.cut?'':'ghost'}" data-photo-action="${p.cut?'rescue':'toss'}">${p.cut?'Bring this take back':'Set this take aside'}</button></section>
+      <section><h3>${count>1?'The stack’s results':'The results so far'}</h3>${p.ranking?this.facts([['Leaderboard',p.ranking.rank?`#${p.ranking.rank}`:p.ranking.bubble?'On the bubble':'Not in the shortlist'],['Shortlist chance',pct(p.ranking.inclusion)],['Comparisons',p.ranking.duels]]):'<p class="notes-empty">No comparisons yet.</p>'}</section>
+      <details data-notes-detail="analysis"><summary>What the analysis found</summary><p class="notes-hint">Saved observations and measurements for this take.</p>
+        ${this.facts([['Observations',p.flags.map(key=>this.word(key)).join(', ')],['Faces',p.n_faces],['Brightness',typeof p.luma==='number'?pct(p.luma/255):null],['Saturation',typeof p.saturation==='number'?pct(p.saturation):null]])}
+        <details data-notes-detail="measurements"><summary>Measurements & match scores</summary><p class="notes-hint">Match scores describe the analysis, not a rating of your photo.</p>${this.facts([['Sharpness',number(p.sharp)],['Dark tones',number(p.luma_lo)],['Light tones',number(p.luma_hi)],['Colour range',number(p.chroma)],['Hue',number(p.hue)],['Starting appeal',number(p.prior)],['Current appeal',number(p.ranking?.appeal)],['Subject region',p.subject?.map(number).join(', ')],['Salient region',p.salient?.map(number).join(', ')]])}
+        ${scoreRows(p.recognized_tags?.tags||p.recognized_tags)}${scoreRows(p.zs)}
+        ${p.faces.map((face,i)=>`<h4>Face ${i+1}${face.label==='me'?' · You':''}</h4>${this.facts(Object.entries(face).filter(([key])=>!['id','photo_id','idx','person','label'].includes(key)).map(([key,value])=>[this.word(key),number(value)]))}`).join('')}</details></details>
+      <details data-notes-detail="saved"><summary>What you’ve changed</summary>${this.facts([['Writing',e.title||e.description?'Saved on this photo':null],['Pen & marker strokes',e.marks?.length],['Sticky notes',e.notes?.map(n=>n.text).join(' · ')],['Crop',e.crop],['Turn',e.rotate!==undefined?`${e.rotate}°`:null],['Enhance',e.enhance!==undefined?e.enhance?'On':'Off':null],['Export selection',p.pick?'Added by you':null]])}
+        ${p.tag_edits.length?this.facts(p.tag_edits.map(tag=>[tag.label,tag.on?'Added by you':'Removed by you'])):'<p class="notes-hint">Tag corrections will appear here.</p>'}</details>
+      <details data-notes-detail="calls"><summary>Recent choices</summary>${p.history.length?`<ol class="notes-history">${p.history.map(call=>`<li><span>${esc(({duel:'Compared',frame:'Chose a stack cover',toss:'Set aside',great:'Loved',meh:'Disliked',skip:'Deferred'})[call.kind]||this.word(call.kind))}${call.winner===p.id?' · won':call.kind==='duel'&&call.winner?' · lost':''}${call.undone?' · undone':''}</span><time>${esc(ago(call.ts))}</time></li>`).join('')}</ol>`:'<p class="notes-empty">No choices recorded for this take yet.</p>'}</details>`;
+    for(const button of $$('[data-photo-action]',panel))button.onclick=()=>{
+      const name=button.dataset.photoAction;
+      this.action(name==='keep'?'/api/frame':name==='split'?'/api/groups/split':'/api/rescue',
+        ['rescue','toss'].includes(name)?{ids:[p.id],on:name==='rescue',reason:'tossed'}:{photo:p.id});
+    };
+    const group=$('.notes-group',panel);if(group)group.onchange=()=>this.action('/api/draw/move',{photos:[p.id],theme:group.value?Number(group.value):null});
   },
   enhanced(){return this.active.data.edits.enhance??(this.active.host.matches('.board-card')?true:S.filter);},
   cropFor(host,edits){return normCrop(edits.crop??(host.matches('.board-card')||host.closest('.twin-arena')?'off':S.crop));},
@@ -332,12 +537,19 @@ const PhotoNotes = {
     if(!this.sheet||!this.active?.data)return;
     const sheet=this.sheet,e=this.active.data.edits,on=this.enhanced(),crop=this.cropFor(this.active.host,e);
     const toggle=$('[data-edit=enhance]',sheet);if(!toggle)return;
-    $('[data-notes-undo]',sheet).hidden=!this.active.history?.undo&&!HistoryHUD.photoEdit;
-    toggle.textContent=on?'On':'Off';toggle.setAttribute('aria-pressed',String(on));
+    for(const kind of ['undo','redo']){
+      const button=$(`[data-notes-${kind}]`,sheet),entry=this.active.history?.[kind];button.hidden=!entry;
+      if(entry)button.title=`${kind==='undo'?'Undo':'Redo'}: ${HistoryHUD.label(entry)}`;
+      button.disabled=!!this.busy;
+    }
+    toggle.textContent=on?'Enhance on':'Enhance off';toggle.setAttribute('aria-pressed',String(on));
     $('[data-edit=auto]',sheet).hidden=!on||!e.look;$('.sheet-knobs',sheet).hidden=!on;
     for(const b of $$('[data-crop]',sheet))b.setAttribute('aria-pressed',String(b.dataset.crop===crop));
+    $('.notes-crop-hint',sheet).textContent={best:'The fullest framing that keeps your subject.',subject:'A closer view of the subject.',height:'Fill the height of the window.',width:'Fill the width of the window.',off:'Keep the whole photo in view.'}[crop]||'';
     $('.sheet-deg',sheet).textContent=`${e.rotate||0}°`;
-    const k=knobsOf(e.look);for(const r of $$('[data-knob]',sheet))if(document.activeElement!==r){r.value=k[r.dataset.knob];r.nextElementSibling.textContent=k[r.dataset.knob].toFixed(2);}
+    const k=knobsOf(e.look);for(const r of $$('[data-knob]',sheet))if(document.activeElement!==r){r.value=k[r.dataset.knob];this.knobValue(r);}
+    this.writingStatus();
   }
 };
-PhotoNotes.init();
+if(typeof document!=='undefined')PhotoNotes.init();
+if(typeof module!=='undefined')module.exports={PhotoNotes};

@@ -119,6 +119,11 @@ body.filter-update-required #game-help-hint { display:none; }
   .filter-gallery { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
 }
 @media(max-height:740px) { body.sea-on .filter-stage { padding:4px 8px; gap:4px; } }
+/* Short phones still need room to judge the print and its hanging sticky, above the choices and Help. */
+@media(max-width:760px) and (max-height:600px) {
+  .filter-field { padding-bottom:40px; }
+  .filter-review { gap:16px; }
+}
 @media(min-width:761px) and (max-height:600px) {
   .filter-field { position:relative; padding:0 4px 64px; }
   .filter-boundary-bar { position:absolute; left:4px; right:4px; bottom:64px; width:auto; margin:0; }

@@ -3,7 +3,7 @@
 class PhotoSea {
   constructor(el, { onDrop, onSelect, calm = el.id === 'world' } = {}) {
     this.el = el;
-    this.onDrop = onDrop; this.onSelect = onSelect; this.calm = calm;
+    this.onDrop = onDrop; this.onSelect = onSelect; this.calm = calm; this.clickToZoom = true;
     this.items = new Map();
     this.moving = [];
     // Tunable parameters (sea-tuning.js), with any values a developer-panel session saved in this browser.
@@ -153,7 +153,7 @@ class PhotoSea {
     this.worker?.postMessage({kind:'view',rect:z===1?null:{x0:-c.tx/z,y0:-c.ty/z,x1:(W-c.tx)/z,y1:(H-c.ty)/z}});  // physics only for what is on screen
     window.dispatchEvent(new CustomEvent('sea-camera',{detail:{sea:this,zoom:z}}));this.kick();
   }
-  resetCamera(){const c=this.camera;if(c.zoom!==1||c.tx||c.ty)this.setCamera(1,0,0);}
+  resetCamera(){this.cameraGlide=null;const c=this.camera;if(c.zoom!==1||c.tx||c.ty)this.setCamera(1,0,0);}
   // The lasso raster follows the camera by transform while it moves (its lines a touch thick for a moment) and is
   // drawn crisp again once the camera rests: a wheel zoom is never sixty tessellations a second.
   followCamera(){
@@ -169,9 +169,9 @@ class PhotoSea {
       if(it.x+s/2>x0&&it.x-s/2<x1&&it.y+s*2/3>y0&&it.y-s*2/3<y1&&++n>1)return false;}
     return n<=1;
   }
-  zoomAt(factor,sx,sy){const c=this.camera,z=Math.max(1,Math.min(this.tuning.zoomMax,c.zoom*factor)),k=z/c.zoom;this.setCamera(z,sx-(sx-c.tx)*k,sy-(sy-c.ty)*k);}
+  zoomAt(factor,sx,sy){this.cameraGlide=null;const c=this.camera,z=Math.max(1,Math.min(this.tuning.zoomMax,c.zoom*factor)),k=z/c.zoom;this.setCamera(z,sx-(sx-c.tx)*k,sy-(sy-c.ty)*k);}
   // Capture the custom pan so native dragging cannot cancel it. A pointer that never travels is a click.
-  panStart(e){if(!this.cameraOn||this.pan||(e.button&&e.button!==1))return;e.preventDefault();this.el.setPointerCapture(e.pointerId);const c=this.camera;this.pan={id:e.pointerId,x0:e.clientX,y0:e.clientY,tx:c.tx,ty:c.ty,moved:false};}
+  panStart(e){if(!this.cameraOn||this.pan||(e.button&&e.button!==1))return;this.cameraGlide=null;e.preventDefault();this.el.setPointerCapture(e.pointerId);const c=this.camera;this.pan={id:e.pointerId,x0:e.clientX,y0:e.clientY,tx:c.tx,ty:c.ty,moved:false};}
   // Over-zoomed: the print under the pointer, frame and all, takes three quarters of the screen's height or more
   // (a click's zoom lands at four fifths, safely past it, so the drag that follows pans rather than grabs).
   overZoomed(target){
@@ -200,13 +200,18 @@ class PhotoSea {
   panAnywhere(e){return this.cameraOn&&(e.button===1||this.overZoomed(e.target))&&!e.target.closest('button,a,input,textarea,.ps-badge,.ps-stack');}
   // A click on a print zooms in until its card fills four fifths of the height, centred; a short glide there.
   zoomToPrint(it){
+    const token={};this.cameraGlide=token;
     const W=this.el.clientWidth,H=this.el.clientHeight,size=(it.size||this.s)*4/3,z=Math.max(1,Math.min(this.tuning.zoomMax,.8*H/size));
     const from={...this.camera},to={zoom:z,tx:W/2-it.x*z,ty:H/2-it.y*z},start=performance.now(),ms=reduceMotion?0:320;
-    const step=now=>{const t=ms?Math.min(1,(now-start)/ms):1,k=1-Math.pow(1-t,3);
+    const step=now=>{if(this.cameraGlide!==token||!this.alive||!this.cameraOn)return;const t=ms?Math.min(1,(now-start)/ms):1,k=1-Math.pow(1-t,3);
       // Zoom blends geometrically so the glide feels even from 1× to 100×; the pan follows linearly.
       const zoom=from.zoom*Math.pow(to.zoom/from.zoom,k);this.setCamera(zoom,from.tx+(to.tx-from.tx)*k,from.ty+(to.ty-from.ty)*k);
-      if(t<1)requestAnimationFrame(step);};
+      if(t<1)requestAnimationFrame(step);else this.cameraGlide=null;};
     requestAnimationFrame(step);
+  }
+  clickPrint(it,event){
+    if(this.cameraOn&&this.clickToZoom!==false)this.zoomToPrint(it);
+    else this.onSelect?.(it,event);
   }
   panMove(e){const p=this.pan;if(!p||e.pointerId!==p.id)return false;const dx=e.clientX-p.x0,dy=e.clientY-p.y0;if(!p.moved&&Math.hypot(dx,dy)<4)return true;
     if(!p.moved){p.moved=true;document.body.classList.add('sea-panning');}this.setCamera(this.camera.zoom,p.tx+dx,p.ty+dy);return true;}
@@ -321,8 +326,8 @@ class PhotoSea {
       if(d.moving)this.released?.(d.items);
       this.mark(null);
       d.items.forEach((o) => o.el.classList.remove("dragging"));
-      // An explorable sea brings a clicked print closer; other presentations keep their selection action.
-      if (!d.moving) { if (this.cameraOn) this.zoomToPrint(it); else if (this.onSelect) this.onSelect(it, ev); return; }
+      // Editors can select a take while keeping wheel zoom and water panning available.
+      if (!d.moving) { this.clickPrint(it,ev); return; }
       $$(".bin.hot").forEach((b) => b.classList.remove("hot"));
       if (bin) { if (this.onDrop) this.onDrop(d.items.map((o) => o.id), { kind: "bin", id: bin.dataset.bin }); this.kick(); return; }
       if (t.kind === "sea") d.items.forEach((o) => { o.hx = ux + (Math.random() - 0.5) * this.s; o.hy = uy + (Math.random() - 0.5) * this.s; });

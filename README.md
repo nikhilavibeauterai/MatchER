@@ -25,8 +25,9 @@ favourites into a tournament. You make quick, small choices; it learns what you 
   animals, food and more into cups of their own.
 - **Find your next profile photo.** Profile mode recognizes you and helps compare expressions, light and framing.
 - **Make the collection yours.** Drag photos together, edit tags, draw on prints and leave sticky notes.
-  Pull out a focused photo's notes corner to write a title, inspect its details or fine-tune its look.
-  Undo is there when you change your mind.
+  Pull out a focused photo's notes corner: Notes saves your title and story as you write; Tags lets you search,
+  add and correct what it recognizes; Look has crop, colour and rotation controls, with a hold-to-compare original;
+  Details keeps the file information, collection and analysis together. Undo is there when you change your mind.
 - **Find a photo with words.** Search for “red jacket”, a tag, a filename or your own writing from any stage.
   Visual search runs locally using the understanding already saved during analysis.
 - **Finish with something useful.** Crown the best take in each stack, play groups and knockouts, then export
