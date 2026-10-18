@@ -76,7 +76,7 @@ test('a live editor can select another take while retaining wheel and pan contro
 });
 test('a full-size photo gains local rendering precision without resizing or replacing its card',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype',{requestAnimationFrame:fn=>fn()});
-  const card={dataset:{},classList:{toggle(){}},style:{setProperty(key,value){this[key]=value;}}},it={id:7,x:300,y:300,size:6,renderScale:1.15,el:card};
+  const card={dataset:{},querySelector(){return null;},classList:{toggle(){}},style:{setProperty(key,value){this[key]=value;}}},it={id:7,x:300,y:300,size:6,renderScale:1.15,el:card};
   const sea=Object.assign(Object.create(proto),{alive:true,held:7,cameraOn:true,camera:{zoom:120},el:{clientHeight:900},s:6,items:new Map([[7,it]])});
   const physicalWidth=()=>parseFloat(card.style.width)*Number(/scale\(([^)]+)\)/.exec(card.style.transform)[1])*sea.camera.zoom;
   assert(sea.imageBasis(it));assert.equal(Number(card.dataset.imageScale),138);
@@ -339,6 +339,24 @@ test('settled flocks keep diagonal neighbours apart as contacts propagate',()=>{
     }
   }
 });
+test('physical contacts separate the full portrait paper even without the soft repulsion',()=>{
+  const f=field([{x:500,y:400,baseSize:20,tags:[]},{x:519,y:424,baseSize:20,tags:[]}]);
+  f.T.repel=f.T.affinity=f.T.wander=0;
+  for(let frame=0;frame<100;frame++)f.step({time:frame*16.67});
+  const [a,b]=f.items;
+  assert(Math.abs(a.x-b.x)>=20||Math.abs(a.y-b.y)>=20*4/3,'The taller chin must clear its neighbour, including diagonal contacts');
+});
+test('a thousand-shot sea gives a dark muted corner room for the full paper and then rests',()=>{
+  const f=new SeaField(),width=2000,height=1120,count=1045;
+  f.set({generation:1,width,height,calm:true,items:Array.from({length:count},(_,i)=>({id:i+1,x:1000,y:560,baseSize:20,tags:['photos'],
+    visual:i<200?{colorfulness:0,brightness:0}:{colorfulness:((i*7127)%997)/997,brightness:((i*8761)%991)/991}}))});
+  for(let frame=0;frame<400&&!f.settled;frame++)f.step({time:frame*16.67});
+  let overlaps=0;
+  for(let i=0;i<count;i++)for(let j=0;j<i;j++){const a=f.items[i],b=f.items[j];if(Math.abs(a.x-b.x)<20&&Math.abs(a.y-b.y)<20*4/3)overlaps++;}
+  assert(overlaps<10,`Dark-corner crowding left ${overlaps} intersecting papers`);assert(f.settled);
+  const positions=f.items.map(it=>[it.x,it.y]);for(let frame=400;frame<460;frame++)f.step({time:frame*16.67});
+  assert.deepEqual(f.items.map(it=>[it.x,it.y]),positions,'A settled corner stays still');
+});
 test('focus intersects by default, supports union, and release preserves tags',()=>{
   const f=field([{tags:['dog']},{tags:['beach']},{tags:['dog','beach']},{tags:['cat']}]);f.cluster();
   f.focus({keys:['dog','beach']});assert.equal(f.focusCount,1);assert(f.items[2].anchor);assert(!f.items[0].anchor);
@@ -448,14 +466,16 @@ test('metadata updates and renamed clusters preserve a roaming photo’s path',(
   assert(Math.hypot(a.items[0].vx-b.items[0].vx,a.items[0].vy-b.items[0].vy)<1e-8);
 });
 test('uneven worker intervals preserve the same weighted steering motion',()=>{
-  const run=intervals=>{
+  const run=(intervals,cost=0)=>{
     const f=field([{tags:[],x:600,y:375,baseSize:8}]);f.avoid=()=>[.12,0];f.step({time:0});
-    let time=0,index=0;while(time<1000){time=Math.min(1000,time+intervals[index++%intervals.length]);f.step({time});}
+    let time=0,index=0;while(time<1000){time=Math.min(1000,time+intervals[index++%intervals.length]);if(cost)f.subMs=cost;f.step({time});}
     return f.items[0];
   };
-  const regular=run([10]),uneven=run([7,29,13,41,10]);
-  assert(Math.hypot(regular.x-uneven.x,regular.y-uneven.y)<.15);
-  assert(Math.hypot(regular.vx-uneven.vx,regular.vy-uneven.vy)<.015);
+  const regular=run([10]);
+  for(const uneven of [run([7,29,13,41,10]),run([100],18)]){
+    assert(Math.hypot(regular.x-uneven.x,regular.y-uneven.y)<.15);
+    assert(Math.hypot(regular.vx-uneven.vx,regular.vy-uneven.vy)<.015);
+  }
 });
 test('alternating tiny-photo updates accumulate elapsed time rather than doubling the latest interval',()=>{
   const run=intervals=>{

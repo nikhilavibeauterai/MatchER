@@ -291,11 +291,11 @@ class SeaField {
   // Physics advances in frames. A slow host (a busy main thread, a throttled tab) sends its steps late, so a
   // message two or more frames late is split into sub-steps of about one frame, up to six, and the sea settles
   // in the same wall time. Ordinary jitter stays one step, so alternating intervals still integrate exactly.
-  // Sub-steps spend at most ~60% of the host's interval, so a worker that is itself the slow part (ten thousand
-  // prints) never adds sub-steps that make its next message later still.
+  // Budget extra sub-steps to 24 ms and ~60% of the host's interval. When the worker is already slow, one
+  // elapsed-time step lets it reply rather than spending each new interval catching up on the previous one.
   step(message){
     const started=performance.now(),elapsed=this.last==null?16.67:Math.max(0,message.time-this.last);
-    const n=elapsed<33.3?1:Math.max(1,Math.min(6,Math.floor(elapsed/16.67),Math.floor(elapsed*.6/Math.max(.5,this.subMs||1))));
+    const n=elapsed<33.3?1:Math.max(1,Math.min(6,Math.floor(elapsed/16.67),Math.floor(Math.min(24,elapsed*.6)/Math.max(.5,this.subMs||1))));
     const from=this.last??message.time-16.67;
     for(let k=1;k<=n;k++){const at=performance.now();this.substep({...message,time:from+elapsed*k/n});this.subMs=performance.now()-at;}
     this.ms=performance.now()-started;
@@ -426,12 +426,14 @@ class SeaField {
     let anyPush=false;for(const it of this.items){it.push=(it.push||0)*.7;if(it.push<.05)it.push=0;else anyPush=true;}
     let passes=this.items.length<400?4:1;
     for(let pass=0;pass<passes;pass++){
-      this.index(maxSize*1.65);
+      this.index(maxSize*2*T.gap*4/3);
       this.items.forEach((it,i)=>{if(this.items.length>1000&&it.size<8&&(it.id+this.frame)%2)return;this.neighbours(it,this.items.length>1000?4:8,(other,j)=>{
         const fixed=it.fixed||!!it.anchor||it.off,otherFixed=other.fixed||!!other.anchor||other.off;
         // A print in your hand floats over the others; its neighbours make room when you let go of it.
         if(j>=i||fixed&&otherFixed||it.dragged||other.dragged)return;const gap=(it.size+other.size)*T.gap;
-        let dx=it.x-other.x,dy=it.y-other.y,square=dx*dx+dy*dy;if(square>=gap*gap)return;
+        // Contact measures the whole 3:4 card. A square footprint let portrait chins overlap, especially where
+        // similar dark photos meet the bottom edge. Work in card-width units and convert vertical pushes back.
+        let dx=it.x-other.x,dy=(it.y-other.y)*.75,square=dx*dx+dy*dy;if(square>=gap*gap)return;
         if(square<.001){const angle=(it.id-other.id)*2.399963;dx=Math.cos(angle)*.01;dy=Math.sin(angle)*.01;square=.0001;}
         // Awake prints resolve their contacts in full, so a rested sea holds no latent overlaps. A shove into
         // sleeping prints loses half its strength at every print it passes through, so it stays in the neighbourhood.
@@ -441,22 +443,22 @@ class SeaField {
         // A resting print gives way only a little (`yield` of its size) to a print dropped on it; the rest overlaps.
         if(a&&!it.heat){const room=Math.max(0,it.size*(T.yield??.3)-(it.shoved||0));a=Math.min(a,room);it.shoved=(it.shoved||0)+a;}
         if(b&&!other.heat){const room=Math.max(0,other.size*(T.yield??.3)-(other.shoved||0));b=Math.min(b,room);other.shoved=(other.shoved||0)+b;}
-        it.x+=dx/d*a;it.y+=dy/d*a;other.x-=dx/d*b;other.y-=dy/d*b;
+        it.x+=dx/d*a;it.y+=dy/d*a/.75;other.x-=dx/d*b;other.y-=dy/d*b/.75;
         if(a>.2&&hi<ho){it.push=Math.max(it.push||0,ho*.35);anyPush=true;}
         if(b>.2&&ho<hi){other.push=Math.max(other.push||0,hi*.35);anyPush=true;}
         // Remove only the closing velocity; otherwise each next frame taps the same contact again.
-        const closing=((it.vx-other.vx)*dx+(it.vy-other.vy)*dy)/d;
-        if(closing<0){it.vx-=dx/d*closing*first;it.vy-=dy/d*closing*first;other.vx+=dx/d*closing*second;other.vy+=dy/d*closing*second;}
+        const closing=((it.vx-other.vx)*dx+(it.vy-other.vy)*dy*.75)/d;
+        if(closing<0){it.vx-=dx/d*closing*first;it.vy-=dy/d*closing*first/.75;other.vx+=dx/d*closing*second;other.vy+=dy/d*closing*second/.75;}
       });});for(const it of this.items)this.place(it);
       // A contact can push its neighbour into an earlier pair. Keep relaxing only while prints still overlap.
       if(this.items.length<400&&pass===passes-1&&passes<16){
-        this.index(maxSize*1.65);let overlap=false;
+        this.index(maxSize*2*T.gap*4/3);let overlap=false;
         for(let i=0;i<this.items.length&&!overlap;i++){
           const it=this.items[i];
           this.neighbours(it,Infinity,(other,j)=>{
             if(j>=i||(it.fixed||it.anchor)&&(other.fixed||other.anchor))return;
             const edge=(it.size+other.size)/2;
-            if(Math.abs(it.x-other.x)<edge&&Math.abs(it.y-other.y)<edge)overlap=true;
+            if(Math.abs(it.x-other.x)<edge&&Math.abs(it.y-other.y)<edge*4/3)overlap=true;
           });
         }
         if(overlap)passes+=2;

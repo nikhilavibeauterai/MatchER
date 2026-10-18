@@ -13,8 +13,10 @@ const {LINK,LIB,OUT}=process.env;
     World.sea.paused=true;clearInterval(World.watch);
     const host=document.createElement('div');host.style.cssText='position:fixed;left:20px;top:100px;width:1200px;height:750px;z-index:50;background:#142032';document.body.append(host);
     const sea=new VennSea(host),photo=[...World.photos.values()][0].id;window.boidsSea=sea;
-    // The mechanics under test, not the owner's taste: the same pinned tuning as tests/sea_checks.cjs (not persisted).
-    sea.tune({speedCap:2.2,drag:.1,calmDrag:.18,repel:.8,groupCohesion:1,groupSeparation:.5,homeMax:.3,margin:.06,settleMove:.06,domLimit:160,hurry:0},false);
+    // The mechanics under test, not the owner's taste: the pinned unit-test tuning (not persisted).
+    // These geometry probes need live cards; the 522-photo case below still exercises the DOM limit.
+    // Pin the canvas fallback here; sea_gl measures the GPU independently of software shader frame pacing.
+    sea.tune({speedCap:2.2,drag:.1,calmDrag:.18,repel:.8,groupCohesion:1,groupSeparation:.5,homeMax:.3,margin:.06,settleMove:.06,domLimit:160,liveMin:8,hurry:0,gpu:0},false);
     sea.setVenn([],Array.from({length:120},(_,i)=>({id:10000+i,photo,tags:[`tag${i%4}`],n:1})));
     await sleep(6500);
     const items=[...sea.items.values()],rows=new Map(),columns=new Map();let overlaps=0;
@@ -37,14 +39,14 @@ const {LINK,LIB,OUT}=process.env;
     const growing=[];const grownAt=performance.now()+260;
     while(performance.now()<grownAt){await new Promise(requestAnimationFrame);growing.push({center:center(),width:it.el.getBoundingClientRect().width});}
     const centerDrift=Math.max(...growing.map(p=>Math.hypot(p.center.x-centerBefore.x,p.center.y-centerBefore.y)));
-    const growsBetween=growing.some(p=>p.width>size+1&&p.width<size*1.8-1);
+    const growsBetween=growing.some(p=>p.width>size+1&&p.width<size*1.8-1),grownWidth=growing.at(-1).width,wantedWidth=size*1.8;
     it.size=size;sea.paintItem(it);await sleep(240);
-    sea.releasePins=[{id:it.id,x:it.x,y:it.y}];sea.paused=false;sea.kick();return {start,middle,end,centerDrift,growsBetween};
+    sea.releasePins=[{id:it.id,x:it.x,y:it.y}];sea.paused=false;sea.kick();return {start,middle,end,centerDrift,growsBetween,grownWidth,wantedWidth};
   });
   assert(glide.middle.x>glide.start.x+1&&glide.middle.x<glide.end.x-1,JSON.stringify(glide));
   assert(Math.abs(glide.end.x-glide.start.x-80)<1,JSON.stringify(glide));
-  assert(glide.growsBetween&&glide.centerDrift<.2,JSON.stringify(glide));
-  // The interpolation probe placed this print80px into another flock. Let physical contacts settle before
+  assert(Math.abs(glide.grownWidth-glide.wantedWidth)<.1&&glide.centerDrift<.2,JSON.stringify(glide));
+  // The interpolation probe placed this print 80px into another flock. Let physical contacts settle before
   // measuring a real pointer target, rather than aiming at its pre-collision rectangle.
   await page.waitForTimeout(650);
   await page.waitForFunction(()=>{const it=boidsSea.items.get(motionId),r=it.el.getBoundingClientRect();return Number(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('.ps-item')?.dataset.id)===motionId;});
@@ -211,7 +213,10 @@ const {LINK,LIB,OUT}=process.env;
     const reversed={aside:split.kept,kept:split.aside},second=setFlow(reversed);await sleep(3500);const secondFlow=drift(second,reversed);
     setFlow(null);await sleep(1000);running=false;sea.receive=receive;
     for(const name of Object.keys(methods))sea[name]=methods[name];
-    const data=sea.densityCanvas.getContext('2d').getImageData(0,0,sea.densityCanvas.width,sea.densityCanvas.height).data;
+    sea.densityDirty=sea.spritesDirty=true;sea.drawDensity(sea.el.clientWidth,sea.el.clientHeight);
+    const canvas=sea.gpu?sea.spriteCanvas:sea.densityCanvas,gl=sea.gpu?.gl;let data;
+    if(gl){data=new Uint8Array(canvas.width*canvas.height*4);gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);}
+    else data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
     let painted=0;for(let i=3;i<data.length;i+=4)if(data[i])painted++;
     const stats=list=>{list.sort((a,b)=>a-b);return {mean:list.reduce((a,b)=>a+b)/list.length,p95:list[Math.floor(list.length*.95)],max:list[list.length-1]};};
     return {photos:sea.items.size,visuals:sea.bodies.filter(it=>Number.isFinite(it.visual?.colorfulness)&&Number.isFinite(it.visual?.brightness)).length,assigned:sea.bodies.filter(it=>/^g\d+$/.test(it.label)).length,groups:new Set(sea.bodies.map(it=>it.label)).size,tagsPerPhoto:items[0].tags.length,vocabulary:new Set(items.flatMap(it=>it.tags)).size,dom:sea.moving.length,moved:[...sea.items.values()].filter((it,i)=>Math.hypot(it.x-positions[i][0],it.y-positions[i][1])>2).length,painted,costs,flowEdits,firstFlow,secondFlow,contourPoints:[...sea.contours.values()].reduce((n,c)=>n+c.hotPaths.reduce((s,p)=>s+p.length,0),0),main:stats(times),worker:stats(worker),frames:stats(gaps),arrivals:stats(arrivals.slice(1)),clustering,samples:times.length};
