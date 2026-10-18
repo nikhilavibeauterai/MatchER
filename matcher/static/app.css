@@ -1021,6 +1021,7 @@ button.pstat:hover { border-color: #ffd86b; }
 .twin-row img { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; }
 .twin-row .muted { text-align: right; }
 .screen.stacker .screen-body { padding: 22px; }
+.stacker [data-stacks-only] { min-height: 44px; }
 .screen.stacker .screen-body .gsec-tiles { grid-template-columns: repeat(auto-fill, minmax(min(130px,100%), 1fr)); gap: 18px; min-width: 0; }
 .screen.stacker .gsec-tiles > *, .screen.stacker .fam-tiles > * { min-width: 0; }
 .screen.stacker .tile:not(.open) { aspect-ratio:3 / 4; }
@@ -1614,7 +1615,7 @@ body[data-world] #world .ps-item:is(.lifted,.pile-lifted) { pointer-events:none;
 #view-duel .gt-sep { list-style: none; padding: 6px 4px 0; border: 0 !important; background: none !important; }
 
 /* Small previews keep the whole library visible without thousands of moving image elements. */
-.venn-sea .vn-density { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.venn-sea .vn-density { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 body.sea-on .group-table, body.sea-on .mini-bar, body.sea-on .done-banner {
   background: rgba(11, 12, 14, 0.76); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25); }
@@ -1940,7 +1941,7 @@ code.path { word-break: normal; overflow-wrap: anywhere; }
 }
 
 /* The sea's camera: one layer carries every print, panned and zoomed as a whole; the canvases follow it. */
-.photo-sea .sea-layer { position: absolute; inset: 0; z-index:1;isolation:isolate;transform-origin: 0 0; pointer-events: none; will-change: transform; }
+.photo-sea .sea-layer { position: absolute; inset: 0; z-index:2;isolation:isolate;transform-origin: 0 0; pointer-events: none; will-change: transform; }
 /* The compositor (GPU) carries the camera and the sprite canvas; a live card is its own layer already (its 3D
    translate), so no will-change hint is spent on each of a thousand cards. */
 .photo-sea .ps-item, #world .ps-item { contain:layout;transition:transform var(--sea-glide,50ms) linear,box-shadow .15s; }

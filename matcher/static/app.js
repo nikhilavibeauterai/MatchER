@@ -4872,7 +4872,7 @@ async function drawSorter(main, focus) {
     return `
     <h1>🗂️ Groups</h1>
     <span class="stat-chip" title="Shots in a group">${ring(b.total ? b.drawn / b.total : 0)}<b>${fmt(b.drawn)}</b>/ ${fmt(b.total)} grouped · ${plural(b.groups.length, "group")}</span>
-    <a class="btn ghost" href="#tags">Edit tags</a><button class="btn ghost" id="more-circles">${sea?.lassos_on===false?'Show lassos':'Hide lassos'}</button>
+    <a class="btn ghost" href="#tags">Edit tags</a><button class="btn ghost" id="more-circles">${sea?.lassos_on===false?'Show group colours':'Hide group colours'}</button>
     <button class="stat-chip chip-btn" id="tag-tray" title="Find a tag to focus">🏷️ <b>${fmt((b.allTags?.tags||T.tags).length)}</b> tags</button>
     <span class="grow"></span>
     ${viewToggle()}
@@ -4880,7 +4880,7 @@ async function drawSorter(main, focus) {
     ${helpBtn(`Photos sharing <b>tags</b> flock together, leaving room between prints. Lassos follow the neighbourhoods they form.<br><br>
       Select tags to gather their photos onto steady spots. <b>All</b> selected tags narrows the focus; <b>Any</b> widens it.
       Click a group in the side list to bring it into focus. With photos selected, clicking a group moves them there; its <b>Focus</b> button still just looks.
-      Drop a print onto another to stack their takes, or inside a group's lasso to file it there.
+      Drop a print onto another to stack their takes, or in the coloured water between a group's prints to file it there.
       Drag into open water to rearrange the swarm. Group keys work the same way as the side list.
       Right-click a tag or group label to edit it. <b>T</b> tags the selection, <b>Z</b> undoes edits.`)}`;
   };
@@ -5164,7 +5164,7 @@ async function drawSorter(main, focus) {
   }
   function bindSea() {
     const more = $("#more-circles", main);
-    if (more) more.onclick = () => { sea.outlines=sea.lassos_on===false;sea.lassos_on=sea.outlines;more.textContent=sea.outlines?'Hide lassos':'Show lassos';sea.geometryAt=0;sea.kick(); };
+    if (more) more.onclick = () => { sea.outlines=sea.lassos_on===false;sea.lassos_on=sea.outlines;more.textContent=sea.outlines?'Hide group colours':'Show group colours';sea.geometryAt=0;sea.draw(sea.width,sea.height); };
     $$("[data-mode]", main).forEach((x) => (x.onclick = () => setMode(x.dataset.mode)));
     $("#g-undo").onclick = () => drawUndo(() => load(true));
     $$("[data-sel-act]", main).forEach((x) => (x.onclick = () => selAct(x.dataset.selAct, x)));
@@ -6579,7 +6579,7 @@ const World = {
         const page = await api(`/api/world?per=1000&after=${after}`);
         if (source !== S.lib?.source) return;
         const sheet = new Image(),key=imageKey();
-        sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;page.photos.forEach((p,i)=>this.sprites.set(p.id,this.sea.atlasCell(sheet,i,p.dims)));this.sea.densityDirty=this.sea.spritesDirty=true;this.sea.kick(); };
+        sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;page.photos.forEach((p,i)=>this.sprites.set(p.id,this.sea.atlasCell(sheet,i,p.dims)));this.sea.densityDirty=this.sea.spritesDirty=true;this.sea.refreshColours();this.sea.kick(); };
         // A sheet that fails to arrive is asked for again (a few times): without it a thousand prints would stay blank.
         sheet.onerror = () => { if(source!==S.lib?.source||key!==imageKey()||(sheet.tries=(sheet.tries||0)+1)>3)return;setTimeout(()=>{if(source===S.lib?.source)sheet.src=`${sheet.src.split('&t=')[0]}&t=${Date.now()}`;},2000*sheet.tries); };
         page.photos.forEach(p=>{photos.set(p.id,p);seen.add(p.id);});

@@ -90,9 +90,11 @@ During analysis, scroll over the sea to zoom, drag open water to pan, and double
 again. Refreshing restores the photos and discoveries already shown. Restarting MatchER resumes saved analysis,
 including its completed photo count, without reading those photos again.
 
-The open sea has a slow, gentle swell. Photos keep their places, the water pauses when you reach for a print,
-and close-ups become steady for reading and editing. Reduced-motion preferences still the waves; the developer
-panel also lets you adjust their height, speed and spacing.
+The open sea has crossing slow swells, with fine ripples gathering on their crests. Groups tint the water beneath
+their photos with their average hue, saturation and brightness; the same waves pass through the colour and the
+prints. Photos keep their places, the water pauses when you reach for a print, and close-ups become steady for
+reading and editing.
+Reduced-motion preferences still the waves; the developer panel adjusts their height, speed, spacing and ripples.
 
 ## Help build it
 

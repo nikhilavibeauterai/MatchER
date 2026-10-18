@@ -19,6 +19,14 @@ let page;const res={},problems=[];
   assert.equal(await page.locator('#track .tnode').count(),10);  // the map, the eight stages, the leaderboard
   assert.equal(await page.locator('#track .tnode').first().getAttribute('data-stage'),'map');
   assert.equal(await page.locator('#track .tnode').last().getAttribute('data-stage'),'board');
+  const header=async()=>{
+    const h=await page.evaluate(()=>{const title=document.querySelector('#journey-title').getBoundingClientRect(),strip=getComputedStyle(document.querySelector('#topbar'),'::before'),height=parseFloat(strip.height),pitch=parseFloat(strip.backgroundSize.split(',')[2]),icons=[...document.querySelectorAll('#track .tico')].map(el=>{const r=el.getBoundingClientRect();return r.x+r.width/2;});
+      return {title:{top:title.top,bottom:title.bottom},red:height-27,height,pitch,icons,width:innerWidth,saveBorder:getComputedStyle(document.querySelector('#save-chip')).borderBottomWidth,searchBorder:getComputedStyle(document.querySelector('#photo-search')).borderBottomWidth,search:[document.querySelector('#photo-search'),document.querySelector('#photo-search input')].map(el=>getComputedStyle(el).backgroundColor)};});
+    assert(h.title.top>=h.red+2&&h.title.top<=h.red+5&&h.title.bottom<=h.height,JSON.stringify(h));
+    assert(h.icons.every((x,i)=>Math.abs(x-(h.width/2+(i-4.5)*h.pitch))<.7),'The icons occupy the ruled spaces in the paper: '+JSON.stringify(h));
+    assert.equal(h.saveBorder,'0px');assert.equal(h.searchBorder,'0px');assert(h.search.every(colour=>colour==='rgba(0, 0, 0, 0)'));return h;
+  };
+  res.headerDesktop=await header();
   await page.screenshot({path:OUT+'/GF-map-desktop.png'});
   await activities();res.activities=await page.locator('#menu a').allTextContents();
   assert(res.activities.some(x=>x.includes('Tag lab'))&&res.activities.some(x=>x.includes('Open arena')));
@@ -76,6 +84,7 @@ let page;const res={},problems=[];
   }
   await home();await activities();await page.click('#menu [data-m=trophies]');await page.waitForSelector('.trophy-head');await page.keyboard.press('Escape');await page.click('#menu-resume');
   await page.setViewportSize({width:320,height:740});await page.waitForTimeout(400);
+  res.headerPhone=await header();await page.screenshot({path:OUT+'/GF-map-phone.png'});
   await page.keyboard.press('Escape');await page.waitForSelector('#menu[open]');
   const pauseBox=await page.locator('#menu').boundingBox();
   assert(pauseBox.x>=0&&pauseBox.y>=0&&pauseBox.x+pauseBox.width<=320&&pauseBox.y+pauseBox.height<=740);
@@ -86,7 +95,7 @@ let page;const res={},problems=[];
   await page.keyboard.press('Escape');assert(await page.locator('[data-menu-page=library]').isVisible(),'Escape returns from submenu before resuming');assert(await page.evaluate(()=>!!S.pause));await page.keyboard.press('Escape');await page.waitForSelector('#menu[open]',{state:'hidden'});
   const dock=await page.locator('#track').evaluate(e=>({overflow:e.scrollWidth>e.clientWidth,links:[...e.querySelectorAll('.tnode')].map(a=>{
     const r=a.getBoundingClientRect();return {x:r.x,right:r.right,width:r.width,height:r.height};})}));
-  assert(!dock.overflow&&dock.links.length===10);assert(dock.links.every(r=>r.x>=0&&r.right<=320&&r.width>=36&&r.height>=44));
+  assert(!dock.overflow&&dock.links.length===10,JSON.stringify(dock));assert(dock.links.every(r=>r.x>=0&&r.right<=320&&r.width>=28&&r.height>=44),JSON.stringify(dock));
   const barBefore=await page.locator('#journey-next').boundingBox();
   await activities();await page.waitForTimeout(400);
   const links=page.locator('#menu .menu-list a');

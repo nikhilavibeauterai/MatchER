@@ -22,7 +22,7 @@ const {LINK,OUT}=process.env;
     const sample=()=>page.evaluate(()=>{const sea=waveSea,it=sea.items.get(1),r=it.el.getBoundingClientRect(),base=sea.el.getBoundingClientRect();return {time:sea.waveTime||0,x:r.x+r.width/2-base.x-it.x,y:r.y+r.height/2-base.y-it.y,
       position:JSON.stringify([...sea.items.values()].map(it=>[it.id,it.x,it.y])),image:waveImage===it.el.querySelector('img'),gpu:!!sea.gpu};});
     const a=await sample();await page.waitForTimeout(1400);const b=await sample();assert.equal(b.position,a.position);assert(b.image);assert.equal(b.gpu,!!gpu);
-    const moved=Math.hypot(a.x-b.x,a.y-b.y);if(reduced){assert.equal(moved,0);assert.equal(b.time,0);}else{assert(moved>.15&&moved<2,JSON.stringify({a,b}));assert(b.time>a.time+900);}
+    const moved=Math.hypot(a.x-b.x,a.y-b.y);if(reduced){assert.equal(moved,0);assert.equal(b.time,0);}else{assert(moved>1&&moved<10,JSON.stringify({a,b}));assert(b.time>a.time+900);}
     assert.equal(await page.evaluate(()=>waveUploads),0,'The swell reuses atlas textures and instance buffers');
     await page.evaluate(()=>{waveSea.hold(1);waveSea.paintItem(waveSea.items.get(1));});
     const held=await sample();await page.waitForTimeout(600);const still=await sample();assert(Math.hypot(still.x-held.x,still.y-held.y)<.03);assert.equal(still.time,held.time,'Reaching for a print pauses the water at its current phase');
@@ -32,13 +32,20 @@ const {LINK,OUT}=process.env;
       const canvas=sea.gpu?sea.spriteCanvas:sea.densityCanvas,gl=sea.gpu?.gl,data=gl?new Uint8Array(canvas.width*canvas.height*4):sea.densityCtx.getImageData(0,0,canvas.width,canvas.height).data;
       if(gl)gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
       let weight=0,x=0,y=0;for(let py=200;py<320;py++)for(let px=380;px<480;px++){const i=((gl?canvas.height-1-py:py)*canvas.width+px)*4,a=data[i+3];weight+=a;x+=(px+.5)*a;y+=(py+.5)*a;}
-      const point=[it.x+wx,it.y+wy],center=[x/weight,y/weight],hit=sea.photoAt(...point)?.id,near=sea.smallAt(...point)?.id,stack=sea.waveOffset(sea.items.get(3)),take=sea.waveOffset(sea.items.get(4));
+      const point=[it.x+wx,it.y+wy],center=[x/weight,y/weight],hit=sea.photoAt(...point)?.id,near=sea.smallAt(...point)?.id,stack=sea.waveOffset(sea.items.get(3)),take=sea.waveOffset(sea.items.get(4)),phases=[];
+      for(const time of [0,9100,17800,29000,58000]){
+        sea.waveTime=time;sea.densityDirty=true;sea.drawDensity(960,600);
+        const px=gl?new Uint8Array(canvas.width*canvas.height*4):sea.densityCtx.getImageData(0,0,canvas.width,canvas.height).data;if(gl)gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,px);
+        let sum=0,cx=0,cy=0;for(let py=200;py<320;py++)for(let x=380;x<480;x++){const a=px[((gl?canvas.height-1-py:py)*canvas.width+x)*4+3];sum+=a;cx+=(x+.5)*a;cy+=(py+.5)*a;}
+        const lift=sea.waveOffset(it);phases.push({time,drift:Math.hypot(cx/sum-it.x-lift[0],cy/sum-it.y-lift[1]),lift});
+      }
       Object.assign(sea.camera,{zoom:10,tx:480-1800,ty:300-2600});sea.paintWaves();const close=sea.waveOffset(sea.items.get(1)),old=sea.items.get(1).el.style.translate;
       Object.assign(sea.camera,{zoom:1,tx:0,ty:0});const live=sea.items.get(1);live.el.dataset.imageScale='40';sea.paintItem(live,true);
       const rebased=live.swellOffset,r=live.el.getBoundingClientRect(),host=sea.el.getBoundingClientRect(),shift=[r.x+r.width/2-host.x-live.x,r.y+r.height/2-host.y-live.y];
-      return {center,point,hit,near,stack,take,close,old,rebased,shift};
+      return {center,point,hit,near,stack,take,close,old,rebased,shift,phases};
     });
     assert(Math.hypot(proof.center[0]-proof.point[0],proof.center[1]-proof.point[1])<.3,JSON.stringify(proof));assert.equal(proof.hit,2);assert.equal(proof.near,2);assert.deepEqual(proof.stack,proof.take);assert.deepEqual(proof.close,[0,0]);assert.equal(proof.old,'');
+    assert(proof.phases.every(p=>p.drift<.35&&Math.hypot(...p.lift)<=20.1),'Crossing swells and warped crest ripples agree across every renderer: '+JSON.stringify(proof.phases));
     assert(Math.hypot(proof.shift[0]-proof.rebased[0],proof.shift[1]-proof.rebased[1])<.03,'Image coordinate rebasing keeps the same visible swell');
     await page.evaluate(()=>{waveSea.items.get(1).el.dataset.imageScale='1';waveSea.camera.zoom=1;waveSea.paintItem(waveSea.items.get(1),true);waveSea.drawDensity(960,600);});
     await page.screenshot({path:`${OUT}/sea-waves-${gpu?'gpu':'canvas'}${reduced?'-reduced':''}.png`});

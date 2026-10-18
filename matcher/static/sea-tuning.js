@@ -34,10 +34,11 @@ var SEA_TUNING = [
   { key: "settleFrames", group: "micro", label: "Settle frames", hint: "for this many frames in a row", min: 4, max: 120, step: 1, value: 24 },
   { key: "bankRate", group: "micro", label: "Filter current per px", hint: "Filter's push toward the right side of the divider", min: 0, max: 0.02, step: 0.0005, value: 0.004 },
   { key: "bankMax", group: "micro", label: "Filter current cap", min: 0, max: 1, step: 0.01, value: 0.24 },
-  // A slow travelling swell is presentation only; it never wakes the settled physics.
-  { key: "waveHeight", group: "waves", label: "Wave height px", hint: "gentle lift across the sea; 0 stills the water, close-ups always become steady", min: 0, max: 12, step: 0.25, value: 4 },
+  // Swells and cresting ripples share one field with the group colours; they never wake the settled physics.
+  { key: "waveHeight", group: "waves", label: "Wave height px", hint: "travelling lift across the sea; 0 stills the water, close-ups always become steady", min: 0, max: 40, step: 0.5, value: 20 },
   { key: "wavePeriod", group: "waves", label: "Wave period s", hint: "time for a slow swell to pass", min: 10, max: 90, step: 1, value: 28 },
   { key: "waveLength", group: "waves", label: "Wave length px", hint: "distance between crests in the sea's geography", min: 200, max: 2000, step: 25, value: 750 },
+  { key: "waveRipples", group: "waves", label: "Crest ripples", hint: "fine crossing waves, squeezed and amplified by the broad swell", min: 0, max: 0.65, step: 0.01, value: 0.28 },
   // render and camera
   { key: "sizeShare", group: "render", label: "Print size share", hint: "share of the canvas area the prints may fill at zoom 1", min: 0.05, max: 0.8, step: 0.01, value: 0.26 },
   { key: "sizeDivisor", group: "render", label: "Print size divisor", min: 0.8, max: 3, step: 0.05, value: 1.3 },

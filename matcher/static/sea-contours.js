@@ -1,4 +1,5 @@
 // Trace occupied water, not a bounding box. A scattered group can have several shores and empty holes.
+// Pigment spreads farther and overlaps freely; it does not need the compact shore's three-body support.
 // The coarse field bounds the work by viewport size; it never compares every photo with every other photo.
 function simplifyShore(points,tolerance){
   // Raster stair steps add no visible detail at this scale. Retain each shore and hole within a pixel-sized error.
@@ -13,7 +14,7 @@ function simplifyShore(points,tolerance){
   }
   const result=points.filter((_,i)=>keep[i]);return result.length>=4?result:points;
 }
-function seaContours(items, width, height, history = new Map(), now = performance.now()) {
+function seaContours(items, width, height, history = new Map(), now = performance.now(), pigment = false) {
   const resolution=items.length>4000?80:items.length>1000?100:120;
   const cell = Math.max(10, Math.min(28, Math.ceil(Math.max(width, height) / resolution)));
   const cols = Math.ceil(width / cell), rows = Math.ceil(height / cell), stride = cols + 1, groups = new Map();
@@ -28,7 +29,7 @@ function seaContours(items, width, height, history = new Map(), now = performanc
     // shore. Only an actual drag uses the separate support rules instead of leaving a phantom bridge.
     if(it.fixed&&it.dragged){group.fixed.push({...it,id:memberId});continue;}
     if(it.lifted)group.lifted.add(memberId);
-    const radius = it.size * .8 + Math.max(5, Math.min(14, it.size * .35));
+    const radius = pigment?Math.max(28,it.size*2.6):it.size*.8+Math.max(5,Math.min(14,it.size*.35));
     let member=-1;
     for (let y = Math.max(0, Math.floor((it.y-radius)/cell)); y < Math.min(rows, Math.ceil((it.y+radius)/cell)); y++) {
       for (let x = Math.max(0, Math.floor((it.x-radius)/cell)); x < Math.min(cols, Math.ceil((it.x+radius)/cell)); x++) {
@@ -37,11 +38,12 @@ function seaContours(items, width, height, history = new Map(), now = performanc
         }
       }
     }
-    if(member>=0){const members=group.members.get(member)||[];members.push(memberId);group.members.set(member,members);}
+    if(!pigment&&member>=0){const members=group.members.get(member)||[];members.push(memberId);group.members.set(member,members);}
   }
-  // A new shore needs three bodies. A brief gap or a held member must not blink an established gathering off.
-  for(const id of history.keys())if(!groups.has(id))history.delete(id);
+  // A new compact shore needs three bodies. A brief gap or held member must not blink an established one off.
+  if(!pigment)for(const id of history.keys())if(!groups.has(id))history.delete(id);
   for(const [id,group]of groups){
+    if(pigment)continue;
     const previous=history.get(id)||[],shores=[],remaining=group.cells,occupied=new Set(),component=[],owner=new Map();
     for(const old of previous)for(const member of old.members)owner.set(member,old);
     const visit=next=>{if(remaining.delete(next))component.push(next);};
@@ -84,7 +86,7 @@ function seaContours(items, width, height, history = new Map(), now = performanc
     // At thumbnail-sheet scale, hundreds of little shores can drown out the photos. Keep their geometry and
     // controls, but let the outlines recede with the prints; hovering a group still reveals its full outline.
     const lod=Math.min(1,group.footprint/group.count/14);
-    const purity=occupied.size?clear/occupied.size:0,opacity=Math.min(1,Math.sqrt(purity)*1.4)*lod*lod;
+    const purity=occupied.size?clear/occupied.size:0,opacity=pigment?1:Math.min(1,Math.sqrt(purity)*1.4)*lod*lod;
     const edge = (a,b) => { const next=edges.get(a)||[]; next.push(b); edges.set(a,next); };
     for (const index of occupied) {
       const x=index%cols,y=Math.floor(index/cols),a=y*stride+x;

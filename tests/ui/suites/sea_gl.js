@@ -32,11 +32,12 @@ const {LINK,LIB,OUT}=process.env;
     const d=sea.densityStats||{};
     // Why a sprite would be blank, for the report: no sprite, a sheet not loaded, or a preview missing.
     const why={};for(const it of sea.items.values()){if(!it.density)continue;const sp=sea.sprites?.get(it.id);const k=!sp?'no-sprite':sp.img instanceof HTMLCanvasElement?'canvas':!sp.img.complete?'loading':!sp.img.naturalWidth?'failed':'ok';why[k]=(why[k]||0)+1;}
+    const paints={water:[],sprites:[]};for(const [key,name]of [['water','paintWater'],['sprites','drawSprites']]){const draw=sea[name].bind(sea);sea[name]=(...args)=>{const start=performance.now(),result=draw(...args);paints[key].push(performance.now()-start);return result;};}
     const frames=[];let last=performance.now();const until=last+1500;
     await new Promise(res=>{const f=()=>{const n=performance.now();frames.push(n-last);last=n;if(n<until)requestAnimationFrame(f);else res();};requestAnimationFrame(f);});
     frames.sort((a,b)=>a-b);
     return {gpu:!!sea.gpu,items:sea.items.size,live:sea.moving.length,size:+sea.s.toFixed(1),drawn:sea.moving.length+(d.gpu||0)+(d.blank||0)+(d.dots||0)+(d.raster||0)+(d.cards||0),stats:d,
-      paintedShare:+(painted/Math.max(1,sampled)).toFixed(3),why,sameMap:sea.sprites===World.sprites,settled:sea.settled,idleFrameMedian:+frames[Math.floor(frames.length/2)].toFixed(1),idleFrameP90:+frames[Math.floor(frames.length*.9)].toFixed(1)};
+      paintedShare:+(painted/Math.max(1,sampled)).toFixed(3),why,sameMap:sea.sprites===World.sprites,settled:sea.settled,groups:sea.lassos.size,field:sea.waterField?.basis.length||0,paints,idleFrameMedian:+frames[Math.floor(frames.length/2)].toFixed(1),idleFrameP90:+frames[Math.floor(frames.length*.9)].toFixed(1)};
   });
   assert(rest.gpu,`WebGL2 sprite layer active: ${JSON.stringify(rest)}`);
   assert.equal(rest.drawn,rest.items,`Every print is drawn at zoom 1: ${JSON.stringify(rest)}`);

@@ -247,6 +247,10 @@ test('map drops target another physical print before its group, with bounded atl
   sea.uiTarget=()=>true;assert.deepEqual(drop(400,300),{kind:'group',id:7},'Controls above the sea block stacking');sea.uiTarget=()=>false;
   sea.outcomeFlow={};assert.deepEqual(drop(400,300),{kind:'group',id:7},'Filter keeps its throwing gesture');sea.outcomeFlow=null;
   sea.cameraOn=false;assert.deepEqual(drop(400,300),{kind:'group',id:7},'A comparison does not stack its ambient prints');
+  sea.contours.get('g7').paths.push([[470,360],[495,360],[495,395],[470,395]]);
+  assert.deepEqual(drop(490,390),{kind:'sea'},'An empty hole inside the colour never files a photo');
+  sea.contours.get('g7').washPaths=[[[600,100],[900,100],[900,500],[600,500]]];
+  assert.deepEqual(drop(800,200),{kind:'sea'},'The soft wash cannot turn remote water into a filing target');
 });
 test('layout and Filter outcome updates do not restart semantic clustering',()=>{
   const f=field(Array.from({length:16},(_,i)=>({tags:i%2?['dog','beach']:['cat','hat']})));
@@ -441,6 +445,15 @@ test('holding all members keeps their group control available',()=>{
   const [group]=seaContours([{label:'dogs',fixed:true,x:50,y:50,size:30}],1200,750);
   assert.equal(group.count,1);assert.deepEqual(group.paths,[]);
 });
+test('group pigment joins nearby prints without the old three-body or purity cutoff',()=>{
+  const {seaContours}=require('../matcher/static/sea-contours.js'),items=[{id:1,label:'g',x:150,y:200,size:12},{id:2,label:'g',x:200,y:200,size:12},{id:3,label:'other',x:150,y:200,size:12}];
+  const regular=seaContours(items,1000,700),wash=seaContours(items,1000,700,null,0,true);
+  assert(regular.every(shape=>!shape.paths.length),'A pair has no compact drop shore');
+  assert(wash.every(shape=>shape.paths.length&&shape.opacity===1),'Even intermingled groups contribute their full pigment');
+  assert.equal(wash.find(shape=>shape.id==='g').paths.length,1,'Nearby pigments meet instead of becoming isolated halos');
+  const distant=seaContours(items.map(it=>({...it,x:it.x+(it.id===2?600:0)})),1000,700,null,0,true);
+  assert.equal(distant.find(shape=>shape.id==='g').paths.length,2,'Distant gatherings leave the intervening water open');
+});
 
 test('steering carries momentum through a sudden reversal and pins still stop immediately',()=>{
   const f=field([{tags:[],x:600,y:375,baseSize:8}]);let direction=1;
@@ -587,7 +600,7 @@ test('lasso controls preserve meaning across new descriptors and relayout only w
   assert.equal(layouts,2);assert(!sea.tray.hidden);assert.equal(row.children.size,1);
 });
 
-test('lasso geometry crossfades cached bitmaps without retracing shores',()=>{
+test('group pigment crossfades cached bitmaps without retracing shores',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),frames=[],paint=[];let now=0,vertices=0,canvases=0;
   const ctx={globalAlpha:1,setTransform(){},clearRect(){},save(){},restore(){},beginPath(){},rect(){},clip(){},
     moveTo(){},quadraticCurveTo(){vertices++;},closePath(){},fill(){},setLineDash(){},stroke(){},drawImage(){paint.push(this.globalAlpha);}};
@@ -595,7 +608,7 @@ test('lasso geometry crossfades cached bitmaps without retracing shores',()=>{
     window:{devicePixelRatio:1},document:{hidden:false,createElement(){canvases++;return{getContext:()=>({...ctx})};}},
     reduceMotion:false,performance:{now:()=>now},requestAnimationFrame:fn=>{frames.push(fn);return frames.length;}
   });
-  const row={},tag={hidden:false,parentElement:row},l={tag,hue:30,kind:'group'},shape=(key,x)=>({key,count:3,opacity:1,paths:[[[x,0],[x+20,0],[x+20,20],[x,20]]]});
+  const row={},tag={hidden:false,parentElement:row},l={tag,colour:[100,140,180],kind:'group'},shape=(key,x)=>({key,count:3,opacity:1,paths:[[[x,0],[x+20,0],[x+20,20],[x,20]]]});
   const sea=Object.assign(Object.create(proto),{alive:true,paused:false,ctx,canvas:{style:{}},width:1200,height:750,tagRow:row,lassos:new Map([['g',l]]),
     contours:new Map([['g',shape('a',100)]]),generation:1,contourCountsGeneration:1,contourCounts:new Map([['g',3]]),catalogTabStop(){}});
   sea.draw(1200,750);assert.equal(frames.length,1);assert.equal(paint.length,0);assert.equal(vertices,4);

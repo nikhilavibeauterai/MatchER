@@ -15,13 +15,15 @@ class SpriteLayer {
     layout(location=3) in vec4 look;   // opacity, then the card's three wobble randoms
     layout(location=4) in float aspect;
     layout(location=5) in float depth;
-    layout(location=6) in vec3 swell;   // shared stack sine, cosine and width
+    layout(location=6) in vec4 swell;   // shared stack spatial pairs for the two broad swells
+    layout(location=7) in vec3 ripple;  // fine wave's spatial pair, then the stack width
     uniform vec2 view;                 // the sea's size (css px)
     uniform vec3 cam;                  // zoom, tx, ty
     uniform float time;                // ms
     uniform vec4 wob;                  // period ms, degrees, speed spread, force spread
     uniform float wobDelay;            // delay spread
-    uniform vec3 waves;                // height in screen pixels, sine and cosine of the travelling phase
+    uniform vec2 waves;                // height in screen pixels, crest ripple strength
+    uniform vec2 travel[3];            // travelling sine/cosine pairs, shared by every print
     out vec2 vq; out vec4 vcell; out float vopacity; out float vpx; out float vaspect;
     void main() {
       float w = pos.z, h = w * 4.0 / 3.0;
@@ -33,10 +35,16 @@ class SpriteLayer {
       vec2 r = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
       vec2 lift = vec2(0.0);
       if (waves.x > 0.0) {
-        float t = clamp((swell.z * cam.x - 64.0) / 156.0, 0.0, 1.0);
-        float a = min(waves.x, swell.z * 0.2) / max(1.0, cam.x) * (1.0 - t * t * (3.0 - 2.0 * t));
-        // The spatial sine/cosine is uploaded once; the clock's pair is one uniform, not six trig calls per print.
-        lift = vec2((swell.y * waves.z + swell.x * waves.y) * 0.18, swell.x * waves.z - swell.y * waves.y) * a;
+        float t = clamp((ripple.z * cam.x - 64.0) / 156.0, 0.0, 1.0);
+        float amplitude = min(waves.x, max(4.0, ripple.z * 0.8)) / max(1.0, cam.x) * (1.0 - t * t * (3.0 - 2.0 * t));
+        float a = swell.x * travel[0].y - swell.y * travel[0].x, ac = swell.y * travel[0].y + swell.x * travel[0].x;
+        float b = swell.z * travel[1].y - swell.w * travel[1].x, bc = swell.w * travel[1].y + swell.z * travel[1].x;
+        float c = ripple.x * travel[2].y - ripple.y * travel[2].x, cc = ripple.y * travel[2].y + ripple.x * travel[2].x;
+        float h = a * 0.7 + b * 0.3, crest = (h + 0.26 * h * h - 0.13) / 1.13, warp = h * 0.55;
+        float turn = 1.0 / (1.0 + warp * warp), s = 2.0 * warp * turn, co = (1.0 - warp * warp) * turn;
+        float gain = 0.18 + 0.82 * max(0.0, h) * max(0.0, h);
+        lift = vec2(0.18 * (ac * 0.7 - bc * 0.3) + waves.y * 0.16 * gain * (cc * co - c * s),
+                    crest + waves.y * gain * (c * co + cc * s)) * amplitude / (1.0 + waves.y);
       }
       vec2 screen = (pos.xy + lift + r) * cam.x + cam.yz;
       gl_Position = vec4(screen.x / view.x * 2.0 - 1.0, 1.0 - screen.y / view.y * 2.0, depth, 1.0);
@@ -70,7 +78,7 @@ class SpriteLayer {
       if (a <= 0.0) discard;
       color = vec4(rgb * a, a);
     }`;
-  static STRIDE = 16;  // x, y, w, u0, v0, cw, ch, opacity, r1, r2, r3, aspect, depth, swell sine/cosine/width
+  static STRIDE = 20;  // x, y, w, cell[4], look[4], aspect, depth, three spatial pairs, stack width
 
   constructor(canvas) {
     const gl = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: true, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: "high-performance" });
@@ -91,10 +99,10 @@ class SpriteLayer {
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) || "program");
     this.program = program;
-    this.u = {}; for (const name of ["view", "cam", "time", "wob", "wobDelay", "waves", "sheet", "sheetSize"]) this.u[name] = gl.getUniformLocation(program, name);
+    this.u = {}; for (const name of ["view", "cam", "time", "wob", "wobDelay", "waves", "travel", "sheet", "sheetSize"]) this.u[name] = gl.getUniformLocation(program, name);
     this.vao = gl.createVertexArray(); gl.bindVertexArray(this.vao);
     const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     this.instances = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.instances);
     const stride = SpriteLayer.STRIDE * 4;
@@ -103,7 +111,8 @@ class SpriteLayer {
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 28); gl.vertexAttribDivisor(3, 1);
     gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 44); gl.vertexAttribDivisor(4, 1);
     gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 48); gl.vertexAttribDivisor(5, 1);
-    gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6, 3, gl.FLOAT, false, stride, 52); gl.vertexAttribDivisor(6, 1);
+    gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6, 4, gl.FLOAT, false, stride, 52); gl.vertexAttribDivisor(6, 1);
+    gl.enableVertexAttribArray(7); gl.vertexAttribPointer(7, 3, gl.FLOAT, false, stride, 68); gl.vertexAttribDivisor(7, 1);
     gl.bindVertexArray(null);
     this.blank = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.blank);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([201, 194, 180, 255]));
@@ -130,7 +139,7 @@ class SpriteLayer {
   // Sheets the sea no longer uses give their texture memory back.
   prune(live) { for (const [image, t] of this.textures) if (!live.has(image)) { this.gl.deleteTexture(t.tex); this.textures.delete(image); } }
   // Draw every batch ({image, version, data, n, upload}): one upload per changed batch, one draw call per batch.
-  draw({ W, H, dpr, zoom, tx, ty, time, wobble, waves = [0, 0, 1] }, batches, liveImages = null) {
+  draw({ W, H, dpr, zoom, tx, ty, time, wobble, waves = [0, 0], travel = [0,1,0,1,0,1] }, batches, liveImages = null) {
     const gl = this.gl, canvas = this.canvas;
     if (this.lost) return false;
     const cw = Math.max(1, Math.round(W * dpr)), ch = Math.max(1, Math.round(H * dpr));
@@ -143,7 +152,7 @@ class SpriteLayer {
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS);
     gl.uniform2f(this.u.view, W, H); gl.uniform3f(this.u.cam, zoom, tx, ty); gl.uniform1f(this.u.time, time);
     gl.uniform4f(this.u.wob, wobble[0], wobble[1], wobble[2], wobble[3]); gl.uniform1f(this.u.wobDelay, wobble[4]);
-    gl.uniform3f(this.u.waves, waves[0], waves[1], waves[2]);
+    gl.uniform2f(this.u.waves, waves[0], waves[1]);gl.uniform2fv(this.u.travel, travel);
     gl.uniform1i(this.u.sheet, 0); gl.activeTexture(gl.TEXTURE0);
     const live = new Set(liveImages||[]);
     for (const b of batches) {
@@ -157,8 +166,8 @@ class SpriteLayer {
       gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 0); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 12); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 28);
       gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 44);
       gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 48);
-      gl.vertexAttribPointer(6, 3, gl.FLOAT, false, stride, 52);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, b.n);
+      gl.vertexAttribPointer(6, 4, gl.FLOAT, false, stride, 52); gl.vertexAttribPointer(7, 3, gl.FLOAT, false, stride, 68);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, b.n);
     }
     gl.bindVertexArray(null);
     this.prune(live);

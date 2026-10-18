@@ -494,7 +494,12 @@ else {
     field.membershipDirty=false;
     field.step(m);
     // A sleeping field keeps its shores; nothing moved, so nothing needs tracing.
-    let contours=null;if(!field.settled&&m.time-field.contourAt>300){contours=contourField(field.items,field.width,field.height,field.contourHistory||=new Map());field.contourAt=m.time;}
+    let contours=null;if(!field.settled&&m.time-field.contourAt>300){
+      contours=contourField(field.items,field.width,field.height,field.contourHistory||=new Map());
+      const pigment=new Map(contourField(field.items,field.width,field.height,null,0,true).map(shape=>[shape.id,shape]));
+      for(const shape of contours){const wash=pigment.get(shape.id);shape.washPaths=wash?.paths||[];shape.washKey=wash?.key;}
+      field.contourAt=m.time;
+    }
     const positions=m.buffer?.byteLength===field.items.length*12?new Float32Array(m.buffer):new Float32Array(field.items.length*3);
     field.items.forEach((it,i)=>{positions[i*3]=it.x;positions[i*3+1]=it.y;positions[i*3+2]=it.size;});
     const membership=clusters?Uint16Array.from(field.items,it=>clusters.findIndex(c=>c.id===it.cluster)+1):null;

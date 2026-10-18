@@ -101,7 +101,7 @@ body.sea-on .controls .btn.ghost, .filter-review-controls .btn, body.sea-on #vie
 #journey-dock .tnode.here .tico { background: var(--highlight); border-color: var(--ink); box-shadow: 0 0 0 3px #ffe86766, 1.5px 1.5px 0 #2a241f40; }
 #journey-dock .tnode:hover .tico { border-color: var(--accent); }
 #journey-dock .tnode .tcheck { color: var(--green); }
-#journey-title { font-family: var(--hand); font-size: 26px; font-weight: 700; color: var(--ink); padding: 0 14px; background: transparent; background-clip: padding-box; border: 0; box-shadow: none; text-shadow: none; }
+#journey-title { position: absolute; grid-column: auto; grid-row: auto; top: calc(var(--hud-height) - var(--journey-top) - 28px); left: 50%; transform: translateX(-50%); font-family: var(--hand); font-size: 20px; line-height: 1; font-weight: 700; color: var(--ink); padding: 0 14px; background: transparent; background-clip: padding-box; border: 0; box-shadow: none; text-shadow: none; }
 #journey-dock .journey-step { color: var(--ink); font-family: var(--hand); font-weight: 700; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50% 48% 52% 50% / 48% 52% 48% 52%; box-shadow: 1.5px 1.5px 0 #2a241f40; width: 44px; height: 44px; font-size: 30px; }
 #journey-dock .journey-step.empty { visibility: hidden; }
 #journey-dock .journey-step.ready { width: max-content; border-radius: var(--scrap-round); font-size: 19px; font-family: var(--hand); background: var(--marker); border: 1.5px solid #8d2c22; color: #2b0f0b; box-shadow: 2px 2px 0 #8d2c2266; }
@@ -176,7 +176,7 @@ body:not(.no-bar) #topbar::before {
   background:
     linear-gradient(0deg, transparent 0 27px, var(--margin-line) 27px 28.5px, transparent 28.5px),
     linear-gradient(90deg, var(--paper) 0 54px, transparent 54px),
-    repeating-linear-gradient(90deg, transparent 0 25px, var(--rule) 25px 26.5px),
+    repeating-linear-gradient(90deg, transparent 0 calc(var(--stage-pitch) - 1.5px), var(--rule) calc(var(--stage-pitch) - 1.5px) var(--stage-pitch)) calc(50vw - 9.25px) 0 / var(--stage-pitch) 100%,
     var(--paper);
   box-shadow: 0 3px 0 #0001, 0 10px 24px #00000055;
   -webkit-mask-image:
@@ -292,7 +292,7 @@ body.sea-on .side, body.sea-on .twin-arena .side, body.sea-on .swipe-card, .swip
 /* The HUD strip is the paper: its medallions, title and save chip are drawn on it, not laid on it. */
 #journey-dock .tico { background: transparent; box-shadow: none; }
 #journey-dock .journey-step:not(.ready) { background: transparent; box-shadow: none; }
-#topbar .save-chip { background: transparent; border: 0; border-bottom: 1.5px solid var(--pencil); border-radius: 0; box-shadow: none; }
+#topbar .save-chip { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 #topbar .menu-btn { background: transparent; box-shadow: none; }
 #journey-dock .twords { background: transparent; border: 0; box-shadow: none; }
 /* A polaroid on a page is a polaroid, not a scrap: tiles on the Stacks and Groups pages lose their own paper. */

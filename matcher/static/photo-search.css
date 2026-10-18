@@ -1,4 +1,4 @@
-.photo-search { position:fixed;left:70px;top:12px;z-index:46;width:clamp(130px,16vw,260px);display:flex;align-items:center;gap:6px;padding:2px 8px;background:var(--paper);border-bottom:1px solid var(--pencil);color:var(--ink); }
+.photo-search { position:fixed;left:70px;top:12px;z-index:46;width:clamp(130px,16vw,260px);display:flex;align-items:center;gap:6px;padding:2px 8px;background:transparent;border:0;color:var(--ink); }
 .photo-search[hidden],.photo-search-results[hidden] { display:none; }
 .photo-search > span { font:32px/1 var(--hand); }
 .photo-search input { min-width:0;width:100%;font-size:18px!important;border:0!important;box-shadow:none!important; }

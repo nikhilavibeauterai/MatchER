@@ -12,6 +12,7 @@ class PhotoSea {
       const saved = JSON.parse(localStorage.getItem("matcher-sea-tuning") || "null"), t = saved?.tuning || {};
       if ((saved?.version || 1) < 2) delete t.zoomMax;  // the camera reaches much further now: a cap saved by the old panel would hold it back
       if((saved?.version||1)<3)for(const [key,old]of Object.entries({margin:.25,domLimit:1000,liveMin:22,dotLod:6}))if(t[key]===old)delete t[key];
+      if((saved?.version||1)<4&&t.waveHeight===4)delete t.waveHeight;
       Object.assign(this.tuning, t);
     } catch (_) { /* no saved tuning */ }
     if (typeof Cards !== "undefined") Cards.tune(this.tuning);
@@ -49,17 +50,40 @@ class PhotoSea {
     if(playing&&this.waveWasPlaying)this.waveTime=(this.waveTime||0)+Math.min(1000,Math.max(0,now-this.waveLast));
     this.waveLast=now;this.waveWasPlaying=playing;
   }
+  waveBasis(x,y){
+    const k=Math.PI*2/(this.tuning?.waveLength||750),a=(x+y*.35)*k,b=(-x*.38+y*.92)*k*1.43+2.17,c=(x*.84+y*.54)*k*6.1-.7;
+    return [Math.sin(a),Math.cos(a),Math.sin(b),Math.cos(b),Math.sin(c),Math.cos(c)];
+  }
   waveShape(it){
-    const body=it.take?this.items.get(it.stack)||it:it;
-    return [(body.x+body.y*.35)/(this.tuning?.waveLength||750)*Math.PI*2,body.size||this.s||0];
+    const body=it.take?this.items.get(it.stack)||it:it,length=this.tuning?.waveLength||750;
+    let shape=body.swellShape;
+    if(!shape||shape.x!==body.x||shape.y!==body.y||shape.length!==length)body.swellShape=shape={x:body.x,y:body.y,length,basis:this.waveBasis(body.x,body.y)};
+    return {basis:shape.basis,size:body.size||this.s||0};
   }
   wavePhase(){return (this.waveTime||0)/((this.tuning?.wavePeriod||28)*1000)*Math.PI*2;}
+  waveTravel(){
+    const phase=this.wavePhase();
+    if(this.waveTravelPhase!==phase||!this.waveTravelPairs){this.waveTravelPhase=phase;this.waveTravelPairs=[Math.sin(phase),Math.cos(phase),Math.sin(-phase*.73),Math.cos(-phase*.73),Math.sin(phase*2.3),Math.cos(phase*2.3)];}
+    return this.waveTravelPairs;
+  }
+  // Crossing swells bend and squeeze the fine ripples, which gather on the steeper, narrower crests.
+  // The sprite shader uses these same pairs and arithmetic; only the travelling pairs change each paint.
+  waveSample(basis,travel=this.waveTravel()){
+    const a=basis[0]*travel[1]-basis[1]*travel[0],ac=basis[1]*travel[1]+basis[0]*travel[0],
+      b=basis[2]*travel[3]-basis[3]*travel[2],bc=basis[3]*travel[3]+basis[2]*travel[2],
+      c=basis[4]*travel[5]-basis[5]*travel[4],cc=basis[5]*travel[5]+basis[4]*travel[4],
+      swell=a*.7+b*.3,crest=(swell+.26*swell*swell-.13)/1.13,warp=swell*.55,
+      turn=1/(1+warp*warp),s=2*warp*turn,co=(1-warp*warp)*turn,
+      gain=.18+.82*Math.max(0,swell)**2,ripple=this.tuning?.waveRipples??.28;
+    return [(.18*(ac*.7-bc*.3)+ripple*.16*gain*(cc*co-c*s))/(1+ripple),
+      (crest+ripple*gain*(c*co+cc*s))/(1+ripple)];
+  }
   waveOffset(it){
     const height=this.waveHeight();if(!height)return [0,0];
-    const [space,size]=this.waveShape(it),zoom=this.camera?.zoom||1,t=Math.max(0,Math.min(1,(size*zoom-64)/156)),
-      amplitude=Math.min(height,size*.2)/Math.max(1,zoom)*(1-t*t*(3-2*t)),phase=space-this.wavePhase();
+    const {basis,size}=this.waveShape(it),zoom=this.camera?.zoom||1,t=Math.max(0,Math.min(1,(size*zoom-64)/156)),
+      amplitude=Math.min(height,Math.max(4,size*.8))/Math.max(1,zoom)*(1-t*t*(3-2*t));
     if(!amplitude)return [0,0];
-    return [Math.cos(phase)*.18*amplitude,Math.sin(phase)*amplitude];
+    const lift=this.waveSample(basis);return [lift[0]*amplitude,lift[1]*amplitude];
   }
   waveItem(it){
     const offset=this.waveOffset(it),translate=offset.some(n=>Math.abs(n)>.0005)?`${offset[0].toFixed(3)}px ${offset[1].toFixed(3)}px`:'';
@@ -70,6 +94,7 @@ class PhotoSea {
       x1=x0+(this.width||this.el.clientWidth)/c.zoom,y1=y0+(this.height||this.el.clientHeight)/c.zoom;
     for(const it of this.moving||[])if(it.el.isConnected&&this.inView(it,x0,y0,x1,y1,8/c.zoom))this.waveItem(it);
     this.presentation?.follow();
+    if(this.contourRaster?.nonempty&&!this.canvas?.style.transform)this.paintWater?.();
   }
   // Bound independent image elements. A deliberate tuning override stands; smaller devices can lower the default.
   liveCap(){const auto=(navigator.deviceMemory||4)*(innerWidth<760?60:250),set=this.tuning.domLimit;return Math.max(40,set===seaTuningDefaults().domLimit?Math.min(set,auto):set);}
@@ -177,9 +202,9 @@ class PhotoSea {
   // Live tuning: the worker, the print size and the camera limits all read the new values at once.
   tune(values,persist=true){
     Object.assign(this.tuning,values||{});
-    if(persist){try{localStorage.setItem("matcher-sea-tuning",JSON.stringify({version:3,tuning:this.tuning}));}catch(_){}}
+    if(persist){try{localStorage.setItem("matcher-sea-tuning",JSON.stringify({version:4,tuning:this.tuning}));}catch(_){}}
     this.domLimit=this.liveCap();
-    if(Object.keys(values||{}).length&&Object.keys(values).every(k=>['waveHeight','wavePeriod','waveLength'].includes(k))){
+    if(Object.keys(values||{}).length&&Object.keys(values).every(k=>['waveHeight','wavePeriod','waveLength','waveRipples'].includes(k))){
       this.waveClock();this.paintWaves();this.densityDirty=this.spritesDirty=true;this.paintSoon();this.wobbleLoop();return;
     }
     this.worker?.postMessage({kind:"tune",values:this.tuning});if(typeof Cards!=="undefined")Cards.tune(this.tuning);this.layout();this.kick();
@@ -650,6 +675,7 @@ class VennSea extends PhotoSea {
     return r?[r.x0+Math.random()*(r.x1-r.x0),r.y0+Math.random()*(r.y1-r.y0)]:[W/2,H/2];
   }
   adopt(it, x) { it.tags = x.tags || []; it.tagSet = new Set(it.tags); it.group = x.group ?? null; it.sugg = x.sugg ?? null; it.free = false;
+    this.groupColoursDirty=true;
     it.visual=x.visual||null;
     it.dims=x.dims||it.dims||null;
     it.box=x.box||null;
@@ -708,7 +734,7 @@ class VennSea extends PhotoSea {
     return water;
   }
   drawDensity(W, H) {
-    this.waveClock();this.paintWaves();
+    this.waveClock();this.waveRasterTime=this.waveTime||0;this.paintWaves();
     if (!this.densityCanvas) {
       this.densityCanvas = document.createElement("canvas"); this.densityCanvas.className = "vn-density";
       this.el.prepend(this.densityCanvas);
@@ -819,13 +845,13 @@ class VennSea extends PhotoSea {
         else{d[o+3]=d[o+4]=d[o+5]=d[o+6]=0;stats.blank=(stats.blank||0)+1;}
         d[o+7]=opacity;d[o+8]=r1;d[o+9]=r2;d[o+10]=r3;d[o+11]=source?.aspect||0;
         d[o+12]=.8-1.6*((it.order||1)/(this.items.size+1));b.n++;if(size>max)max=size;
-        const swell=this.waveShape(it);d[o+13]=Math.sin(swell[0]);d[o+14]=Math.cos(swell[0]);d[o+15]=swell[1];
+        const swell=this.waveShape(it);d.set(swell.basis,o+13);d[o+19]=swell.size;
       }
       this.gpu.release([...previous.values()]);this.glBatches=[...batches.values()];this.spriteMax=max;this.spritesDirty=false;this.spriteView=viewKey;
     }
     for(const b of this.glBatches)if(b.image)b.version=this.previewVersions?.get(b.image)||0;  // a mutable preview page is uploaded again when it changed
-    const T=this.tuning||{},phase=this.wavePhase();
-    this.gpu.draw({W,H,dpr,zoom,tx,ty,time:this.wobbleNow||performance.now(),waves:[this.waveHeight(),Math.sin(phase),Math.cos(phase)],wobble:[(T.wobblePeriod||5.6)*1000,T.wobbleDeg??1,T.wobbleSpeedSpread??.25,T.wobbleForceSpread??.35,T.wobbleDelaySpread??1]},this.glBatches,this.spriteImages);
+    const T=this.tuning||{};
+    this.gpu.draw({W,H,dpr,zoom,tx,ty,time:this.wobbleNow||performance.now(),waves:[this.waveHeight(),T.waveRipples??.28],travel:this.waveTravel(),wobble:[(T.wobblePeriod||5.6)*1000,T.wobbleDeg??1,T.wobbleSpeedSpread??.25,T.wobbleForceSpread??.35,T.wobbleDelaySpread??1]},this.glBatches,this.spriteImages);
     this.drawOutcomeMarks(W,H,dpr,zoom,tx,ty);
     this.densityRegion=null;this.densityDirty=false;this.wobbleLoop();
   }
@@ -850,11 +876,16 @@ class VennSea extends PhotoSea {
     if(this.wobbleTimer||!this.alive||this.paused||this.deep||document.hidden)return;
     const waves=this.wavePlaying(),wobble=this.gpu&&(T.wobbleDeg??1)&&(this.spriteMax||0)*(this.camera?.zoom||1)>=30&&this.glBatches?.length;
     if(!waves&&!wobble)return;
-    // Tiny prints rise by about a pixel across half a minute. Repaint only a fraction of a pixel of travel,
-    // rather than making a large library redraw at video rates for motion too small to see.
-    const amplitude=Math.min(this.waveHeight(),(this.s||0)*.2),interval=waves?Math.max(80,Math.min(320,(T.wavePeriod||28)*80/(Math.PI*2*Math.max(.1,amplitude)))):45;
+    // Live paper and the water stay fluid. Tiny atlas prints repaint only after subpixel travel, instead of
+    // redrawing thousands of thumbnails for each small change in the colour beneath them.
+    const apparent=(this.s||0)*(this.camera?.zoom||1),step=.2+.2*(1-Math.max(0,Math.min(1,(apparent-6)/14))),
+      amplitude=Math.min(this.waveHeight(),Math.max(4,(this.s||0)*.8)),drawEvery=waves?Math.max(60,Math.min(400,(T.wavePeriod||28)*step*1000/(Math.PI*2*Math.max(.1,amplitude)))):45,
+      interval=waves&&this.contourRaster?.nonempty?Math.min(80,drawEvery):drawEvery;
     this.wobbleTimer=setTimeout(()=>{this.wobbleTimer=0;if(!this.alive)return;this.waveClock();if(this.paused||this.deep||document.hidden)return;
-      this.wobbleNow=performance.now();this.densityDirty=true;this.paintSoon();},wobble?Math.min(45,interval):interval);
+      if(wobble||this.densityDirty||this.waveRasterTime==null||(this.waveTime||0)-this.waveRasterTime>=drawEvery-8){
+        this.wobbleNow=performance.now();this.densityDirty=true;this.paintSoon();
+      }else{this.paintWaves();this.wobbleLoop();}
+    },wobble?Math.min(45,interval):interval);
   }
   // The card's three wobble randoms (start, speed, force): the same generator as cards.js, so a sprite and its
   // live card rock alike.
@@ -863,26 +894,36 @@ class VennSea extends PhotoSea {
     let seed=((id||0)*2654435761)>>>0;const next=()=>{seed=(seed+0x6D2B79F5)>>>0;let t=seed;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};
     r=[next(),next(),next()];this.wobbleSeeds.set(id,r);return r;
   }
-  // One colour per atlas cell for the dot level of detail: the sheet is read once at a quarter scale (every 16-px
-  // cell becomes a 4×4 block), then each cell's mean is kept; a mutable preview page is re-read when its version moves.
-  cellColour(source){
+  // Each photo contributes equally. Hue travels around the colour wheel and is weighted by saturation so grey
+  // pixels have no arbitrary hue; saturation and value retain their ordinary averages, including neutral pixels.
+  cellPigments(source){
     this.dotColours=this.dotColours||new WeakMap();
     const image=source.img,version=this.previewVersions?.get(image)||0;
     let cache=this.dotColours.get(image);
     if(!cache||cache.version!==version){
       const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height;
-      const small=document.createElement('canvas');small.width=Math.max(1,Math.ceil(width/4));small.height=Math.max(1,Math.ceil(height/4));
+      const small=document.createElement('canvas');small.width=Math.max(1,Math.ceil(width/2));small.height=Math.max(1,Math.ceil(height/2));
       const ctx=small.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,small.width,small.height);
       cache={version,pixels:ctx.getImageData(0,0,small.width,small.height),colours:new Map()};this.dotColours.set(image,cache);
     }
-    const key=`${source.x},${source.y}`;let colour=cache.colours.get(key);
+    const key=`${source.x},${source.y},${source.w||16},${source.h||16}`;let colour=cache.colours.get(key);
     if(!colour){
-      const {data,width,height}=cache.pixels,x0=Math.floor(source.x/4),y0=Math.floor(source.y/4);let r=0,g=0,b=0,n=0;
-      for(let y=y0;y<Math.min(height,y0+4);y++)for(let x=x0;x<Math.min(width,x0+4);x++){const i=(y*width+x)*4;if(!data[i+3])continue;r+=data[i];g+=data[i+1];b+=data[i+2];n++;}
-      colour=n?`rgb(${Math.round(r/n)},${Math.round(g/n)},${Math.round(b/n)})`:'#8a8a8a';cache.colours.set(key,colour);
+      const {data,width,height}=cache.pixels,x0=Math.floor(source.x/2),y0=Math.floor(source.y/2),hsv=[0,0,0,0],hues=new Float64Array(18);let r=0,g=0,b=0,n=0;
+      const x1=Math.min(width,Math.ceil((source.x+(source.w||16))/2)),y1=Math.min(height,Math.ceil((source.y+(source.h||16))/2));
+      for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+        const i=(y*width+x)*4,a=data[i+3]/255;if(!a)continue;
+        const R=data[i],G=data[i+1],B=data[i+2],max=Math.max(R,G,B),min=Math.min(R,G,B),chroma=max-min,
+          hue=chroma?(max===R?((G-B)/chroma+6)%6:max===G?(B-R)/chroma+2:(R-G)/chroma+4)/6:0,saturation=max?chroma/max:0;
+        hsv[0]+=Math.cos(hue*Math.PI*2)*saturation*a;hsv[1]+=Math.sin(hue*Math.PI*2)*saturation*a;
+        hsv[2]+=saturation*a;hsv[3]+=max/255*a;hues[Math.min(17,Math.floor(hue*18))]+=saturation*a;
+        r+=R*a;g+=G*a;b+=B*a;n+=a;
+      }
+      colour=n?{mean:[r/n,g/n,b/n],hsv:hsv.map(v=>v/n),hues:hues.map(v=>v/n)}:null;cache.colours.set(key,colour);
     }
     return colour;
   }
+  cellMean(source){return this.cellPigments(source)?.mean||null;}
+  cellColour(source){return `rgb(${(this.cellMean(source)||[138,138,138]).map(Math.round).join(',')})`;}
   // The polaroid in canvas: paper 3:4, the window 5.5% in from the sides and top with a 17% chin, the picture
   // contained inside it, exactly like the CSS card every DOM print wears.
   // Geometry is shared with paintTiny (the raster path): at 16 px and under it is integer and square-cornered.
@@ -946,7 +987,7 @@ class VennSea extends PhotoSea {
     for(let k=0;k<missing.length;k+=500){
       const batch=missing.slice(k,k+500),img=new Image();
       batch.forEach((it,i)=>this.sprites.set(it.id,this.atlasCell(img,i,it.dims)));
-      img.onload=()=>{if(this.alive){this.densityDirty=this.spritesDirty=true;this.kick();}};
+      img.onload=()=>{if(this.alive){this.densityDirty=this.spritesDirty=true;this.refreshColours();this.kick();}};
       img.onerror=()=>{if(this.alive){batch.forEach(it=>this.sprites.delete(it.id));setTimeout(()=>this.alive&&this.loadSprites(),2000);}};  // a lost sheet is asked for again
       img.src=`/img/atlas.jpg?layout=2&v=${imageKey()}&ids=${batch.map(it=>it.photo).join(',')}`;
     }
@@ -1120,6 +1161,7 @@ class VennSea extends PhotoSea {
     this.matchIds=hits;
   }
   clusterLabels(clusters,membership){
+    this.groupColoursDirty=true;
     const incoming=new Set(clusters.map(c=>c.id)),previous=[...this.lassos.values()].filter(l=>l.auto),used=new Set();
     const members=new Map(clusters.map(c=>[c.id,new Set()]));
     this.bodies.forEach((body,i)=>{const it=this.items.get(body.id),id=clusters[membership[i]-1]?.id;if(it)it.cluster=id;members.get(id)?.add(body.id);});
@@ -1245,11 +1287,71 @@ class VennSea extends PhotoSea {
     clearTimeout(this.wobbleTimer);clearTimeout(this.contourTimer);cancelAnimationFrame(this.paintRaf);this.gpu?.destroy();this.gpu=null;this.glBatches=null;
     clearTimeout(this.bodyTimer);cancelAnimationFrame(this.contourFadeRaf);this.contourFadeRaf=null;
     if(this.contourRaster){for(const canvas of new Set([this.contourRaster.current,this.contourRaster.spare]))if(canvas)canvas.width=canvas.height=0;this.contourRaster=null;}
+    if(this.waterField){this.waterField.canvas.width=this.waterField.canvas.height=0;this.waterField=null;}
     this.worker?.terminate();document.removeEventListener('visibilitychange',this.wake);for(const type of ['pointermove','pointerdown','pointerup','pointercancel'])document.removeEventListener(type,this.proxyPointer);
     document.removeEventListener('wheel',this.wheelZoom);document.removeEventListener('dblclick',this.doubleReset);clearTimeout(this.cullTimer);this.dock?.classList.remove('tag-dock');this.tray.remove();super.destroy();
   }
+  refreshColours(){this.groupColoursDirty=true;if(this.width&&this.height)this.draw(this.width,this.height);}
+  colourGroups(){
+    if(!this.items||!this.groupColoursDirty&&this.colourGeneration===this.generation)return;
+    const groups=new Map();
+    // Include the takes tucked behind a stack and members outside the viewport, giving each photo one vote.
+    for(const it of this.items.values()){
+      const body=it.take?this.items.get(it.stack)||it:it,id=this.labelOf(it)||this.labelOf(body);
+      if(!id||!this.lassos.has(id))continue;
+      const source=this.sprites?.get(it.id)||it.preview;
+      if(!source||!(source.img instanceof HTMLCanvasElement||source.img.complete&&source.img.naturalWidth))continue;
+      const pigments=this.cellPigments(source);if(!pigments)continue;
+      let group=groups.get(id);if(!group){group={hsv:[0,0,0,0],hues:new Float64Array(18),photos:new Set()};groups.set(id,group);}
+      const photo=it.photo??it.id;if(group.photos.has(photo))continue;group.photos.add(photo);
+      for(let i=0;i<4;i++)group.hsv[i]+=pigments.hsv[i];for(let i=0;i<18;i++)group.hues[i]+=pigments.hues[i];
+    }
+    for(const [id,l]of this.lassos){
+      const group=groups.get(id);if(!group){l.colour=l.hsv=null;continue;}
+      const [hx,hy,s,v]=group.hsv,n=group.photos.size;let hue=(Math.atan2(hy,hx)/Math.PI/2+1)%1;
+      // Exactly opposing hues have no circular mean. Keep that rare tie stable using the leading hue family.
+      if(s&&Math.hypot(hx,hy)<s*.04)hue=(group.hues.indexOf(Math.max(...group.hues))+.5)/18;
+      l.hsv=[hue,s/n,v/n];const h=hue*6,c=v/n*s/n,x=c*(1-Math.abs(h%2-1)),m=v/n-c;
+      const rgb=h<1?[c,x,0]:h<2?[x,c,0]:h<3?[0,c,x]:h<4?[0,x,c]:h<5?[x,0,c]:[c,0,x];
+      l.colour=rgb.map(value=>Math.round((value+m)*255));
+    }
+    this.groupColoursDirty=false;this.colourGeneration=this.generation;
+  }
+  // The group's cached pigment is a mask for the same crossing swells that lift its photos. A small field gives
+  // the colour soft, travelling crests without tracing shores, decoding photos or waking physics on each paint.
+  waterMask(W,H){
+    const {zoom,tx,ty}=this.camera||{zoom:1,tx:0,ty:0},key=`${W}:${H}:${zoom}:${tx}:${ty}:${this.tuning?.waveLength}`;
+    let field=this.waterField;
+    if(!field||field.key!==key){
+      const scale=Math.max(8,W/96,H/64),w=Math.max(1,Math.ceil(W/scale)),h=Math.max(1,Math.ceil(H/scale)),canvas=field?.canvas||document.createElement('canvas');
+      canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d'),pixels=ctx.createImageData(w,h),basis=[];pixels.data.fill(255);
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++)basis.push(this.waveBasis(((x+.5)*W/w-tx)/zoom,((y+.5)*H/h-ty)/zoom));
+      field=this.waterField={key,canvas,ctx,pixels,basis};
+    }
+    const phase=this.wavePhase(),strength=Math.min(1,this.waveHeight()/12),ripples=this.tuning?.waveRipples??.28;
+    if(field.phase!==phase||field.strength!==strength||field.ripples!==ripples){
+      const travel=this.waveTravel(),pixels=field.pixels.data;
+      for(let i=0;i<field.basis.length;i++){const lift=this.waveSample(field.basis[i],travel),crest=Math.max(0,Math.min(1,.5+lift[1]*.75));pixels[i*4+3]=Math.round(255*(1-strength*(.88-.88*crest**1.5)));}
+      field.ctx.putImageData(field.pixels,0,0);Object.assign(field,{phase,strength,ripples});
+    }
+    return field.canvas;
+  }
+  paintWater(W=this.width,H=this.height,now=performance.now()){
+    const raster=this.contourRaster;if(!raster||!W||!H)return;
+    const x=this.ctx,dpr=window.devicePixelRatio||1,progress=reduceMotion?1:Math.min(1,(now-raster.since)/220);
+    x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,W,H);x.save();
+    for(const o of [...(this.obstacles||[]),...(this.catalogRect?[this.catalogRect]:[])]){
+      x.beginPath();x.rect(0,0,W,H);x.rect(o.x0,o.y0,o.x1-o.x0,o.y1-o.y0);x.clip('evenodd');
+    }
+    if(raster.previous&&progress<1){x.globalAlpha=1-progress;x.drawImage(raster.previous,0,0,W,H);}
+    if(progress&&raster.nonempty){x.globalAlpha=progress;x.drawImage(raster.current,0,0,W,H);}
+    x.globalAlpha=1;
+    if(raster.nonempty&&this.waveHeight()){x.globalCompositeOperation='destination-in';x.drawImage(this.waterMask(W,H),0,0,W,H);}
+    x.restore();if(progress===1)raster.previous=null;
+  }
   draw(W, H) {
-    const x=this.ctx,dpr=window.devicePixelRatio||1,now=performance.now(),layers=[];let catalogDirty=false;
+    const dpr=window.devicePixelRatio||1,now=performance.now(),layers=[];let catalogDirty=false;
+    this.colourGroups();
     this.contourPaintAt=now;
     if(this.contourCountsGeneration!==this.generation){
       this.contourCounts=new Map();this.contourCountsGeneration=this.generation;
@@ -1264,27 +1366,27 @@ class VennSea extends PhotoSea {
       l.contourCurrent=shape;l.contourFrom=null;
       if(this.lassos_on===false||hidden)continue;
       const hot=l.still||this.focusCluster===id;
-      style.push(`${id}:${l.hue}:${l.kind}:${!!hot}`);
-      if(!shape)continue;
-      const paths=hot?shape.hotPaths||shape.paths:shape.paths;
+      style.push(`${id}:${l.colour}:${!!hot}`);
+      if(!shape||!l.colour)continue;
+      const paths=shape.washPaths||(hot?shape.hotPaths||shape.paths:shape.paths);
       if(!paths?.length)continue;
       layers.push({l,shape,paths,hot});
-      geometry.push(`${id}:${shape.key??shape}:${Math.round((shape.opacity??1)*100)}`);
+      geometry.push(`${id}:${shape.washKey??shape.key??shape}`);
     }
     const {zoom,tx,ty}=this.camera||{zoom:1,tx:0,ty:0},size=`${W}:${H}:${dpr}:${zoom.toFixed(3)}:${Math.round(tx)}:${Math.round(ty)}`,signature=geometry.join('|'),appearance=style.join('|');
     let raster=this.contourRaster;
     if(!raster||raster.signature!==signature||raster.appearance!==appearance||raster.size!==size){
       const sameSize=raster?.size===size,sameStyle=raster?.appearance===appearance;
       const canvas=raster?.spare||document.createElement('canvas'),ctx=canvas.getContext('2d');
-      const width=Math.max(1,Math.round(W*dpr)),height=Math.max(1,Math.round(H*dpr));
+      const scale=.35,width=Math.max(1,Math.round(W*scale)),height=Math.max(1,Math.round(H*scale));
       if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
-      ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
-      // Tessellate each new shore once, in screen pixels (a dash is a dash at any zoom; under the zoom transform a
-      // shore at 40× was tens of thousands of dashes) and only the shores that reach into the view. Crossfade
-      // frames only composite these two bounded bitmaps.
-      const X=v=>v*zoom+tx,Y=v=>v*zoom+ty,reach=4;
+      ctx.setTransform(scale,0,0,scale,0,0);ctx.clearRect(0,0,W,H);
+      // Feather each new occupied area once. The two bounded bitmaps preserve holes and disconnected gatherings;
+      // animation and camera movement reuse them instead of rebuilding a mesh of outlines.
+      const X=v=>v*zoom+tx,Y=v=>v*zoom+ty,feather=Math.max(8,Math.min(38,(this.s||24)*.7*zoom)),reach=feather*3;
+      ctx.filter=`blur(${feather*scale}px)`;
       for(const {l,shape,paths,hot}of layers){
-        let any=false;ctx.globalAlpha=hot?1:shape.opacity??1;ctx.beginPath();
+        let any=false;ctx.globalAlpha=hot?.9:.75;ctx.beginPath();
         for(const h of paths){
           let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const p of h){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1];}
           if(X(x1)<-reach||X(x0)>W+reach||Y(y1)<-reach||Y(y0)>H+reach)continue;any=true;
@@ -1292,25 +1394,17 @@ class VennSea extends PhotoSea {
           for(let i=0;i<h.length;i++){const p=h[i],q=h[(i+1)%h.length];ctx.quadraticCurveTo(X(p[0]),Y(p[1]),X((p[0]+q[0])/2),Y((p[1]+q[1])/2));}ctx.closePath();
         }
         if(!any)continue;
-        ctx.fillStyle=`hsla(${l.hue},80%,60%,${hot?.12:.035})`;ctx.fill('evenodd');
-        ctx.lineWidth=hot?2:1.3;ctx.setLineDash(l.kind==='sugg'&&zoom<8?[6,7]:[]);
-        ctx.strokeStyle=`hsla(${l.hue},85%,70%,${hot?.8:.55})`;ctx.stroke();
+        ctx.fillStyle=`rgb(${l.colour.join(',')})`;ctx.fill('evenodd');
       }
-      ctx.globalAlpha=1;ctx.setLineDash([]);
+      ctx.globalAlpha=1;ctx.filter='none';
       const animate=!reduceMotion&&(!raster||sameSize&&sameStyle);
       raster=this.contourRaster={signature,appearance,size,cam:{zoom,tx,ty},current:canvas,spare:raster?.current,
         previous:animate&&sameSize?raster?.current:null,since:animate?now:now-220,nonempty:!!layers.length};
       catalogDirty=true;
     }
-    x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,W,H);x.save();if(this.canvas.style.transform)this.canvas.style.transform='';  // drawn for this camera: crisp again
-    for(const o of [...(this.obstacles||[]),...(this.catalogRect?[this.catalogRect]:[])]){
-      x.beginPath();x.rect(0,0,W,H);x.rect(o.x0,o.y0,o.x1-o.x0,o.y1-o.y0);x.clip('evenodd');
-    }
+    if(this.canvas.style.transform)this.canvas.style.transform='';
+    this.paintWater(W,H,now);
     const progress=reduceMotion?1:Math.min(1,(now-raster.since)/220);
-    if(raster.previous&&progress<1){x.globalAlpha=1-progress;x.drawImage(raster.previous,0,0,W,H);}
-    if(progress&&raster.nonempty){x.globalAlpha=progress;x.drawImage(raster.current,0,0,W,H);}
-    x.globalAlpha=1;x.restore();
-    if(progress===1)raster.previous=null;
     if(catalogDirty||this.catalogContours!==this.contours){this.catalogTabStop();this.catalogContours=this.contours;}
     // Hover/focus is immediate; only geometry changes receive a short, bounded fade.
     if(progress<1&&(raster.previous||raster.nonempty)&&!this.contourFadeRaf&&!this.paused&&!document.hidden){
@@ -1325,7 +1419,7 @@ class VennSea extends PhotoSea {
     const el = document.elementFromPoint(e.clientX, e.clientY);
     return el && !el.closest(".ps-item") && !el.closest('.vn-lasso-tag') ? el.closest("[data-bin]") : null;
   }
-  // A print takes priority over its group's lasso: drop on paper to stack, or in the surrounding water to file.
+  // Soft pigment extends beyond the gathering; its occupied core files drops. Paper keeps priority for stacking.
   // Filter keeps its own throwing gesture; comparison screens keep their own choices.
   target(x,y,excluded=[]){
     if(this.cameraOn&&this.el.id==='world'&&!this.outcomeFlow&&!this.el.classList.contains('filter-world')){
@@ -1337,7 +1431,8 @@ class VennSea extends PhotoSea {
     const inside=(path,px,py)=>{let hit=false;for(let i=0,j=path.length-1;i<path.length;j=i++){const [xi,yi]=path[i],[xj,yj]=path[j];if((yi>py)!==(yj>py)&&px<(xj-xi)*(py-yi)/(yj-yi)+xi)hit=!hit;}return hit;};
     for(const [key,shape] of this.contours||[]){
       if(!/^g\d+$/.test(key)||this.lassos.get(key)?.kind!=='group')continue;
-      for(const path of shape?.paths||[])if(path.length>2&&inside(path,x,y))return {kind:'group',id:Number(key.slice(1))};
+      let hit=false;for(const path of shape?.paths||[])if(path.length>2&&inside(path,x,y))hit=!hit;
+      if(hit)return {kind:'group',id:Number(key.slice(1))};
     }
     return {kind:'sea'};
   }
