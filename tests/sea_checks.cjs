@@ -4,6 +4,47 @@ const {SeaField,seaSimilarity,seaForce}=require('../matcher/static/sea-worker.js
 // These checks exercise the engine's mechanics under one known tuning; the shipped defaults (sea-tuning.js) are the owner's feel.
 const MECHANICS={...require('../matcher/static/sea-tuning.js').seaTuningDefaults(),speedCap:2.2,drag:.1,calmDrag:.18,repel:.8,groupCohesion:1,groupSeparation:.5,homeMax:.3,margin:.06,settleMove:.06,domLimit:160,hurry:0};
 const field=(items)=>{const f=new SeaField();f.set({generation:1,tuning:MECHANICS,width:1200,height:750,items:items.map((it,i)=>({id:i+1,x:100+(i*317%1000),y:100+(i*179%550),baseSize:35,...it}))});return f;};
+test('an old worker reply cannot put newly discovered photos back to sleep',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype');
+  let kicked=false;
+  const sea=Object.assign(Object.create(proto),{alive:true,generation:2,busy:true,settled:false,kick(){kicked=true;}});
+  sea.receive({generation:1,settled:true});
+  assert.equal(sea.settled,false);assert.equal(sea.busy,false);assert(kicked,'The current generation still needs a worker step');
+});
+test('streaming discoveries wake their photos while unrelated prints finish settling',()=>{
+  const f=new SeaField(),tuning={...require('../matcher/static/sea-tuning.js').seaTuningDefaults(),spread:0};
+  const items=Array.from({length:6},(_,i)=>({id:i+1,x:150+i*170,y:350,baseSize:24,tags:[`subject:${i}`]}));
+  const send=generation=>f.set({generation,width:1200,height:750,calm:true,tuning,items});
+  send(1);for(let frame=0;frame<400;frame++)f.step({time:frame*16.67});
+  assert(f.settled,'An analysis sea can finish settling');
+  const before=f.items.map(it=>[it.x,it.y]),ages=f.items.map(it=>it.age);
+  for(let frame=400;frame<520;frame++){
+    if(frame%6===0){items[0]={...items[0],tags:[...items[0].tags,`finding:${frame}`]};send(frame);}
+    f.step({time:frame*16.67});
+    for(let i=1;i<f.items.length;i++){
+      assert(f.items[i].age>=ages[i],'A tag arriving elsewhere must not restart this print');
+      assert.deepEqual([f.items[i].x,f.items[i].y],before[i],'Unrelated settled photos keep their position');
+    }
+  }
+  assert(f.byId.get(1).tags.some(t=>t.startsWith('finding:')),'New findings are still applied');
+  const positions=f.items.map(it=>[it.x,it.y]);send(521);
+  assert.deepEqual(f.items.map(it=>[it.x,it.y]),positions,'An identical feed resend cannot move photos');
+  items[1]={...items[1],visual:{colorfulness:.9,brightness:.8}};send(522);
+  assert.equal(f.byId.get(2).age,0,'Changed visual evidence wakes its photo');
+  assert.deepEqual(f.items.map(it=>[it.x,it.y]),positions,'A changed home is approached without teleporting');
+});
+test('an arriving photo can shrink the shared footprint without waking resting prints',()=>{
+  const f=new SeaField(),items=[{id:1,x:180,y:200,baseSize:24,tags:[]},{id:2,x:950,y:550,baseSize:24,tags:[]}];
+  const send=generation=>f.set({generation,width:1200,height:750,calm:true,items});
+  send(1);for(let n=0;n<400;n++)f.step({time:n*16.67});assert(f.settled);
+  const before=f.items.map(it=>[it.x,it.y,it.age]);
+  for(const it of items)it.baseSize-=.01;
+  items.push({id:3,x:900,y:100,baseSize:23.99,tags:[]});send(2);
+  assert.deepEqual(f.items.slice(0,2).map(it=>[it.x,it.y,it.age]),before,'A smaller footprint does not restart old motion');
+  assert.equal(f.byId.get(3).age,0,'The arriving photo still gets to settle');
+  for(let n=400;n<500;n++)f.step({time:n*16.67});
+  assert.deepEqual(f.items.slice(0,2).map(it=>[it.x,it.y]),before.map(p=>p.slice(0,2)));
+});
 test('atlas cells retain the photo aspect independently of their square texture slots',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype');
   for(const dims of [[400,200],[200,400],[300,300],[400,25]]){
@@ -20,6 +61,9 @@ test('the click camera destination loads originals despite fractional card sizes
     sea.camera.zoom*=.98;assert(!sea.fullSize(it),'Smaller prints still stop at previews');
     sea.camera.zoom*=3;assert(sea.fullSize(it),'An enlarged part of a print still shows its original');
   }
+  const sea=Object.assign(Object.create(proto),{el:{clientHeight:900},s:72,camera:{zoom:5}}),it={size:96,renderScale:1};
+  assert.equal(sea.imageSize(it),480);assert(!sea.fullSize(it));
+  it.renderScale=1.15;assert.equal(sea.imageSize(it),552);assert(sea.fullSize(it),'Hover enlargement counts toward original detail');
 });
 test('camera pans capture the pointer and release it when a two-finger pinch takes over',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),classes=new Set(),captured=new Set();

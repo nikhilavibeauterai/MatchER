@@ -56,21 +56,29 @@ class SeaField {
     const tuningKey=message.tuning?JSON.stringify(message.tuning):'';
     if(tuningKey!==this.tuningKey){this.tuningKey=tuningKey;changed=true;if(message.tuning)Object.assign(this.T,message.tuning);}
     if(this.resize(message,false))changed=true;
-    const old=this.byId;this.byId=new Map();const vocabulary=new Map();let semanticChange=old.size!==message.items.length;
+    const old=this.byId;this.byId=new Map();const vocabulary=new Map(),touched=new Set();let semanticChange=old.size!==message.items.length;
     this.items=message.items.map(x=>{
       const previous=old.get(x.id), it={...x,fresh:!previous,cluster:previous?.cluster,x:previous?.x??x.x,y:previous?.y??x.y,vx:previous?.vx||0,vy:previous?.vy||0,age:previous?.age||0,heat:previous?.heat||0,push:previous?.push||0,shoved:previous?.shoved||0,home:previous?.home,placed:previous?.placed};
-      changed||=!previous||previous.baseSize!==x.baseSize||previous.label!==x.label||!seaSameVisual(previous.visual,x.visual);
+      // New arrivals shrink the common footprint slightly. That creates room without waking the whole sea.
+      if(!previous||x.baseSize>previous.baseSize+.5||previous.label!==x.label||!seaSameVisual(previous.visual,x.visual))touched.add(it.id);
       // Only a saved, numeric group is a deliberate team. Categories, set-aside and automatic shores are not.
       it.assignedGroup=typeof x.label==='string'&&/^g\d+$/.test(x.label)?x.label:null;
       it.tags=[...new Set(x.tags)].sort();
-      semanticChange||=!previous||it.tags.length!==previous.tags.length||it.tags.some((tag,i)=>tag!==previous.tags[i]);
+      if(!previous||it.tags.length!==previous.tags.length||it.tags.some((tag,i)=>tag!==previous.tags[i])){semanticChange=true;touched.add(it.id);}
       it.vector=it.tags.map(t=>{if(!vocabulary.has(t))vocabulary.set(t,vocabulary.size);return vocabulary.get(t);}).sort((a,b)=>a-b);
       this.byId.set(it.id,it);return it;
     });
     // A moving panel or Filter outcome changes the water, not the meaning of every photo.
     this.clusterDirty||=semanticChange;this.membershipDirty=true;
     const focusKey=JSON.stringify(message.focus||{});if(focusKey!==this.focusKey){this.focusKey=focusKey;changed=true;}
-    const homesMoved=this.visualHomes();if(homesMoved||semanticChange||changed)this.wake(homesMoved?'homes':semanticChange?'tags':'set');
+    const homesMoved=this.visualHomes();
+    if(changed||!this.calm){if(homesMoved||semanticChange||changed)this.wake(homesMoved?'homes':semanticChange?'tags':'set');}
+    else for(const it of this.items){
+      const was=old.get(it.id)?.home,now=it.home;
+      // Streaming a tag must not restart every resting photo's cooling clock. Only changed prints and homes wake;
+      // nearby contacts make room through the ordinary local shove.
+      if(touched.has(it.id)||!!was!==!!now||was&&now&&(Math.abs(was.x-now.x)>.5||Math.abs(was.y-now.y)>.5))this.wakeItem(it);
+    }
     // A calm sea shows the macro order at once: a new print starts at its home and only its neighbours adjust it.
     if(this.calm)for(const it of this.items)if(it.fresh&&it.home){it.x=it.home.x;it.y=it.home.y;it.vx=it.vy=0;}
     this.focus(message.focus||{},false);

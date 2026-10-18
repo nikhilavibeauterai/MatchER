@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------- the photo sea: pictures floating into order
 // Photo interaction and rendering live here; the worker owns motion and contour geometry.
 class PhotoSea {
-  constructor(el, { onDrop, onSelect } = {}) {
+  constructor(el, { onDrop, onSelect, calm = el.id === 'world' } = {}) {
     this.el = el;
-    this.onDrop = onDrop; this.onSelect = onSelect;
+    this.onDrop = onDrop; this.onSelect = onSelect; this.calm = calm;
     this.items = new Map();
     this.moving = [];
     // Tunable parameters (sea-tuning.js), with any values a developer-panel session saved in this browser.
@@ -30,7 +30,7 @@ class PhotoSea {
     this.ro = new ResizeObserver(() => this.layout());
     this.ro.observe(el);
   }
-  destroy() { this.alive = false;for(const it of this.items.values())this.cancelImage(it);this.events.abort(); this.ro.disconnect(); cancelAnimationFrame(this.raf); }
+  destroy() { this.alive = false;this.resumeCards();for(const it of this.items.values())this.cancelImage(it);this.events.abort(); this.ro.disconnect(); cancelAnimationFrame(this.raf); }
   local(e) { const r = this.el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
   toWorld(sx,sy){const c=this.camera;return [(sx-c.tx)/c.zoom,(sy-c.ty)/c.zoom];}
   toScreen(x,y){const c=this.camera;return [x*c.zoom+c.tx,y*c.zoom+c.ty];}
@@ -51,7 +51,8 @@ class PhotoSea {
   frameImage(it){
     if(this.el.id!=='world')return;
     const img=it.el.querySelector('.pile-cover');if(!img?.naturalWidth)return;
-    const old=img.getAnimations().find(a=>a.animationName==='cardwobble'),time=old?.currentTime;
+    const old=img.getAnimations().find(a=>a.animationName==='cardwobble'),pose=this.stillCards?.get(img),time=old?.currentTime??pose?.time;
+    if(pose)this.stillCards.delete(img);  // its saved phase passes to the paper when the bare image is wrapped
     it.el.dataset.photo=it.photo;Cards.focus(it.el);
     const paper=it.el.querySelector(':scope > .paper');
     if(time!=null){const motion=paper.getAnimations().find(a=>a.animationName==='cardwobble');if(motion)motion.currentTime=time;}
@@ -63,6 +64,28 @@ class PhotoSea {
     framePhoto(it.el,{dims,box:it.box},
       {crop:edits.crop??S.crop,rotate:edits.rotate||0,enhance:edits.enhance??S.filter,knobs:edits.look?knobsOf(edits.look):null});
   }
+  // A paused transform animation can retain a thumbnail-sized compositor surface while the original decodes.
+  // Keep its exact angle as ordinary styling during deep zoom, then resume the wobble at the same instant.
+  stillCard(it){
+    for(const card of this.stillCards?.keys()||[])if(!card.isConnected)this.stillCards.delete(card);
+    for(const motion of it.el.getAnimations({subtree:true})){
+      if(motion.animationName!=='cardwobble')continue;
+      const card=motion.effect?.target;if(!card)continue;
+      this.stillCards||=new Map();if(this.stillCards.has(card))continue;
+      const angle=getComputedStyle(card).rotate;
+      this.stillCards.set(card,{item:it,name:card.style.animationName,rotate:card.style.rotate,time:motion.currentTime});
+      card.style.animationName='none';card.style.rotate=angle;
+    }
+  }
+  resumeCards(keep=false){
+    for(const [card,pose]of this.stillCards||[]){
+      if(keep&&card.isConnected&&(this.deep||this.cameraOn&&this.fullSize(pose.item)))continue;
+      card.style.animationName=pose.name;card.style.rotate=pose.rotate;
+      this.stillCards.delete(card);
+      if(!card.isConnected)continue;
+      const motion=card.getAnimations().find(a=>a.animationName==='cardwobble');if(motion&&pose.time!=null)motion.currentTime=pose.time;
+    }
+  }
   // Keep the atlas print visible until its replacement has decoded. A slow or failed preview must not leave a hole.
   watchImage(it){
     const img=it.el.querySelector('.pile-cover');if(!img)return;
@@ -71,7 +94,7 @@ class PhotoSea {
     const pending=on=>{if(!valid())return;it.imagePending=on;it.el.classList.toggle('image-pending',on);this.densityDirty=this.spritesDirty=true;this.paintSoon?.();this.kick();
       if(!on&&this.el.id==='world'&&this.cameraOn&&this.fullSize(it))window.dispatchEvent(new Event('sea-image-ready'));};
     const ready=()=>{const source=img.currentSrc||img.src;img.decode().then(()=>{
-      if(valid()&&(img.currentSrc||img.src)===source&&img.naturalWidth){this.frameImage(it);pending(false);}
+      if(valid()&&(img.currentSrc||img.src)===source&&img.naturalWidth){this.frameImage(it);if(this.deep||this.cameraOn&&this.fullSize(it))this.stillCard(it);pending(false);}
     }).catch(()=>{});};
     img.addEventListener('load',ready);img.addEventListener('error',()=>pending(true));
     it.imagePending=true;it.el.classList.add('image-pending');
@@ -80,7 +103,11 @@ class PhotoSea {
   cancelImage(it){clearTimeout(it.imageRetry);it.imageRetry=null;if(it.imageRequest)it.imageRequest.img.src='';it.imageRequest=null;it.wantedImage=null;}
   requestImage(it,source,attempt=0){
     const img=it.el.querySelector('.pile-cover');if(!img)return;
-    if(it.wantedImage!==source){clearTimeout(it.imageRetry);it.imageRetry=null;it.wantedImage=source;}
+    if(it.wantedImage!==source){
+      clearTimeout(it.imageRetry);it.imageRetry=null;it.wantedImage=source;
+      // A slow original or obsolete mip must not block the resolution the camera needs now.
+      if(it.imageRequest&&it.imageRequest.source!==source){it.imageRequest.img.src='';it.imageRequest=null;}
+    }
     if(it.imageRequest||it.imageRetry||img.getAttribute('src')===source&&(!img.complete||img.naturalWidth))return;
     // The visible picture changes only after decoding. A failed original must not replace a good preview with
     // an atlas cell, and rapid camera changes share one pending image instead of decoding each intermediate size.
@@ -120,8 +147,9 @@ class PhotoSea {
     this.densityDirty=true;this.paintSoon();
     // Zoomed in until one print fills the view, the sea is a picture: physics and wobble stop, the chrome hides
     // (the wheel and a drag still work), everything returns on the way out.
-    const deep=z>=3&&this.el.id==='world'&&this.oneInView(W,H);
-    if(deep!==!!this.deep){this.deep=deep;document.body.classList.toggle('sea-deep',deep);this.el.dataset.deep=deep?'1':'';if(deep)this.deepSource();else this.kick();}
+    const deep=z>=3&&this.cameraOn&&this.oneInView(W,H);
+    if(deep!==!!this.deep){this.deep=deep;if(this.el.id==='world')document.body.classList.toggle('sea-deep',deep);this.el.dataset.deep=deep?'1':'';
+      if(deep){for(const it of this.moving)this.stillCard(it);this.deepSource();}else{this.resumeCards(true);this.kick();}}
     this.worker?.postMessage({kind:'view',rect:z===1?null:{x0:-c.tx/z,y0:-c.ty/z,x1:(W-c.tx)/z,y1:(H-c.ty)/z}});  // physics only for what is on screen
     window.dispatchEvent(new CustomEvent('sea-camera',{detail:{sea:this,zoom:z}}));this.kick();
   }
@@ -152,7 +180,8 @@ class PhotoSea {
   }
   // A print whose card fills four fifths of the screen's height or more shows the original file (the owner's rule);
   // at most a couple of prints can at once, so the originals stay bounded.
-  fullSize(it){return (it.size||this.s)*4/3*this.camera.zoom>=.8*this.el.clientHeight-.5;}  // tolerate subpixel rounding at the click's exact 80% destination
+  imageSize(it){return (it.size||this.s)*this.camera.zoom*(it.renderScale||1);}
+  fullSize(it){return this.imageSize(it)*4/3>=.8*this.el.clientHeight-.5;}  // tolerate subpixel rounding at the click's exact 80% destination
   // Deep in one print the physics tick (which refreshes a live print's picture) stops, so that print, promoted if
   // it was a sprite, is given its original here.
   deepSource(){
@@ -160,7 +189,7 @@ class PhotoSea {
     for(const it of this.items.values()){
       if(it.take||!this.inView(it,x0,y0,x1,y1,0))continue;
       if(it.density)this.promote(it.id,false);
-      this.requestImage(it,M(it.photo,(it.size||this.s)*c.zoom,this.fullSize(it)));
+      this.requestImage(it,M(it.photo,this.imageSize(it),this.fullSize(it)));
       return;
     }
   }
@@ -231,8 +260,12 @@ class PhotoSea {
       else if(!want&&!it.density&&!keep(it)){it.density=true;this.cancelImage(it);this.smallPreview(it);it.el.replaceChildren();it.el.remove();changed=true;}
       // A live print on screen carries the pyramid level its size needs, both ways as the camera moves; off screen
       // it keeps what it has. One filling four fifths of the screen gets the original file.
-      if(!it.density&&this.inView(it,x0,y0,x1,y1,pad))this.requestImage(it,M(it.photo,(it.size||this.s)*c.zoom,this.fullSize(it)));
+      if(!it.density&&this.inView(it,x0,y0,x1,y1,pad)){
+        if(this.fullSize(it))this.stillCard(it);
+        this.requestImage(it,M(it.photo,this.imageSize(it),this.fullSize(it)));
+      }
     }
+    this.resumeCards(true);
     if(changed){this.moving=[...this.items.values()].filter(it=>!it.density);this.densityDirty=this.spritesDirty=true;this.el.dataset.density=this.items.size-this.moving.length;this.presentation?.follow();this.kick();}
     if(more)this.scheduleCull(force);
   }
@@ -288,8 +321,8 @@ class PhotoSea {
       if(d.moving)this.released?.(d.items);
       this.mark(null);
       d.items.forEach((o) => o.el.classList.remove("dragging"));
-      // On the map a click zooms to the print (a double-click grabs it); elsewhere a click selects it.
-      if (!d.moving) { if (this.el.id === 'world' && this.cameraOn) this.zoomToPrint(it); else if (this.onSelect) this.onSelect(it, ev); return; }
+      // An explorable sea brings a clicked print closer; other presentations keep their selection action.
+      if (!d.moving) { if (this.cameraOn) this.zoomToPrint(it); else if (this.onSelect) this.onSelect(it, ev); return; }
       $$(".bin.hot").forEach((b) => b.classList.remove("hot"));
       if (bin) { if (this.onDrop) this.onDrop(d.items.map((o) => o.id), { kind: "bin", id: bin.dataset.bin }); this.kick(); return; }
       if (t.kind === "sea") d.items.forEach((o) => { o.hx = ux + (Math.random() - 0.5) * this.s; o.hy = uy + (Math.random() - 0.5) * this.s; });
@@ -462,11 +495,12 @@ class VennSea extends PhotoSea {
     this.wake=()=>{if(!document.hidden&&!this.paused)this.kick();};document.addEventListener('visibilitychange',this.wake);
     // The World lets clicks through to the game. Only a thumbnail in clear water captures a pointer.
     this.proxyPointer=e=>{
-      if(this.el.id!=='world'||this.paused)return;
+      const world=this.el.id==='world',inside=this.el.contains(e.target);
+      if(this.paused||!world&&!inside&&!this.pan&&!this.touches.has(e.pointerId))return;
       if(e.type==='pointerup'||e.type==='pointercancel'){this.pinch(e);this.panEnd(e);return;}
       if(this.pinch(e))return;
       if(e.type==='pointermove'&&this.panMove(e))return;
-      if(this.el.contains(e.target))return;
+      if(inside){if(!world&&this.cameraOn&&e.type==='pointerdown'&&!this.drag&&!this.uiTarget(e.target))this.panStart(e);return;}
       if(e.target.closest('button,a,input,select,textarea,dialog,.side,.tile,.pop-card,.screen-head,.screen-bar,.screen-rail,.vn-catalog,[data-solid]'))return;
       const [x,y]=this.localWorld(e);if((this.obstacles||[]).some(o=>x>o.x0&&x<o.x1&&y>o.y0&&y<o.y1))return;
       const near=e.type==='pointerdown'&&!e.button?this.smallAt(x,y):null;this.pointer(e);
@@ -479,10 +513,10 @@ class VennSea extends PhotoSea {
     document.addEventListener('pointerup',this.proxyPointer);document.addEventListener('pointercancel',this.proxyPointer);
     // The wheel zooms about the pointer; a double-click on open water brings the whole sea back into view.
     this.wheelZoom=e=>{
-      if(this.el.id!=='world'||!this.cameraOn||this.paused||this.uiTarget(e.target,true))return;
+      if(!this.cameraOn||this.paused||this.el.id!=='world'&&!this.el.contains(e.target)||this.uiTarget(e.target,true))return;
       e.preventDefault();const r=this.el.getBoundingClientRect();this.zoomAt(Math.exp(-e.deltaY*this.tuning.wheelSpeed),e.clientX-r.left,e.clientY-r.top);
     };
-    this.doubleReset=e=>{if(this.el.id!=='world'||!this.cameraOn)return;
+    this.doubleReset=e=>{if(!this.cameraOn||this.el.id!=='world'&&!this.el.contains(e.target))return;
       const el=e.target.closest('.ps-item'),it=el&&this.items.get(Number(el.dataset.id));
       // A double-click on a print grabs it; on an over-zoomed print (which a drag pans, not rearranges) or on open
       // water it brings the whole sea back into view.
@@ -622,7 +656,7 @@ class VennSea extends PhotoSea {
       if(this.gpu===undefined)this.gpu=this.initSprites();
       this.el.addEventListener("pointerdown", (e) => {
         if (e.target !== this.el && e.target!==this.densityCanvas && e.target!==this.spriteCanvas || e.button) return;
-        const [x, y] = this.local(e);
+        const [x, y] = this.localWorld(e);
         const near=this.smallAt(x,y);
         if (near) { this.promote(near.id); this.down(e,near.el); }
       }, {signal:this.events.signal});
@@ -898,6 +932,7 @@ class VennSea extends PhotoSea {
     const before=this.items.get(this.held);if(before&&!this.drag?.members.has(before))before.el.classList.remove('pinned');
     this.held=id;
     const it=this.items.get(id);if(it)this.catchItem(it);
+    if(this.cameraOn)this.scheduleCull(true);
   }
   paintItem(it,instant=false){
     if(instant||!it.transform){
@@ -957,8 +992,8 @@ class VennSea extends PhotoSea {
     this.worker.postMessage({kind:'set',generation:this.generation,items:this.bodies,focus:this.focusState(),tuning:this.tuning,...this.bounds()});
     this.ready=true;this.kick();
   }
-  // The world is calm: prints settle and rest. The analysis sea keeps drifting while discoveries arrive.
-  bounds(){return {width:this.width||this.el.clientWidth,height:this.height||this.el.clientHeight,water:this.water,calm:this.el.id==='world',margin:this.marginEff??this.tuning?.margin,obstacles:this.el.id==='world'?[]:[...(this.obstacles||[]),...(this.catalogRect?[this.catalogRect]:[])]};}
+  // Analysis discoveries use the same settling as the world; other embedded seas can choose their motion.
+  bounds(){return {width:this.width||this.el.clientWidth,height:this.height||this.el.clientHeight,water:this.water,calm:this.calm,margin:this.marginEff??this.tuning?.margin,obstacles:this.el.id==='world'?[]:[...(this.obstacles||[]),...(this.catalogRect?[this.catalogRect]:[])]};}
   marginFor(count,area){const T=this.tuning,base=T.margin||0,needed=count*(2*(T.gap||.74)*7)**2/.7;return Math.max(.02,Math.min(base,(1-Math.sqrt(Math.min(1,needed/Math.max(1,area))))/2));}
   labelOf(it){const actual=it.group!=null?`g${it.group}`:null;return actual&&this.lassos.has(actual)&&!String(it.group).startsWith('cup:')?actual:it.cluster||null;}
   stir(){this.kick();}
@@ -1056,8 +1091,9 @@ class VennSea extends PhotoSea {
     });}
   }
   receive(m){
-    this.busy=false;this.settled=!!m.settled;
+    this.busy=false;
     if(!this.alive||m.generation!==this.generation){this.kick();return;}
+    this.settled=!!m.settled;
     this.buffer=m.positions.buffer;this.workerMs=m.ms;
     const now=performance.now(),gap=this.arrivedAt?now-this.arrivedAt:50;this.arrivedAt=now;
     this.glideMs=Math.max(35,Math.min(100,(this.glideMs||50)*.8+Math.min(gap,150)*.2));
@@ -1088,7 +1124,7 @@ class VennSea extends PhotoSea {
     }
     const {zoom=1,tx=0,ty=0}=this.camera||{},x0=-tx/zoom,y0=-ty/zoom,x1=x0+this.width/zoom,y1=y0+this.height/zoom;
     for(const it of this.moving){
-      const size=(it.size||this.s)*zoom;this.paintItem(it);
+      this.paintItem(it);const size=this.imageSize(it);
       // A print whose size and focus have not changed keeps its classes and picture: a thousand live prints must
       // not cost a thousand lookups a frame while only the camera moves.
       if(it.shownSize===size&&it.shownFocus===!!it.focused)continue;

@@ -9,7 +9,7 @@ var SEA_TUNING = [
   { key: "homeRate", group: "macro", label: "Home pull per px", hint: "acceleration toward home per pixel of distance", min: 0, max: 0.01, step: 0.0002, value: 0.003 },
   { key: "homeMax", group: "macro", label: "Home pull cap", min: 0, max: 0.8, step: 0.01, value: 0.57 },
   // micro: the boid mechanics between neighbours
-  { key: "wander", group: "micro", label: "Wander", hint: "random drift in the calm world (the analysis sea keeps its own)", min: 0, max: 0.1, step: 0.005, value: 0 },
+  { key: "wander", group: "micro", label: "Wander", hint: "random drift while a photo settles; 0 lets it rest without wandering", min: 0, max: 0.1, step: 0.005, value: 0 },
   { key: "reachFactor", group: "micro", label: "Reach × print size", hint: "how far a print's tags act, as a multiple of the largest print", min: 1, max: 8, step: 0.25, value: 4 },
   { key: "reachMin", group: "micro", label: "Reach min px", min: 10, max: 200, step: 5, value: 60 },
   { key: "reachMax", group: "micro", label: "Reach max px", min: 40, max: 400, step: 5, value: 140 },

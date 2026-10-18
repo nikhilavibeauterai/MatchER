@@ -39,7 +39,7 @@ const COUNT=1879,FIRST=50000;
   });
   await page.route('**/api/analysis/feed?*',r=>{
     const q=new URL(r.request().url()).searchParams,feed={read,cats:cats.slice(0,available()),seen:[],identity:[],org:[]},body={};
-    for(const [key,rows]of Object.entries(feed)){body[key]=rows.slice(Number(q.get(key)||0));body[`${key}_n`]=rows.length;}
+    for(const [key,rows]of Object.entries(feed)){const since=Number(q.get(key)||0);body[key]=rows.slice(since,since+500);body[`${key}_n`]=rows.length;}
     return r.fulfill({json:body});
   });
   await page.evaluate(()=>{
@@ -95,7 +95,11 @@ const COUNT=1879,FIRST=50000;
       const half=(it.size||sea.s)*.5;
       return it.x+half>o.x0+1&&it.x-half<o.x1-1&&it.y+half>o.y0+1&&it.y-half<o.y1-1;
     })).map(it=>it.id);
-    const canvas=sea.densityCanvas,pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+    const canvas=sea.gpu?sea.spriteCanvas:sea.densityCanvas;
+    let pixels;
+    if(sea.gpu){sea.drawSprites(sea.width,sea.height);pixels=new Uint8Array(canvas.width*canvas.height*4);
+      const gl=sea.gpu.gl;gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);}
+    else pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
     let painted=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])painted++;
     return {photos:all.length,bodies:sea.bodies.length,dom:sea.moving.length,painted,
       left:items.filter(it=>it.x<bounds.width/2-30).length/items.length,
@@ -123,12 +127,68 @@ const COUNT=1879,FIRST=50000;
   assert.equal(processing.floatingLabels,0,'New group labels join the shelf immediately, without flashing over the photos');
   assert(processing.clustering.length>0&&processing.clustering.length<=15,JSON.stringify(processing));
   assert(processing.clustering.every(c=>Number.isFinite(c.ms)&&c.ms>=0),'Full worker clustering timings are reported');
+  await page.waitForFunction(()=>analysisSeaReplay.sea.settled&&!document.querySelector('.an-grab'),null,{timeout:45000});
+  const rest=await page.evaluate(()=>[...analysisSeaReplay.sea.items.values()].map(it=>[it.id,it.x,it.y]));
   await page.waitForTimeout(1200);
   const moving=await page.evaluate(previous=>previous.filter(([id,x,y])=>{
-    const it=analysisSeaReplay.sea.items.get(id);return Math.hypot(it.x-x,it.y-y)>1;
-  }).length,settled.positions);
-  assert(moving>COUNT*.15,'The analysis sea keeps roaming while discoveries arrive');
+    const it=analysisSeaReplay.sea.items.get(id);return Math.hypot(it.x-x,it.y-y)>.01;
+  }).length,rest);
+  assert.equal(moving,0,'Photos settle between discoveries instead of vibrating indefinitely');
+  const water=()=>page.evaluate(()=>{
+    const sea=analysisSeaReplay.sea,r=sea.el.getBoundingClientRect();
+    for(let y=r.top+80;y<r.bottom-60;y+=23)for(let x=r.left+80;x<r.right-80;x+=29){
+      const el=document.elementFromPoint(x,y),[wx,wy]=sea.toWorld(x-r.left,y-r.top);
+      if(sea.el.contains(el)&&!sea.uiTarget(el)&&!sea.photoAt(wx,wy))return {x,y,under:[wx,wy]};
+    }
+  });
+  const point=await water();assert(point,'Analysis leaves open water for camera gestures');
+  await page.mouse.move(point.x,point.y);await page.mouse.wheel(0,-600);await page.waitForTimeout(300);
+  const zoomed=await page.evaluate(point=>{
+    const sea=analysisSeaReplay.sea,r=sea.el.getBoundingClientRect();
+    return {...sea.camera,under:sea.toWorld(point.x-r.left,point.y-r.top),worldZoom:World.sea.camera.zoom};
+  },point);
+  assert(zoomed.zoom>1.5,'The real wheel zooms the analysis sea');assert.equal(zoomed.worldZoom,1,'The hidden world does not take the gesture');
+  assert(Math.hypot(zoomed.under[0]-point.under[0],zoomed.under[1]-point.under[1])<2,'Zoom stays anchored to the pointer');
+  const pan=await water();assert(pan);
+  await page.mouse.move(pan.x,pan.y);await page.mouse.down();await page.mouse.move(pan.x+100,pan.y+60,{steps:8});await page.mouse.up();
+  const panned=await page.evaluate(()=>({...analysisSeaReplay.sea.camera,panning:document.body.classList.contains('sea-panning')}));
+  assert(Math.abs(panned.tx-zoomed.tx-100)<3&&Math.abs(panned.ty-zoomed.ty-60)<3&&!panned.panning,JSON.stringify({zoomed,panned}));
+  await page.mouse.move(100,40);await page.mouse.wheel(0,-600);await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(()=>analysisSeaReplay.sea.camera.zoom),panned.zoom,'The analysis header keeps its own wheel');
+  const reset=await water();assert(reset);await page.mouse.dblclick(reset.x,reset.y);await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(()=>analysisSeaReplay.sea.camera.zoom),1,'Double-clicking water fits the whole analysis sea');
+  const print=await page.evaluate(()=>{
+    const sea=analysisSeaReplay.sea,r=sea.el.getBoundingClientRect();
+    for(const it of sea.items.values()){
+      const x=r.left+it.x,y=r.top+it.y,el=document.elementFromPoint(x,y);
+      if(it.density&&sea.el.contains(el)&&!sea.uiTarget(el,true)&&sea.smallAt(it.x,it.y)?.id===it.id)return {id:it.id,x,y};
+    }
+  });
+  assert(print,'An atlas photo is reachable while analysis runs');
+  await page.mouse.click(print.x,print.y);await page.waitForTimeout(600);
+  const focused=await page.evaluate(id=>{
+    const sea=analysisSeaReplay.sea,it=sea.items.get(id),r=it.el.getBoundingClientRect();
+    return {zoom:sea.camera.zoom,live:!it.density,height:r.height,viewport:sea.el.clientHeight,spotlights:sea.el.querySelectorAll('.an-grab').length};
+  },print.id);
+  assert(focused.live&&focused.zoom>3&&focused.height>=focused.viewport*.79,JSON.stringify(focused));
+  assert.equal(focused.spotlights,0,'Automatic spotlights yield while the user inspects a photo');
+  await page.screenshot({path:OUT+'/A-analysis-zoomed.png'});
+  await page.mouse.wheel(0,10000);await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(()=>analysisSeaReplay.sea.camera.zoom),1,'The real wheel zooms back out during analysis');
   delete settled.positions;
+  await page.evaluate(()=>analysisSeaReplay.restore());
+  const writes=[];
+  page.on('request',request=>{if(request.method()==='POST'&&/\/api\/(library|rescan)$/.test(new URL(request.url()).pathname))writes.push(request.url());});
+  const reloadAt=Date.now();await page.reload();
+  await page.waitForFunction(count=>Number(document.querySelector('#an-sea')?.dataset.photos)===count,COUNT);
+  await page.waitForFunction(()=>document.querySelectorAll('#an-sea .vn-tags [data-tag],.analyzing > .vn-catalog [data-tag]').length>=27);
+  const refreshed=await page.evaluate(()=>({photos:Number(document.querySelector('#an-sea').dataset.photos),
+    phase:document.querySelector('#an-body').dataset.scene,label:document.querySelector('#an-label').textContent,
+    tags:document.querySelectorAll('.analyzing .vn-tags [data-tag]').length}));
+  refreshed.ms=Date.now()-reloadAt;
+  assert.equal(refreshed.photos,COUNT);assert.equal(refreshed.phase,'understanding');assert(refreshed.label.includes('1,879 / 1,879'));
+  assert.equal(refreshed.tags,27,'All earlier tags are restored immediately, without drip-replaying recognition');
+  assert.deepEqual(writes,[],'Refreshing must not start another scan');
   await page.setViewportSize({width:375,height:812});
   await page.evaluate(async()=>{await loadState();history.replaceState(null,'','#analyze');route();});
   await page.waitForSelector('.an-grab.open .an-grab-findings');await page.waitForTimeout(750);
@@ -143,6 +203,5 @@ const COUNT=1879,FIRST=50000;
   assert(phone.tiny.length>0&&phone.tiny.every(it=>it.border===0&&it.image>=it.size*.8),'Tiny photos must have room for their image, not an empty paper rim');
   phone.tinyPhotos=phone.tiny.length;delete phone.tiny;
   await page.screenshot({path:OUT+'/A-analysis-phone.png'});
-  await page.evaluate(()=>analysisSeaReplay.restore());
-  assert.deepEqual(problems,[]);console.log(JSON.stringify({processing,settled,moving,phone,problems}));await browser.close();
+  assert.deepEqual(problems,[]);console.log(JSON.stringify({processing,settled,moving,zoomed,panned,focused,refreshed,phone,problems}));await browser.close();
 })().catch(e=>{console.error('FAILED:',e.stack);process.exit(1);});

@@ -7,8 +7,10 @@ import signal
 import subprocess
 import sys
 import threading
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from matcher import analyze
@@ -81,7 +83,8 @@ def test_reading_continues_past_3200_and_persists_every_result(tmp_path, monkeyp
         assert all(row[5] == [800, 600] for row in analyzer.feed["read"])
         assert store.one("SELECT COUNT(*) AS n FROM photos WHERE status='analyzed'")["n"] == 3299
         analyzer._phase1()
-        assert analyzer.progress["done"] == analyzer.progress["total"] == 0
+        assert analyzer.progress["done"] == analyzer.progress["total"] == 3299
+        assert len(analyzer.feed["read"]) == 3299
         assert len(pools) == 2, "Resuming a completed read should not launch any decoder workers"
     finally:
         store.close()
@@ -125,11 +128,54 @@ def test_partial_results_survive_interruption_and_resume(tmp_path, monkeypatch, 
             analyzer._phase1()
         assert store.one("SELECT COUNT(*) AS n FROM photos WHERE status='analyzed'")["n"] == 7
         monkeypatch.setattr(analyze, "_process_results", resumed)
-        analyzer.cancel.clear()
+        analyzer = analyze.Analyzer(store, tmp_path / "source", tmp_path / "work", workers=2)
         analyzer._phase1()
         assert seen == list(range(8, 22))
-        assert analyzer.progress["done"] == analyzer.progress["total"] == 14
+        assert analyzer.progress["start_done"] == 7
+        assert analyzer.progress["done"] == analyzer.progress["total"] == 21
+        assert len(analyzer.feed["read"]) == 21
         assert store.one("SELECT COUNT(*) AS n FROM photos WHERE status='new'")["n"] == 0
+    finally:
+        store.close()
+
+
+def test_resumed_embeddings_count_saved_work_without_loading_it_again(tmp_path, monkeypatch):
+    store = Store(tmp_path / "synthetic.db")
+    analyzer = analyze.Analyzer(store, tmp_path / "source", tmp_path / "work")
+    try:
+        with store.tx() as c:
+            c.executemany("INSERT INTO photos(id,rel,status,emb,recognized_tags) VALUES(?,?,'analyzed',?,?)",
+                          [(1, "one.nef", b"saved embedding", json.dumps({"dogs": .9})),
+                           (2, "two.nef", b"saved embedding", "{}")])
+        analyzer._phase1()
+        assert [row[0] for row in analyzer.feed["read"]] == [1, 2]
+        assert analyzer.feed["cats"][0][2] == [["🐶", "Dogs", .9, "dogs"]]
+        monkeypatch.setattr(analyzer, "_siglip", lambda: pytest.fail("Saved embeddings must not load a model again"))
+        analyzer._embed_full()
+        assert analyzer.progress["phase"] == "understanding"
+        assert analyzer.progress["start_done"] == analyzer.progress["done"] == analyzer.progress["total"] == 2
+    finally:
+        store.close()
+
+
+def test_embedding_resume_schedules_only_remaining_batches(tmp_path, monkeypatch):
+    store = Store(tmp_path / "synthetic.db")
+    analyzer = analyze.Analyzer(store, tmp_path / "source", tmp_path / "work")
+    batches = []
+    class Pool(ThreadPoolExecutor):
+        def submit(self, fn, chunk):
+            batches.append(len(chunk))
+            return super().submit(fn, chunk)
+    monkeypatch.setattr(analyze, "ThreadPoolExecutor", Pool)
+    monkeypatch.setattr(analyzer, "_siglip", lambda: SimpleNamespace(embed_images=lambda images: np.ones((len(images), 3))))
+    try:
+        with store.tx() as c:
+            c.executemany("INSERT INTO photos(id,rel,status) VALUES(?,?,'analyzed')", [(1, "one.nef"), (2, "two.nef")])
+        analyzer._embed([{"id": 1}, {"id": 2}], lambda _: np.zeros((3, 2, 2)), "emb", "understanding", completed=1000)
+        assert batches == [2], "Saved photos must not produce empty I/O tasks on resume"
+        assert analyzer.progress["start_done"] == 1000
+        assert analyzer.progress["done"] == analyzer.progress["total"] == 1002
+        assert all(row["emb"] is not None for row in store.q("SELECT emb FROM photos"))
     finally:
         store.close()
 

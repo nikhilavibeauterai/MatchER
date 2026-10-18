@@ -5,7 +5,13 @@ const {BASE,LINK,LIB,OUT}=process.env;
 (async()=>{
   const browser=await chromium.launch({headless:true}),page=await browser.newPage({viewport:{width:1440,height:900}});
   const problems=[];page.on('pageerror',e=>problems.push(e.message));
-  await page.goto(LINK);await page.fill('#path',LIB);await page.click('#use-path');
+  await page.goto(LINK);await page.fill('#path',LIB);
+  await page.evaluate(()=>{
+    const set=VennSea.prototype.setVenn;
+    VennSea.prototype.setVenn=function(...args){if(this.el.id==='an-sea')window.cleanAnalysisSea=this;return set.apply(this,args);};
+    window.restoreCleanSea=()=>{VennSea.prototype.setVenn=set;};
+  });
+  await page.click('#use-path');
   await page.waitForSelector('#an-body');let seen=false;
   for(let k=0;k<900&&!await page.locator('#an-go').isVisible();k++){
     const state=await page.evaluate(()=>{
@@ -17,27 +23,30 @@ const {BASE,LINK,LIB,OUT}=process.env;
     if(state.tags&&!seen){await page.screenshot({path:OUT+'/C-clean-analysis.png'});seen=true;}
     await page.waitForTimeout(150);
   }
-  assert(seen);await page.waitForSelector('#an-go');await page.click('#an-go');await page.waitForSelector('.journey');
-  await page.waitForFunction(()=>World.photos?.size===World.total&&!World.loading&&World.sea.bodies?.length>0);
-  const keys=await page.evaluate(()=>World.sea.bodies.find(b=>b.tags.length>=2).tags.slice(0,2));
+  assert(seen);await page.waitForSelector('#an-go');
+  await page.waitForFunction(()=>cleanAnalysisSea?.bodies?.length>0);
+  const keys=await page.evaluate(()=>cleanAnalysisSea.bodies.map(b=>b.tags.filter(t=>cleanAnalysisSea.circles.has(t))).find(tags=>tags.length>=2).slice(0,2));
   const first=page.locator(`.vn-tags [data-tag="${keys[0]}"]`),second=page.locator(`.vn-tags [data-tag="${keys[1]}"]`);
   await first.scrollIntoViewIfNeeded();const before=await first.boundingBox();await first.click();await page.waitForTimeout(450);const after=await first.boundingBox();
   assert(Math.abs(before.x-after.x)<2&&Math.abs(before.y-after.y)<2,JSON.stringify({before,after}));
   await second.click();await page.waitForTimeout(1000);
-  const focus=await page.evaluate(()=>({keys:[...World.sea.focusKeys],any:World.sea.focusAny,selected:[...World.sea.items.values()].filter(it=>it.selected).length,
-    mapHidden:getComputedStyle(document.querySelector('.screen-body')).opacity,primary:World.sea.moving.filter(it=>it.focused).length}));
-  assert.equal(focus.any,false);assert.equal(focus.keys.length,2);assert.equal(focus.selected,0);assert.equal(focus.mapHidden,'0');assert(focus.primary>0&&focus.primary<=12);
-  await page.screenshot({path:OUT+'/C-focus-world.png'});
+  const focus=await page.evaluate(()=>({keys:[...cleanAnalysisSea.focusKeys],any:cleanAnalysisSea.focusAny,selected:[...cleanAnalysisSea.items.values()].filter(it=>it.selected).length,
+    fieldOpacity:getComputedStyle(document.querySelector('.screen-body')).opacity,primary:cleanAnalysisSea.moving.filter(it=>it.focused).length}));
+  assert.equal(focus.any,false);assert.equal(focus.keys.length,2);assert.equal(focus.selected,0);assert.equal(focus.fieldOpacity,'1');assert(focus.primary>0&&focus.primary<=12);
+  await page.screenshot({path:OUT+'/C-focus-analysis.png'});
   await page.click('.vn-focus [data-clear-focus]');await page.waitForTimeout(350);
   assert.equal(await page.locator('.screen-body').evaluate(e=>getComputedStyle(e).opacity),'1');
   // Native Enter on a tag focuses it instead of advancing to another stage.
   await first.focus();await page.keyboard.press('Enter');await page.waitForTimeout(250);
-  assert.equal(new URL(page.url()).hash,'#home');assert(await first.getAttribute('aria-pressed')==='true');
+  assert.equal(new URL(page.url()).hash,'#analyze');assert(await first.getAttribute('aria-pressed')==='true');
   await page.click('.vn-focus [data-clear-focus]');
   await first.evaluate(e=>{const hidden=document.createElement('button');hidden.hidden=true;hidden.id='hidden-group-check';e.after(hidden);});
   await first.focus();await page.keyboard.press('ArrowRight');
   assert(await first.evaluate(e=>document.activeElement!==e&&!document.activeElement.closest('[hidden]')),'Arrow keys skip groups with no members');
   await page.evaluate(()=>document.querySelector('#hidden-group-check').remove());
+  await page.evaluate(()=>restoreCleanSea());
+  await page.click('#an-go');await page.waitForSelector('.journey');
+  await page.waitForFunction(()=>World.photos?.size===World.total&&!World.loading&&World.sea.bodies?.length>0);
   // Replay recognitions over an actual public preview. A long raw classifier vector must never become a scrolling readout.
   const state=await page.evaluate(()=>api('/api/state'));
   const id=await page.evaluate(()=>World.photos.values().next().value.id);

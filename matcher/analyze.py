@@ -291,7 +291,7 @@ class Analyzer:
         self._finished = False
         self.cancel.clear()
         self.started = time.time()
-        self.progress.update(phase="models", done=0, total=0, started=self.started, recent=[], error=None,
+        self.progress.update(phase="models", done=0, total=0, start_done=0, started=self.started, recent=[], error=None,
                              faces=0, smiles=0, blinks=0, recent_faces=[], cats={}, recent_cats=[], me=None,
                              found=None, recent_crops=[], org={}, listed=0, new=0)
         self.progress.pop("detail", None)
@@ -316,7 +316,7 @@ class Analyzer:
         return bool(self.thread and self.thread.is_alive() and not self._finished)
 
     def _set(self, phase: str, done: int = 0, total: int = 0) -> None:
-        self.progress.update(phase=phase, done=done, total=total, started=time.time())
+        self.progress.update(phase=phase, done=done, total=total, start_done=done, started=time.time())
 
     def _run(self) -> None:
         try:
@@ -414,13 +414,45 @@ class Analyzer:
 
     def _phase1(self) -> None:
         todo = self.store.q("SELECT id, rel FROM photos WHERE status='new' ORDER BY id")
-        total = len(todo)
-        self._set("reading", 0, total)
-        if not total:
+        # The saved reads are already done. Restore their presentation without decoding them again, so a server
+        # restart resumes the same library count and sea instead of appearing to begin a smaller scan at zero.
+        saved = self.store.q("SELECT id,width,height,luma,chroma,saturation,hue,category,recognized_tags,"
+                             "emb IS NOT NULL AS understood FROM photos WHERE status='analyzed' ORDER BY id")
+        faces: dict[int, list] = {}
+        for face in self.store.q("SELECT f.photo_id,f.x,f.y,f.w,f.h,f.smile,f.blink_l,f.blink_r FROM faces f "
+                                 "JOIN photos p ON p.id=f.photo_id WHERE p.status='analyzed' ORDER BY f.id"):
+            faces.setdefault(face["photo_id"], []).append(face)
+        reads, cats = [], []
+        self.progress.update(faces=0, smiles=0, blinks=0, recent_faces=[], recent=[])
+        from . import tags as tagmod
+        tmeta = {**tagmod.concept_meta(), **tagmod.FIXED}
+        for row in saved:
+            fs = faces.get(row["id"], [])
+            boxes = [[round(f[k] or 0, 3) for k in ("x", "y", "w", "h")] for f in fs[:6]]
+            smiles = sum((f["smile"] or 0) > .5 for f in fs)
+            blinks = sum(min(f["blink_l"] or 0, f["blink_r"] or 0) >= .55 for f in fs)
+            reads.append([row["id"], boxes, smiles, blinks,
+                          visual.descriptor(*(row[k] for k in ("luma", "chroma", "saturation", "hue"))),
+                          [row["width"], row["height"]]])
+            self.progress["faces"] += len(fs)
+            self.progress["smiles"] += smiles
+            self.progress["blinks"] += blinks
+            if boxes:
+                self.progress["recent_faces"] = (self.progress["recent_faces"] + [[row["id"], boxes]])[-8:]
+            if row["understood"]:
+                found, _ = tagmod.discovery(row["recognized_tags"])
+                cats.append([row["id"], row["category"] or "", [[*tmeta.get(key, ("🏷️", key))[:2], score, key]
+                              for key, score in sorted(found.items(), key=lambda kv: -kv[1])]])
+        self.feed.update(read=reads, cats=cats)
+        self.progress["recent"] = [row["id"] for row in saved[-24:]]
+        done = len(saved) + self.store.one("SELECT COUNT(*) AS n FROM photos WHERE status='error'")["n"]
+        total = done + len(todo)
+        self._set("reading", done, total)
+        if not todo:
             return
         tasks = [(r["id"], str(self.source / r["rel"]), r["rel"], str(self.previews / f"{r['id']}.jpg"),
                   str(self.thumbs / f"{r['id']}.jpg")) for r in todo]
-        buf, done = [], 0
+        buf, saved_at = [], time.monotonic()
         results = _process_results(analyze_one, tasks, self.workers, self.cancel, _init_worker)
         try:
             for res in results:
@@ -440,9 +472,10 @@ class Analyzer:
                     if fs:
                         boxes = [[round(f["x"], 3), round(f["y"], 3), round(f["w"], 3), round(f["h"], 3)] for f in fs[:6]]
                         self.progress["recent_faces"] = (self.progress["recent_faces"] + [[res["id"], boxes]])[-8:]
-                if len(buf) >= 16:
+                if len(buf) >= 16 or time.monotonic() - saved_at >= 1:
                     _save_phase1(self.store, buf)
                     buf = []
+                    saved_at = time.monotonic()
                 self.progress.update(done=done)
         finally:
             # Keep even a partial batch if a worker fails, so a resumed scan does not repeat completed work.
@@ -459,10 +492,10 @@ class Analyzer:
             self._sig = SigLIP(threads=6, text=False)
         return self._sig
 
-    def _embed(self, rows: list, load, column: str, phase: str, kinds: bool = False, closer: bool = False) -> None:
-        total = len(rows)
-        self._set(phase, 0, total)
-        if not total:
+    def _embed(self, rows: list, load, column: str, phase: str, kinds: bool = False, closer: bool = False, completed: int = 0) -> None:
+        total = completed + len(rows)
+        self._set(phase, completed, total)
+        if not rows:
             return
         sig, bs = self._siglip(), 8
         if kinds or closer:
@@ -473,8 +506,8 @@ class Analyzer:
         def prep(chunk):
             return [(r, load(r)) for r in chunk]
 
-        chunks = [rows[i:i + bs] for i in range(0, total, bs)]
-        done = 0
+        chunks = [rows[i:i + bs] for i in range(0, len(rows), bs)]
+        done = completed
         with ThreadPoolExecutor(max_workers=3) as io_pool:
             pending = [io_pool.submit(prep, ch) for ch in chunks[:3]]
             nxt = 3
@@ -556,7 +589,8 @@ class Analyzer:
             except OSError:
                 return None
 
-        self._embed(rows, load, "emb", "understanding", kinds=True)
+        completed = self.store.one("SELECT COUNT(*) AS n FROM photos WHERE status='analyzed' AND emb IS NOT NULL")["n"]
+        self._embed(rows, load, "emb", "understanding", kinds=True, completed=completed)
 
     def _embed_crops(self) -> None:
         from .vision import SigLIP
@@ -575,4 +609,6 @@ class Analyzer:
             except OSError:
                 return None
 
-        self._embed(rows, load, "crop_emb", "details", closer=True)
+        eligible = self.store.one("SELECT COUNT(*) AS n FROM photos WHERE status='analyzed' AND (me_face IS NOT NULL OR ?=1)",
+                                  ((self.store.get_meta("settings", {}) or {}).get("mode") == "gallery",))["n"]
+        self._embed(rows, load, "crop_emb", "details", closer=True, completed=eligible-len(rows))

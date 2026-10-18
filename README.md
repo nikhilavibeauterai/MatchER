@@ -79,6 +79,10 @@ silently deletes or overwrites an original. Notes and drawings stay in the save 
 JPEG, PNG, HEIC/HEIF, WebP, TIFF and camera RAW formats are supported. A first scan can take a while;
 reopening an analyzed library is quick. [Storage locations and backups →](docs/install.md#where-your-saves-live)
 
+During analysis, scroll over the sea to zoom, drag open water to pan, and double-click open water to see everything
+again. Refreshing restores the photos and discoveries already shown. Restarting MatchER resumes saved analysis,
+including its completed photo count, without reading those photos again.
+
 ## Help build it
 
 MatchER is young, and real Windows/Linux feedback will make it better. Try the sample, file a clear bug report,

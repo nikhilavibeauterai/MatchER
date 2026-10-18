@@ -536,13 +536,14 @@ function viewAnalyze(main) {
   // The sea: every photo it reads joins it and stays. Every tag it finds pulls the photos that share it together (the
   // same tag physics as the Groups page), with lassos following its flocks. One photo at a time is grabbed out of
   // the sea to the middle, bigger, with what's being found shown right on it, then shrinks back among its kind.
-  const sea = new VennSea($("#an-sea"), {});
+  const sea = new VennSea($("#an-sea"), {calm:true});
+  sea.enableCamera(true);
   const info = new Map(), changed = new Set(), meta = new Map(), counts = new Map(), queue = [], forced = [];
   const facesOf = new Map(), catOf = new Map();
   let dirty = false, dripTimer = null, lastRead = null, lastCat = null, lastSeen = null;
   let scene = null, worked = false, finale = false, orgPlayed = false;
   const fr = { read: 0, cats: 0, seen: 0, identity: 0, org: 0 };
-  let lastIdentity = null, feeding = false;
+  let lastIdentity = null, feeding = false, catchingUp = true;
   const words = () => (MODE() === "gallery" ? GALLERY_PHASES : {});
   const tagOf = (key, emoji, label) => { if (!meta.has(key)) meta.set(key, { emoji, label }); return key; };
   const addPhoto = (id) => { if (!info.has(id)) { info.set(id, { tags: new Set(), n: 1 }); changed.add(id); dirty = true; } return info.get(id); };
@@ -553,7 +554,10 @@ function viewAnalyze(main) {
     for (let k = Math.max(4, Math.ceil(queue.length / 10)); k > 0 && queue.length; k--) { const [id, key] = queue.shift(); give(id, key); }
     flush();
   };
-  const enqueue = (id, key) => { queue.push([id, key]); if (!dripTimer) dripTimer = setInterval(drip, 120); };
+  const enqueue = (id, key) => {
+    if(catchingUp){give(id,key);return;}  // a refreshed page restores discoveries already made, rather than replaying them
+    queue.push([id, key]); if (!dripTimer) dripTimer = setInterval(drip, 120);
+  };
   const flush = () => {
     if (!dirty) return;
     dirty = false;
@@ -561,7 +565,7 @@ function viewAnalyze(main) {
     sea.setVenn(top.map((k) => { const m = meta.get(k) || { emoji: "🏷️", label: k };
       return { id: k, label: m.label, emoji: m.emoji, catchy: m.catchy, html: `${esc(m.emoji)} ${esc(m.label)} <span class="ps-count">${fmt(counts.get(k) || 0)}</span>` }; }),
       [...changed].map((id) => { const r = info.get(id); return { id, photo: id, tags: [...r.tags], n: r.n,
-        group:r.group,sugg:r.sugg,cut:r.cut,members:r.members,rep:r.rep,category:r.category,visual:r.visual,take:r.rep&&r.rep!==id }; }),
+        group:r.group,sugg:r.sugg,cut:r.cut,members:r.members,rep:r.rep,category:r.category,visual:r.visual,dims:r.dims,take:r.rep&&r.rep!==id }; }),
       [], true);
     changed.clear();
   };
@@ -603,7 +607,9 @@ function viewAnalyze(main) {
       r.members = row[4]; r.rep = row[2]; changed.add(row[0]); dirty = true;
     }
     flush();
-    return Object.keys(fr).some((k) => fr[k] < (f[`${k}_n`] || 0));
+    const more=Object.keys(fr).some((k) => fr[k] < (f[`${k}_n`] || 0));
+    if(!more&&(fr.read||!['idle','listing','models'].includes(S.lib.progress?.phase)))catchingUp=false;
+    return more;
   }
   // the grab: a photo lifts out of its spot, grows into the middle with what's being found on it, then goes back
   let grabbing = false, grabEpoch = 0, cancelGrab = () => {};
@@ -632,9 +638,11 @@ function viewAnalyze(main) {
     return [x0, y0, Math.max(...faces.map((f) => f[0] + f[2])) - x0, Math.max(...faces.map((f) => f[1] + f[3])) - y0];
   };
   const clearGrab = () => { cancelGrab(); ++grabEpoch; grabbing = false; cancelGrab = () => {}; };
+  // Inspecting a print takes precedence over the automatic spotlight; discoveries keep arriving in the sea.
+  window.addEventListener('sea-camera',e=>{if(e.detail.sea===sea&&e.detail.zoom>1)clearGrab();},{signal:S.events.signal});
   async function grab(id, overlay, chrome, members = []) {
     const field = $("#an-sea"), it = sea.items.get(id);
-    if (grabbing || finale || !field || !it) return;
+    if (grabbing || finale || sea.camera.zoom>1 || !field || !it) return;
     grabbing = true;
     const epoch = ++grabEpoch;
     const img = new Image();
@@ -701,7 +709,7 @@ function viewAnalyze(main) {
   let spotlightKey=null;
   const grabTimer = setInterval(() => {
     if (left(view0) || !$("#an-sea")) { clearInterval(grabTimer); return; }
-    if (grabbing || finale) return;
+    if (grabbing || finale || sea.camera.zoom>1) return;
     const current=scene==='reading'?lastRead:scene==='understanding'?lastCat:scene==='details'?lastSeen?.[0]:scene==='identity'?lastIdentity?.[0]:null;
     const key=`${scene}:${current}`;if(current==null||key===spotlightKey)return;spotlightKey=key;
     if (scene === "reading" && lastRead != null) {
@@ -840,7 +848,9 @@ function viewAnalyze(main) {
     if (!S.lib) { route(); return; }
     if (left(view0) || !$("#an-sea")) return;
     const p = S.lib.progress || {};
-    await readFeed();
+    const initial=catchingUp;
+    let more=await readFeed();
+    while(initial&&more&&!left(view0)){await sleep(0);more=await readFeed();}
     if (S.lib.analyzed && !S.lib.analyzing) {
       while (await readFeed()) { await sleep(0); }
       while (queue.length) { const [id, key] = queue.shift(); give(id, key); }
@@ -867,8 +877,8 @@ function viewAnalyze(main) {
     $("#an-label").textContent = p.total ? `${label} · ${fmt(p.done)} / ${fmt(p.total)}` : label;
     $("#an-bar").style.width = `${Math.round((p.total ? p.done / p.total : 0) * 100)}%`;
     let eta = "";
-    if (p.total && p.done > 8 && p.started) {
-      const rate = p.done / Math.max(1, Date.now() / 1000 - p.started);
+    if (p.total && p.done - (p.start_done||0) > 8 && p.started) {
+      const rate = (p.done-(p.start_done||0)) / Math.max(1, Date.now() / 1000 - p.started);
       const rest = (p.total - p.done) / Math.max(rate, 0.01);
       eta = rest > 90 ? `about ${Math.round(rest / 60)} min left in this step` : `${Math.max(1, Math.round(rest))} s left in this step`;
     }

@@ -5,8 +5,38 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from matcher.analyze import Analyzer
-from matcher.server import App
+from matcher.server import App, create_app
 from matcher.store import ClosedStoreError, Store
+
+
+def test_browser_refresh_reads_running_analysis_without_restarting_it(tmp_path, monkeypatch):
+    entered, finish = threading.Event(), threading.Event()
+    visits = []
+    def work(analyzer):
+        visits.append(analyzer.started)
+        analyzer.progress.update(phase="reading", done=7, total=21)
+        analyzer.feed["read"] = [[7, [], 0, 0, None, [800, 600]]]
+        entered.set()
+        finish.wait(3)
+    monkeypatch.setattr(Analyzer, "_run", work)
+    source = tmp_path / "synthetic-source"
+    source.mkdir()
+    app = create_app(tmp_path / "saves", allowed_hosts={"localhost"})
+    session = app.config["MATCHER"].open(source)
+    try:
+        assert entered.wait(2)
+        worker, generation = session.analyzer.thread, session.analyzer.started
+        client = app.test_client()
+        for _ in range(3):
+            assert client.get("/").status_code == 200
+            state = client.get("/api/state").get_json()["library"]
+            assert state["analyzing"] and state["progress"]["done"] == 7
+            assert client.get("/api/analysis/feed?read=0").get_json()["read"][0][0] == 7
+            assert session.analyzer.thread is worker and session.analyzer.started == generation
+        assert len(visits) == 1
+    finally:
+        finish.set()
+        session.shutdown()
 
 
 def test_transient_threads_share_one_connection_and_serialize_writes(tmp_path):

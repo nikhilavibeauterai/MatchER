@@ -2117,7 +2117,7 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
 :is(#main, #modal) .board-card :is(img[src^="/img/t/"], img[src^="/img/p/"], img.pile-take[src]) { animation: none; }  /* outranks the wobble rule above (an id, a class and an attribute) */
 /* Under-prints never wobble on their own: a pile turns with its cover (the card rule above would animate them). */
 :is(#main, #world, #sea, #modal, .inspect) img.pile-take[src] { animation: none; }
-.game-paused :is(img, .paper, .tile-pile), body.sea-deep :is(img, .paper, .tile-pile) { animation-play-state: paused !important; }
+.game-paused :is(img, .paper, .tile-pile), body.sea-deep :is(img, .paper, .tile-pile), .photo-sea[data-deep="1"] :is(img, .paper, .tile-pile) { animation-play-state: paused !important; }
 /* Zoomed in until one print fills the view, the sea is that picture: the chrome hides until you zoom back out. */
 body.sea-deep > :not(#world, #modal, #af-defs, .inspect, .sea-photo-detail-layer, .photo-note-sheet, script, style), body.sea-deep #world :is(.vn-density-labels, .vn-catalog, .focus-bar, .sea-tags) { visibility: hidden; }
 /* The picture stays clear in deep zoom. Reaching for the belt reveals it; a tool in use keeps it open. */

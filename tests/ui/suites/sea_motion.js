@@ -20,7 +20,7 @@ const {LINK,LIB,OUT}=process.env;
       return {id:it.id,zoom:World.sea.camera.zoom,connected:img.isConnected,visible:getComputedStyle(img).visibility,
         sameImage:(host&&getComputedStyle(host.querySelector('.paper')).visibility!=='hidden'?host.querySelector('.window img'):it.el.querySelector('.pile-cover'))===img,
         filter:img.style.filter,opacity:getComputedStyle(it.el).opacity,shadow:getComputedStyle(it.el).boxShadow,geometry:[img.style.width,img.style.height,img.style.transform],
-        sameAnimation:paper?.getAnimations()[0]===motionAnimation,sameDetail:!detail||host===motionDetail,
+        samePaper:paper===motionPaper,deep:!!World.sea.deep,wobbling:!!paper?.getAnimations().find(a=>a.animationName==='cardwobble'),angle:parseFloat(getComputedStyle(paper).rotate)||0,sameDetail:!detail||host===motionDetail,
         drift:r?Math.hypot(r.left-p.left,r.top-p.top)+Math.abs(r.width-p.width):0,
         takes:[...it.el.querySelectorAll('.pile-take')].every(el=>getComputedStyle(el).visibility==='visible')};
     },detail);
@@ -29,7 +29,10 @@ const {LINK,LIB,OUT}=process.env;
     assert(state.filter.includes('url('),`${label}: enhancement stays applied`);
     assert.equal(state.opacity,await page.evaluate(()=>motionOpacity),`${label}: moving a print does not dim its paper or picture`);
     assert.notEqual(state.shadow,'none',`${label}: the print keeps its shadow`);
-    assert(state.sameAnimation,`${label}: the paper's animation is not restarted`);
+    assert(state.samePaper,`${label}: the same paper remains on the print`);
+    if(state.deep)assert(!state.wobbling,`${label}: deep zoom freezes the pose without retaining a low-resolution animation surface`);
+    const previous=states.at(-2);
+    if(previous?.id===state.id&&previous.deep&&state.deep)assert(Math.abs(previous.angle-state.angle)<.02,`${label}: the frozen angle stays steady`);
     assert(state.sameDetail,`${label}: the focused controls are not rebuilt while moving`);
     if(detail)assert(state.drift<3,`${label}: controls follow the print: ${JSON.stringify(state)}`);
     assert(state.takes,`${label}: the stack stays visible`);
@@ -41,7 +44,7 @@ const {LINK,LIB,OUT}=process.env;
     await page.evaluate(()=>{
       window.motionDetail=PhotoNotes.seaDetail;
       window.motionImage=getComputedStyle(motionDetail.querySelector('.paper')).visibility==='hidden'?motionItem.el.querySelector('.pile-cover'):motionDetail.querySelector('.window img');
-      window.motionAnimation=motionImage.closest('.paper')?.getAnimations()[0];
+      window.motionPaper=motionImage.closest('.paper');
       window.motionOpacity=getComputedStyle(motionItem.el).opacity;
     });
     const start=await check('focused');
