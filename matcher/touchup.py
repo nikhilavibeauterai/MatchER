@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import imageio
+from . import finishing, imageio
 
 PROOF = 64                 # the look is measured on a 64px-wide proof, like the on-screen filter
 LOW, HIGH = 0.005, 0.995   # black and white points
@@ -22,6 +22,19 @@ TURNS = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180, 270: I
 CROPS = ("best", "subject", "height", "width")  # auto-crop modes ("auto" is the old word for "subject"); anything else is off
 # The Leaderboard's knobs on the auto look, name: (low, high, default). Mirrored by app.js (KNOBS).
 KNOBS = {"levels": (0.0, 2.0, 1.0), "light": (-1.0, 1.0, 0.0), "contrast": (-1.0, 1.0, 0.0), "colour": (0.0, 2.0, 1.0), "warmth": (-1.0, 1.0, 0.0)}
+
+
+def custom_crop(value) -> list[float] | None:
+    """A manual rectangle in upright original-photo coordinates, independent of preview size or quarter turns."""
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in value):
+        return None
+    x, y, w, h = value
+    if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > 1.000001 or y + h > 1.000001:
+        return None
+    rectangle = [round(x, 6), round(y, 6), round(min(w, 1 - x), 6), round(min(h, 1 - y), 6)]
+    return rectangle if min(rectangle[2:]) > 0 else None
 
 
 def rotate_box(box, deg: int) -> list[float]:
@@ -171,14 +184,24 @@ def touch_up(src: str | Path, dst: str | Path, edits: dict | None = None, box=No
     except Exception:  # no metadata worth keeping is not a reason to skip the picture
         exif = None
     im = imageio.decode(src).image
+    original_size = im.size
     if rotate in TURNS:
         im = im.transpose(TURNS[rotate])
         box = rotate_box(box, rotate) if box else None
     how = look(im) if e.get("enhance") is not False else None  # measured on the whole picture, like the preview
     mode = "subject" if e.get("crop") == "auto" else e.get("crop")
-    if mode in CROPS and (box or mode != "subject"):
-        im = im.crop(crop_box(im.width, im.height, box, mode))
+    manual = custom_crop(e.get("crop_box")) if mode == "custom" else None
+    rectangle = (0, 0, im.width, im.height)
+    if manual:
+        x, y, w, h = rotate_box(manual, rotate)
+        x0, y0 = round(x * im.width), round(y * im.height)
+        rectangle = (x0, y0, max(x0 + 1, round((x + w) * im.width)), max(y0 + 1, round((y + h) * im.height)))
+    elif mode in CROPS and (box or mode != "subject"):
+        rectangle = crop_box(im.width, im.height, box, mode)
+    im = im.crop(rectangle)
     out = apply(im, how, e.get("look")) if how else im.convert("RGB")
+    out = finishing.apply(out, e, original_size, rectangle, rotate)
+    out = finishing.straighten(out, e.get("straighten", 0))
     if exif:
         out.save(dst, "JPEG", quality=quality, exif=exif)
     else:

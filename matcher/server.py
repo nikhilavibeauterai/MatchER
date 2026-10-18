@@ -26,7 +26,7 @@ from PIL import Image
 
 from . import export as exporter
 from . import touchup
-from . import edit_history, filtering, game, imageio, library, tags, tournament, visual
+from . import edit_history, filtering, finishing, game, imageio, library, tags, tournament, visual
 from .draw import Draw
 from .search import PhotoSearch
 from .sample import SampleFetcher
@@ -2305,12 +2305,34 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                 abort(400, "Enhance is on or off.")
         if "crop" in b:
             crop = "subject" if b["crop"] == "auto" else b["crop"]
-            if crop not in (*touchup.CROPS, "none", "off", None):
-                abort(400, "Crop is best, subject, height, width or none.")
+            if crop not in (*touchup.CROPS, "custom", "none", "off", None):
+                abort(400, "Crop is best, subject, height, width, custom or none.")
             if crop is None:
                 edits.pop("crop", None)
             else:
                 edits["crop"] = "off" if crop in {"none", "off"} else crop
+        if "crop_box" in b:
+            if b["crop_box"] is None:
+                edits.pop("crop_box", None)
+            else:
+                rectangle = touchup.custom_crop(b["crop_box"])
+                if rectangle is None:
+                    abort(400, "Choose a crop rectangle inside the photo.")
+                edits["crop_box"] = rectangle
+        if edits.get("crop") == "custom" and not touchup.custom_crop(edits.get("crop_box")):
+            abort(400, "A custom crop needs a rectangle.")
+        for key in ("grade", "masks", "straighten"):
+            if key not in b:
+                continue
+            try:
+                value = (finishing.grade(b[key]) if key == "grade" else finishing.masks(b[key]) if key == "masks"
+                         else finishing.number(b[key], -45, 45) if b[key] is not None else None)
+            except ValueError as error:
+                abort(400, str(error))
+            if value:
+                edits[key] = value
+            else:
+                edits.pop(key, None)
         if "look" in b:  # the knobs on the auto look; only departures from the defaults are kept
             look = b["look"]
             if look is None:
@@ -2391,7 +2413,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                     edits["notes"] = kept
                 else:
                     edits.pop("notes", None)
-        edits = {k: v for k, v in edits.items() if not (k == "crop" and v not in (*touchup.CROPS, "off"))
+        edits = {k: v for k, v in edits.items() if not (k == "crop" and v not in (*touchup.CROPS, "custom", "off"))
                  and not (k == "rotate" and not v)}
         value = json.dumps(edits) if edits else None
         if value != old:

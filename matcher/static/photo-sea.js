@@ -50,7 +50,7 @@ class PhotoSea {
   // magnifying it hundreds of times blurs fine detail. Its inverse scale keeps the same card and framing.
   imageBasis(it){
     const current=Number(it.el.dataset.imageScale)||1,wanted=this.cameraOn&&this.fullSize(it)?this.camera.zoom*(it.renderScale||1):1;
-    if(current===wanted||current>1&&wanted>1&&wanted/current>=.5&&wanted/current<=2)return false;
+    if(current===wanted||current>1&&wanted>1&&wanted/current>=.5&&wanted/current<=2&&!it.el.querySelector('.photo-pixels'))return false;
     it.el.dataset.imageScale=String(wanted);return true;
   }
   // A live sea print keeps the same paper and picture while it is hovered, dragged or focused. Only its
@@ -64,13 +64,16 @@ class PhotoSea {
     it.el.dataset.photo=it.photo;Cards.focus(it.el);
     const paper=it.el.querySelector(':scope > .paper');
     if(time!=null){const motion=paper.getAnimations().find(a=>a.animationName==='cardwobble');if(motion)motion.currentTime=time;}
-    const edits=typeof Toolbelt!=='undefined'&&Toolbelt.source===S.lib?.source?Toolbelt.current(it.photo):{};
+    const edits=this.presentation?.item===it&&this.presentation.previewEdits||
+      (typeof Toolbelt!=='undefined'&&Toolbelt.source===S.lib?.source?Toolbelt.current(it.photo):{});
     const size=(it.size||this.s)*this.camera.zoom;it.el.classList.toggle('is-tiny',size<this.tuning.tinyMax);it.el.classList.toggle('is-small',size<this.tuning.badgeMin);
     Object.assign(it.el.dataset,{frame:'own',box:JSON.stringify(it.box||null),crop:edits.crop??'',cropDefault:'global',
-      rotate:String(edits.rotate||0),enhance:edits.enhance==null?'':edits.enhance?'on':'off',look:JSON.stringify(edits.look||null)});
+      rotate:String(edits.rotate||0),enhance:edits.enhance==null?'':edits.enhance?'on':'off',look:JSON.stringify(edits.look||null),cropBox:JSON.stringify(edits.crop_box||null),
+      straighten:String(edits.straighten||0),finishing:JSON.stringify({grade:edits.grade,masks:edits.masks})});
     const dims=it.dims?.[0]>0&&it.dims?.[1]>0?it.dims:[img.naturalWidth,img.naturalHeight];
     framePhoto(it.el,{dims,box:it.box},
-      {crop:edits.crop??S.crop,rotate:edits.rotate||0,enhance:edits.enhance??S.filter,knobs:edits.look?knobsOf(edits.look):null});
+      {crop:edits.crop??S.crop,rotate:edits.rotate||0,enhance:edits.enhance??S.filter,knobs:edits.look?knobsOf(edits.look):null,
+        pixelScale:this.camera.zoom*(it.renderScale||1)/(Number(it.el.dataset.imageScale)||1)});
   }
   // A paused transform animation can retain a thumbnail-sized compositor surface while the original decodes.
   // Keep its exact angle as ordinary styling during deep zoom, then resume the wobble at the same instant.
@@ -277,6 +280,7 @@ class PhotoSea {
       // A live print on screen carries the pyramid level its size needs, both ways as the camera moves; off screen
       // it keeps what it has. One filling four fifths of the screen gets the original file.
       if(!it.density&&this.inView(it,x0,y0,x1,y1,pad)){
+        photoSampling(it.el.querySelector('.pile-cover'),c.zoom*(it.renderScale||1)/(Number(it.el.dataset.imageScale)||1));
         if(this.imageBasis(it)){this.paintItem?.(it,true);this.frameImage(it);}
         if(this.fullSize(it))this.stillCard(it);
         this.requestImage(it,M(it.photo,this.imageSize(it),this.fullSize(it)));

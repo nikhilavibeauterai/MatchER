@@ -1593,7 +1593,11 @@ function framePhoto(side, info, opts = {}) {
   const style=win&&getComputedStyle(win),W=parseFloat(style?.width),H=parseFloat(style?.height);
   if (!img || !W || !H) return;
   const rotate = (((opts.rotate || 0) % 360) + 360) % 360, enhance = opts.enhance ?? S.filter, mode = normCrop(opts.crop ?? S.crop);
-  let [iw, ih] = info.dims, b = mode !== "off" ? info.box : null;  // "best" without a subject frames the middle
+  const straighten=Number(opts.straighten??side.dataset.straighten)||0;
+  let finishing=opts.finishing;
+  if(!finishing){try{finishing=JSON.parse(side.dataset.finishing||'null');}catch(_){/* no local adjustments */}}
+  let manual=null;try{manual=mode==='custom'?(opts.cropBox??JSON.parse(side.dataset.cropBox||'null')):null;}catch(_){/* no saved rectangle */}
+  let [iw, ih] = info.dims, b = manual||(mode !== "off" ? info.box : null);  // "best" without a subject frames the middle
   if (rotate % 180) [iw, ih] = [ih, iw];
   if (b && rotate) b = rotateBox(b, rotate);
   const base = "position:absolute;left:0;top:0;max-width:none;object-fit:fill;";
@@ -1606,12 +1610,37 @@ function framePhoto(side, info, opts = {}) {
       // crop calculation or filter rebuild on each physics frame.
       img.style.cssText=base+`left:${(x+w/2-ew/2)/W*100}%;top:${(y+h/2-eh/2)/H*100}%;width:${ew/W*100}%;height:${eh/H*100}%;${rotate?`transform:rotate(${rotate}deg)`:'transform:none'}`;
     }else img.style.cssText = base + `width:${ew}px;height:${eh}px;transform:translate(${x + w / 2 - ew / 2}px,${y + h / 2 - eh / 2}px)${rotate ? ` rotate(${rotate}deg)` : ""}`;
-    paintFilter(img, Number(side.dataset.photo), enhance, opts.knobs || null);
+    if(manual){const [cx,cy,cw,ch]=manual;img.style.clipPath=`inset(${cy*100}% ${(1-cx-cw)*100}% ${(1-cy-ch)*100}% ${cx*100}%)`;}
+    paintFilter(img, Number(side.dataset.photo), enhance, opts.knobs || null,finishing);
+    photoSampling(img,opts.pixelScale??((Number(side.dataset.viewerZoom)||1)/basis));
   };
   // A deeply zoomed sea window uses larger local coordinates without changing its crop or subject zoom limit.
   const basis=Number(side.dataset.imageScale)||1;
   const { x, y, w, h } = frameRect(W/basis, H/basis, iw, ih, b, mode);
+  let picture=img.parentElement.matches('.picture')?img.parentElement:null;
+  if(straighten){
+    if(!picture){picture=document.createElement('div');picture.className='picture';img.before(picture);picture.append(img);}
+    const scale=w/iw,roi=manual?b:[Math.max(0,-x/scale)/iw,Math.max(0,-y/scale)/ih,Math.min(iw,w>W/basis?W/basis/scale:iw)/iw,Math.min(ih,h>H/basis?H/basis/scale:ih)/ih],
+      rw=roi[2]*iw,rh=roi[3]*ih,a=straighten*Math.PI/180,c=Math.cos(a),s=Math.sin(a),
+      trim=Math.min(rw/(rw*Math.abs(c)+rh*Math.abs(s)),rh/(rw*Math.abs(s)+rh*Math.abs(c))),
+      ow=rw*trim,oh=rh*trim,k=Math.min(W/ow,H/oh),pw=ow*k,ph=oh*k,
+      dx=(roi[0]+roi[2]/2-.5)*iw,dy=(roi[1]+roi[3]/2-.5)*ih,
+      cx=pw/2-(dx*c-dy*s)*k,cy=ph/2-(dx*s+dy*c)*k,
+      ew=info.dims[0]*k,eh=info.dims[1]*k;
+    picture.style.cssText=`position:absolute;overflow:hidden;left:${(W-pw)/2/W*100}%;top:0;width:${pw/W*100}%;height:${ph/H*100}%`;
+    img.style.cssText=base+`left:${(cx-ew/2)/pw*100}%;top:${(cy-eh/2)/ph*100}%;width:${ew/pw*100}%;height:${eh/ph*100}%;transform:rotate(${rotate+straighten}deg)`;
+    paintFilter(img,Number(side.dataset.photo),enhance,opts.knobs||null,finishing);photoSampling(img,opts.pixelScale??((Number(side.dataset.viewerZoom)||1)/basis));return;
+  }
+  if(picture)picture.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:hidden';
   place(x*basis, y*basis, w*basis, h*basis);
+}
+// Beyond native resolution, show the original's actual pixels instead of blending neighbouring pixels.
+// Previews and reduced originals keep smooth sampling, including on high-density screens.
+function photoSampling(img,scale=1) {
+  if(!img)return;
+  const original=img.getAttribute('src')?.includes('m=full')&&img.naturalWidth,
+    width=original?parseFloat(getComputedStyle(img).width)*scale*(devicePixelRatio||1):0;
+  img.classList.toggle('photo-pixels',!!original&&width>=img.naturalWidth-.5);
 }
 // Where a picture of iw×ih goes in a W×H window (CSS px): "off" contains it at the top; "best" fills the window
 // exactly (the least paper showing), the subject or the centre deciding which part; "subject" zooms in past that
@@ -1620,6 +1649,10 @@ function framePhoto(side, info, opts = {}) {
 // matcher/touchup.py `crop_box` is the same rule for the export.
 function frameRect(W, H, iw, ih, b, mode) {
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  if(mode==='custom'&&b){
+    const s=Math.min(W/(iw*b[2]),H/(ih*b[3]));
+    return {x:(W-iw*b[2]*s)/2-iw*b[0]*s,y:-ih*b[1]*s,w:iw*s,h:ih*s};
+  }
   if (mode === "best") {
     // The crop that uses the most of the window among focus subject (when there is one), fill height and fill
     // width; on a tie focus subject wins, then whichever fill covers more (the owner's rule).
@@ -1729,7 +1762,7 @@ function paperFilterMask(img) {
   return [.055+(W-w)/2,.04125,w,h*3/4];
 }
 // One SVG filter per photo and paper mask (with knobs, rebuilt in place as the knobs move).
-function autoFilterId(img, pid, knobs = null) {
+function autoFilterId(img, pid, knobs = null, finishing = null, on = true) {
   const source = imageKey();
   if (filterSource !== source) {
     FILTERS.clear(); LOOKS.clear(); $("#af-defs")?.replaceChildren(); filterSource = source;
@@ -1737,8 +1770,9 @@ function autoFilterId(img, pid, knobs = null) {
   }
   if (!img.complete || !img.naturalWidth) return null;
   const mask=paperFilterMask(img),maskKey=mask?mask.map(v=>Math.round(v*10000)).join('-'):'';
-  const key = `${pid}${knobs?'|knobs':''}${mask?'|paper'+maskKey:''}`;
-  if (FILTERS.has(key) && !knobs) return FILTERS.get(key);
+  const key = `${pid}${knobs?'|knobs':''}${finishing?'|finish':''}${on?'':'|manual'}${mask?'|paper'+maskKey:''}`;
+  const signature=JSON.stringify([knobs,finishing,on]);
+  if (FILTERS.has(key) && $(`#${FILTERS.get(key)}`)?.dataset.signature===signature) return FILTERS.get(key);
   if (FILTERS.size >= 1200) {
     const used = new Set($$("img[style*='filter']").map((shown) => /#(af-[\w-]+)/.exec(shown.style.filter)?.[1]));
     for (const [photo, id] of FILTERS) if (!used.has(id)) { $(`#${id}`)?.remove(); FILTERS.delete(photo); }
@@ -1754,9 +1788,10 @@ function autoFilterId(img, pid, knobs = null) {
   const id = FILTERS.get(key) || (knobs ? `af-k${pid}-${++filterSerial}` : `af-${++filterSerial}`);
   let filter = $(`#${id}`, defs);
   if (!filter) { defs.insertAdjacentHTML("beforeend", `<filter id="${id}" color-interpolation-filters="sRGB"></filter>`); filter = $(`#${id}`, defs); }
-  const markup=filterMarkup(tunedLook(look, knobs));
+  const markup=(on?filterMarkup(tunedLook(look, knobs)):'')+(typeof PhotoFinish!=='undefined'&&finishing?PhotoFinish.markup(finishing,[img.naturalWidth,img.naturalHeight],mask):'');
+  filter.dataset.signature=signature;
+  filter.setAttribute('primitiveUnits','objectBoundingBox');filter.setAttribute('x','0');filter.setAttribute('y','0');filter.setAttribute('width','1');filter.setAttribute('height','1');
   if(mask){
-    filter.setAttribute('primitiveUnits','objectBoundingBox');filter.setAttribute('x','0');filter.setAttribute('y','0');filter.setAttribute('width','1');filter.setAttribute('height','1');
     filter.innerHTML=markup+`<feComposite in2="SourceAlpha" operator="in" result="adjusted"/><feFlood flood-color="white" x="${mask[0]}" y="${mask[1]}" width="${mask[2]}" height="${mask[3]}" result="photo-mask"/>
       <feComposite in="adjusted" in2="photo-mask" operator="in" result="photo"/><feComposite in="SourceGraphic" in2="photo-mask" operator="out" result="paper"/>
       <feMerge><feMergeNode in="paper"/><feMergeNode in="photo"/></feMerge>`;
@@ -1765,12 +1800,12 @@ function autoFilterId(img, pid, knobs = null) {
   return id;
 }
 
-function paintFilter(img, pid, on = S.filter, knobs = null) {
+function paintFilter(img, pid, on = S.filter, knobs = null, finishing = null) {
   if (!img || !pid) return;
-  if (!on) { img.style.filter = ""; return; }
-  const id = autoFilterId(img, pid, knobs);
+  if (!on&&!finishing?.grade&&!finishing?.masks?.length) { img.style.filter = ""; return; }
+  const id = autoFilterId(img, pid, knobs,finishing,on);
   if (id) img.style.filter = `url(#${id})`;
-  else if (!img.complete) img.addEventListener("load", () => paintFilter(img, pid, on, knobs), { once: true });
+  else if (!img.complete) img.addEventListener("load", () => paintFilter(img, pid, on, knobs,finishing), { once: true });
 }
 
 function paintFilters() {
@@ -1869,9 +1904,9 @@ function layoutStage() {
 // C cycles the ways to frame a photo: best (the least paper showing in the window), focus subject (zoomed in on
 // its subject), fill height, fill width, off.
 const CROP_MODES = ["best", "subject", "height", "width", "off"];
-const CROP_WORD = { best: "Crop: best", subject: "Crop: focus subject", height: "Crop: fill height", width: "Crop: fill width", off: "Crop off" };
+const CROP_WORD = { best: "Crop: best", subject: "Crop: focus subject", height: "Crop: fill height", width: "Crop: fill width", off: "Crop off", custom:"Crop: custom" };
 const CROP_MENU = { best: "best", subject: "focus subject", height: "fill height", width: "fill width", off: "off" };
-const normCrop = (v) => v === true || v === "auto" ? "subject" : CROP_MODES.includes(v) ? v : "off";
+const normCrop = (v) => v === true || v === "auto" ? "subject" : v==='custom'?'custom':CROP_MODES.includes(v) ? v : "off";
 window.addEventListener("photo-render-change", () => S.refitGrab?.());  // the analysis show reframes the photo in hand
 function toggleCrop() {
   S.crop = CROP_MODES[(CROP_MODES.indexOf(normCrop(S.crop)) + 1) % CROP_MODES.length];
@@ -3417,7 +3452,7 @@ async function viewShortlist(main) {
     const g = groupOf(it.photo), file = String(it.rel || "").split("/").pop();
     return `<div class="chin">${g ? `<b class="chin-group">${esc(g.emoji || "🗂️")} ${esc(g.name)}</b>` : ""}<span class="chin-file" title="${esc(it.rel || "")}">${esc(file)}${it.taken ? ` · ${esc(prettyDate(it.taken))}` : ""}</span></div>`;
   };
-  const cropOf = (e) => CROP_MODES.includes(e.crop) ? e.crop : "off";
+  const cropOf = (e) => normCrop(e.crop);
   const card = (it) => { const e = it.edits || {}; return `<div class="tile board-card print tile-pile has-photo-sticky ${it.frames > 1 ? "stacked" : ""}" ${cardData(it)}
       data-note="${esc(JSON.stringify(e.note || null))}">
       ${pilePhotos(it.photo, it.members)}<div class="paper"><div class="window"><img src="${P(it.photo)}" alt="" data-view="${it.photo}"></div>${chin(it)}</div>${note(it)}</div>`; };
@@ -3550,13 +3585,13 @@ async function viewShortlist(main) {
 // `global` card (the Reveal's podium and strip) follows the C and F toggles wherever no choice was made; the
 // Leaderboard's own card shows the whole photo and enhances it unless told otherwise, as the export will.
 function cardData(it, global = false) {
-  const e = it?.edits || {}, crop = CROP_MODES.includes(e.crop) ? e.crop : "";
+  const e = it?.edits || {}, crop = e.crop!=null?normCrop(e.crop):"";
   return `data-frame="own" data-photo="${it.photo}" data-box="${esc(JSON.stringify(it.box || null))}" data-crop="${crop}" data-crop-default="${global ? "global" : "off"}"
-    data-enhance="${e.enhance === false ? "off" : e.enhance === true ? "on" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}"`;
+    data-enhance="${e.enhance === false ? "off" : e.enhance === true ? "on" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}" data-crop-box="${esc(JSON.stringify(e.crop_box||null))}" data-straighten="${e.straighten||0}" data-finishing="${esc(JSON.stringify({grade:e.grade,masks:e.masks}))}"`;
 }
 // A card frames its picture by its own data attributes (see cardData), falling back to the global toggles.
 function frameBoardCard(card) {
-  const img = card?.querySelector(".window > img");
+  const img = card?.querySelector(".window img");
   if (!img) return;
   let box = null;
   try { box = JSON.parse(card.dataset.box || "null"); } catch (_) { /* no subject */ }
@@ -3625,12 +3660,22 @@ async function copyPhotoPath(button) {
 // These controls may sit inside a selectable take; copying must never also cast a call or select its stack.
 document.addEventListener('click',e=>{const b=e.target.closest('[data-copy-path]');if(b){e.preventDefault();e.stopPropagation();copyPhotoPath(b);}},true);
 document.addEventListener('contextmenu',e=>{
-  const img=e.target.closest('img'),match=img?.getAttribute('src')?.match(/^\/img\/[tp]\/(\d+)\.jpg(?:\?|$)/);
-  if(!match||e.target.closest('#photo-path-dialog'))return;
-  e.preventDefault();e.stopPropagation();openViewer(Number(match[1]));
+  if(e.target.closest('#photo-path-dialog,.photo-crop-editor,.photo-mask-editor,.photo-notes-paper,.photo-sticky,.user-note,input,textarea,select,a'))return;
+  const img=e.target.closest('img'),match=img?.getAttribute('src')?.match(/^\/img\/[tp]\/(\d+)\.jpg(?:\?|$)/),
+    print=e.target.closest('.print,.ps-item,.shot-select,.ftile,.tile,.polaroid'),sea=World.sea;
+  let id=match?Number(match[1]):print?Toolbelt.pidOf(print):0,host=print;
+  if(!id&&sea?.alive&&!sea.uiTarget(e.target)&&!e.target.closest('dialog,.photo-sea:not(#world)')){
+    const it=sea.photoAt(...sea.localWorld(e));if(it){id=it.photo;host=it.el;}
+  }
+  if(!id)return;
+  e.preventDefault();e.stopPropagation();
+  if(PhotoNotes.active?.pid===id){PhotoNotes.close();return;}
+  if(host===PhotoNotes.seaSource)host=PhotoNotes.seaDetail;
+  if(host&&PhotoNotes.hosts.has(host))PhotoNotes.open(host);
+  else openViewer(id,{notes:true});
 });
 
-function openViewer(id) {
+function openViewer(id,{notes=false}={}) {
   const m = $("#modal");
   m.viewerControls?.abort();
   const events=new AbortController(),{signal}=events;m.viewerControls=events;
@@ -3655,12 +3700,14 @@ function openViewer(id) {
     sourceTimer=setTimeout(()=>{
       if(signal.aborted||!m.open)return;
       const r=card.getBoundingClientRect(),picture=img.getBoundingClientRect();
+      photoSampling(img,zoom);
       wantedSource=M(id,Math.max(picture.width,picture.height),r.height>=innerHeight*.8);
       loadSource();
     },120);
   };
   const paint=()=>{
-    card.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;card.dataset.viewerZoom=String(zoom);
+    card.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;
+    if(card.dataset.viewerZoom!==String(zoom)){card.dataset.viewerZoom=String(zoom);photoSampling(img,zoom);}
     stage.classList.toggle('zoomed',zoom>1.001);resetButton.hidden=notesButton.hidden=zoom<=1.001;
   };
   const reset=()=>{zoom=1;x=y=0;paint();requestSource();};
@@ -3713,6 +3760,7 @@ function openViewer(id) {
   signal.addEventListener('abort',()=>{clearTimeout(sourceTimer);sizes.disconnect();if(pendingSource)pendingSource.src='';},{once:true});
   reset();
   m.showModal();
+  if(notes){PhotoNotes.attach(card);PhotoNotes.open(card);}
 }
 
 async function openFrames(photo, done) {

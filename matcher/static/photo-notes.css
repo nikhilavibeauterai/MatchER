@@ -9,8 +9,12 @@
 .sea-photo-detail > .paper { animation:none;visibility:hidden; }
 .photo-sea .ps-item.framed-photo > .paper { box-shadow:none; }
 /* A hole over the real print lets the whole sheet emerge from underneath, without repainting its photo here. */
-.sea-note-underlay { position:absolute;inset:0;z-index:5;pointer-events:none;clip-path:polygon(evenodd,-200% -200%,300% -200%,300% 300%,-200% 300%,-200% -200%,0 0,0 100%,100% 100%,100% 0,0 0); }
+.sea-note-underlay { position:absolute;left:0;top:0;z-index:5;pointer-events:none;transform-origin:0 0;clip-path:polygon(evenodd,-100vmax -100vmax,calc(100% + 100vmax) -100vmax,calc(100% + 100vmax) calc(100% + 100vmax),-100vmax calc(100% + 100vmax),-100vmax -100vmax,0 0,0 100%,100% 100%,100% 0,0 0); }
 .sea-note-underlay > .photo-notes-paper { pointer-events:auto; }
+.sea-note-underlay > .photo-note-sheet { width:var(--notes-width,100%);height:var(--notes-height,100%); }
+.sea-note-underlay > .photo-notes-paper.is-open { transform:translate(var(--notes-x,calc(100% + 18px)),var(--notes-y,0px)) rotate(0deg); }
+.sea-note-underlay > .photo-note-sheet.is-open:not(.notes-opening) { transition:none; }
+.sea-note-underlay.notes-overlap { clip-path:none;z-index:10; }
 .map-census { position:fixed;left:18px;bottom:14px;z-index:6;max-width:calc(100% - 90px);font-size:16px;white-space:normal;pointer-events:auto; }
 .has-photo-notes.print > img:not(.under) { position:relative;z-index:6; }
 /* This is the whole sheet, even while the frame hides all but its lower-right corner. */
@@ -19,7 +23,7 @@
 .photo-notes-tab { position:absolute;right:0;bottom:0;width:27%;height:7%;min-height:20px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ink);box-shadow:none;cursor:pointer; }
 .photo-notes-tab span { position:absolute;right:9%;bottom:5%;opacity:0;font:700 max(12px,4.5cqw)/1 var(--hand); }
 .photo-notes-paper:is(:hover,:has(:focus-visible)) .photo-notes-tab span { opacity:1; }
-.photo-notes-paper.is-open { transform:translate(calc(100% + 18px),0) rotate(0deg);cursor:auto;overflow-y:auto;overscroll-behavior:contain; }
+.photo-notes-paper.is-open { transform:translate(var(--notes-x,calc(100% + 18px)),var(--notes-y,0px)) rotate(0deg);cursor:auto;overscroll-behavior:contain; }
 .viewer:has(.has-photo-notes) { gap:44px; }
 .photo-writing { position:absolute;left:10%;right:10%;bottom:3%;z-index:8;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;font:700 4.4cqw/1.15 var(--hand);color:var(--ink); }
 .notes-caption .photo-writing { bottom:9%;font-size:3.4cqw; }
@@ -31,9 +35,13 @@
 .side:has(.notes-active) { overflow:visible;z-index:9!important; }
 .screen-body:has(.notes-active) { position:relative;overflow:visible;z-index:8!important; }
 #main .board .board-fit:has(.notes-active) { z-index:8; }
+.inspect-card:has(.notes-active),.inspect-fan:has(.notes-active) { overflow:visible; }
+.inspect .print.notes-active { z-index:30; }
+.inspect .photo-note-sheet { width:var(--notes-width,100%);height:var(--notes-height,100%); }
+.inspect .photo-notes-paper.is-open { z-index:10;transform:translate(var(--notes-x,calc(100% + 18px)),var(--notes-y,0px)) rotate(0deg); }
 .board-stage:has(.notes-active) .board-arrow { visibility:hidden!important; }
 .framed-photo > .paper { position:absolute;inset:0;z-index:6;background:var(--paper);border-radius:var(--card-round);box-shadow:0 1px 1px #0005,0 10px 26px #0007; }
-.framed-photo > .paper > .window > img { padding:0!important;aspect-ratio:auto!important;border-radius:0!important;background:none!important;max-height:none!important; }
+.framed-photo > .paper > .window img { padding:0!important;aspect-ratio:auto!important;border-radius:0!important;background:none!important;max-height:none!important; }
 dialog.photo-viewer { width:100vw;height:100dvh;max-width:none;max-height:none;inset:0;margin:0;padding:32px;background:transparent;border:0;border-radius:0;overflow:visible; }
 .photo-viewer .viewer { width:100%;height:100%;min-width:0;grid-template-rows:minmax(0,1fr) auto;gap:44px; }
 .viewer-stage { display:grid;place-items:center;min-height:0;min-width:0;position:relative;container-type:size;touch-action:none; }
@@ -45,15 +53,19 @@ dialog.photo-viewer { width:100vw;height:100dvh;max-width:none;max-height:none;i
 :is(.board-fit,.side,.filter-shot) > .print.has-photo-sticky { height:min(calc(94cqh / var(--sticky-ratio,1.2775)),124cqw);margin-bottom:calc(var(--sticky-tail,37) * var(--note-unit,1px)); }
 .photo-viewer .viewer .print.has-photo-sticky { height:min(calc(94cqh / var(--sticky-ratio,1.2775)),calc((100vw - 64px) * 4 / 3));margin-bottom:calc(var(--sticky-tail,37) * var(--note-unit,1px)); }
 .photo-viewer .viewer-actions { justify-content:center;flex-wrap:wrap;max-width:100%;position:relative;z-index:60;justify-self:center;padding:0 8px;background:var(--paper);color:var(--ink);border-radius:var(--scrap-round); }
-/* A single ruled sheet with an index in the margin. Only its current page scrolls. */
-.photo-notes-paper.photo-note-sheet { display:flex;flex-direction:column;overflow:hidden;cursor:auto;padding:0 16px 0 34px;background:var(--margin),var(--ruled) 0 8px / 100% 26px,var(--paper);color:var(--ink);border:1px solid var(--pencil);border-radius:4px 9px 8px 5px;line-height:1.45; }
+/* Four actual paper backs carry handwritten corners; the current sheet's writing stays on its face. */
+.photo-notes-paper.photo-note-sheet { display:block;width:var(--notes-width,100%);height:var(--notes-height,100%);overflow:visible;cursor:auto;padding:0;background:none;color:var(--ink);border:0;box-shadow:none;line-height:1.45; }
+.photo-notes-paper.photo-note-sheet:not(:has(.notes-face)) { padding:16px 18px 16px 32px;background:var(--margin),var(--ruled) 0 8px / 100% 26px,var(--paper);border:1px solid var(--pencil);box-shadow:3px 5px 9px #0003; }
+.notes-face { position:relative;z-index:5;display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:0 16px 0 34px;background:var(--margin),var(--ruled) 0 8px / 100% 26px,var(--paper);border:1px solid var(--pencil);border-bottom:0;border-radius:4px 9px 0 0; }
 .notes-heading { flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:10px; }
 .notes-heading h2 { margin:0;font:700 clamp(24px,7cqw,34px)/1 var(--hand); }
 .photo-notes-paper .notes-close { flex:none;min-width:44px;min-height:44px;padding:0;font:28px/1 var(--hand);border:0!important;background:none;box-shadow:none!important; }
-.notes-nav { flex:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;padding:0 0 8px;border-bottom:1px solid var(--pencil); }
-.notes-nav button { min-width:0;min-height:42px;padding:2px 0;border:0;box-shadow:none;background:none;color:var(--muted);font:700 clamp(14px,4.8cqw,21px)/1.2 var(--hand);cursor:pointer;position:relative; }
-.notes-nav [aria-selected=true] { color:var(--ink);background:linear-gradient(0deg,transparent 14%,var(--highlight) 14% 55%,transparent 55%); }
-.notes-nav [aria-selected=true]::after { content:'';position:absolute;bottom:2px;left:15%;right:15%;height:2px;background:var(--accent);rotate:-2deg; }
+.notes-nav { position:absolute;inset:0;z-index:0;pointer-events:none; }
+.notes-leaf { position:absolute;inset:0;height:calc(100% + 32px);box-sizing:border-box;z-index:calc(4 - var(--sheet-depth,0));background:var(--margin),var(--ruled) 0 8px / 100% 26px,var(--paper);border:1px solid var(--pencil);border-radius:4px 9px 8px 5px;box-shadow:3px 5px 9px #0003;transform:translate(calc(var(--sheet-depth,0)*12px),calc(var(--sheet-depth,0)*32px));transition:transform .28s cubic-bezier(.22,.8,.25,1); }
+.notes-leaf:has(button:hover) { transform:translate(calc(var(--sheet-depth,0)*12px + 3px),calc(var(--sheet-depth,0)*32px + 3px)); }
+.notes-nav button { position:absolute;right:0;bottom:0;width:100px;height:40px;min-width:0;padding:0 10px 0 0;border:0;box-shadow:none;background:none;color:var(--muted);font:700 18px/1.2 var(--hand);cursor:pointer;pointer-events:auto;text-align:right; }
+.notes-nav [aria-selected=true] { color:var(--ink);text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:4px; }
+.notes-nav:has(:focus-visible) + .notes-face { outline:2px solid var(--accent);outline-offset:2px; }
 .notes-body { min-height:0;flex:1;display:flex;flex-direction:column;overflow:hidden; }
 .notes-page { flex:1;min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;padding:12px 2px 18px 0;scroll-padding:12px; }
 .photo-notes-paper .notes-page > section,.photo-notes-paper .notes-page > details { margin:20px 0 0; }
@@ -133,18 +145,16 @@ dialog.photo-viewer { width:100vw;height:100dvh;max-width:none;max-height:none;i
 .notes-history-actions span { font-size:13px; }
 .photo-notes-paper[aria-busy=true] :is(.notes-new-tag button,.notes-tag-remove,[data-restore-tag],[data-photo-action],.notes-group) { pointer-events:none;opacity:.55; }
 @media(max-width:759px) {
-  .photo-notes-paper.photo-note-sheet { padding:0 12px 0 28px; }
+  .notes-face { padding:0 12px 0 28px; }
   .notes-heading { padding-top:4px; }
   .notes-heading h2 { font-size:25px; }
-  .notes-nav { gap:0;padding-bottom:4px; }
-  .notes-nav button { min-height:40px;font-size:17px; }
   .notes-page { padding-top:10px; }
   .notes-title-label { font-size:13px; }
   .notes-intro { font-size:13px;margin-bottom:12px; }
   .notes-history-actions span { display:none; }
   .notes-tag-remove { min-height:44px; }
   .notes-active { translate:0; }
-  .photo-notes-paper.is-open { z-index:10;transform:translate(8px,10px) rotate(0deg); }
+  .photo-notes-paper.is-open { z-index:10;transform:translate(var(--notes-x,8px),var(--notes-y,10px)) rotate(0deg); }
   .sea-photo-detail.notes-active > .sea-note-underlay { clip-path:none;z-index:10;pointer-events:auto; }
 }
 @media(prefers-reduced-motion:reduce) { .photo-notes-paper,.has-photo-notes { transition:none; } }

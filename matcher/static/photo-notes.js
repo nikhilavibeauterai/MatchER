@@ -16,10 +16,11 @@ const PhotoNotes = {
     window.addEventListener('photo-render-change',()=>this.repaint());
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&this.active)this.saveWriting(this.active);});
     window.addEventListener('hashchange',()=>{this.close(false);this.clearSea();queue();});
-    document.addEventListener('close',e=>{if(e.target.contains(this.sheet))this.close(false);},true);
+    document.addEventListener('close',e=>{if(!e.target.open&&e.target.contains(this.sheet))this.close(false);},true);
     // Escape dismisses this local layer first. Inputs and the searchable picker keep their native keys.
     document.addEventListener('keydown',e=>{
       if(!this.sheet)return;
+      if(e.target.closest('.photo-crop-editor,.photo-mask-editor'))return;
       if(e.key==='Escape'){
         if(e.target.closest('.tag-picker')?.querySelector('[aria-expanded=true]'))return;
         e.preventDefault();e.stopImmediatePropagation();this.close();return;
@@ -75,13 +76,35 @@ const PhotoNotes = {
       !sea.inView(it,-c.tx/c.zoom,-c.ty/c.zoom,(sea.el.clientWidth-c.tx)/c.zoom,(sea.el.clientHeight-c.ty)/c.zoom,0)){
       this.clearSea();return;
     }
-    // These are the world's two transforms, with a fixed reference size for the notes controls. Moving the
+    // These are the world's two transforms, with a fixed reference size for the writing and stickies. Moving the
     // camera never reframes, reloads or replaces the photograph, or restarts its paper animation.
     const camera=`translate(${c.tx.toFixed(2)}px,${c.ty.toFixed(2)}px) scale(${(c.zoom/zoom).toFixed(7)})`;
     if(this.seaLayer.style.transform!==camera)this.seaLayer.style.transform=camera;
     const body=`translate3d(${(Number(it.x.toFixed(2))*zoom).toFixed(3)}px,${(Number(it.y.toFixed(2))*zoom).toFixed(3)}px,0) translate(-50%,-50%) scale(${(it.renderScale||1)*s/size})`;
     if(this.seaDetail.style.transform!==body)this.seaDetail.style.transform=body;
     this.seaDetail.classList.toggle('pinned',it.el.classList.contains('pinned'));
+    // The sheet follows the print, but lays out its writing in screen pixels. Scaling its controls with the
+    // world made a perfectly ordinary font unreadable after zooming back from a close-up.
+    const under=this.seaDetail.querySelector('.sea-note-underlay');
+    if(under){
+      const scale=c.zoom/zoom*(it.renderScale||1)*s/size,width=size*zoom*scale,height=width*4/3;
+      under.style.width=`${width}px`;under.style.height=`${height}px`;under.style.transform=`scale(${1/scale})`;
+      if(this.active?.host===this.seaDetail)this.seaSheet(under,{width,height,
+        left:Number(it.x.toFixed(2))*c.zoom+c.tx-width/2,top:Number(it.y.toFixed(2))*c.zoom+c.ty-height/2});
+    }
+  },
+  seaSheet(under,photo) {
+    const {margin,width,height}=this.paperSize(photo.width),
+      left=Math.max(margin,Math.min(photo.left+photo.width+18,innerWidth-margin-width-52)),
+      top=Math.max(margin,Math.min(photo.top,innerHeight-margin-height-132));
+    for(const [key,value] of Object.entries({width,height,x:left-photo.left,y:top-photo.top}))this.sheet.style.setProperty(`--notes-${key}`,`${value}px`);
+    under.classList.toggle('notes-overlap',left<photo.left+photo.width);
+  },
+  paperSize(photoWidth) {
+    const actions=this.active?.host?.closest('.viewer')?.querySelector('.viewer-actions'),bottom=Math.min(innerHeight,actions?actions.getBoundingClientRect().top-8:innerHeight),
+      margin=innerWidth<760?8:16,maxWidth=Math.min(innerWidth-2*margin-52,(bottom-2*margin-132)*3/4),
+      width=Math.max(Math.min(300,maxWidth),Math.min(photoWidth,maxWidth));
+    return {margin,width,height:width*4/3,bottom};
   },
   camera(sea=World.sea) {
     if(sea!==World.sea)return;
@@ -112,7 +135,7 @@ const PhotoNotes = {
         it.el.classList.add('photo-detail-source');Cards.focus(detail);
         // The real clip stays on its pile; this matching control remains reachable above the focused notes layer.
         if(it.n>1)detail.insertAdjacentHTML('beforeend',Cards.stack(it.n,it.photo));
-        this.attach(detail);Toolbelt.arm(detail);
+        this.attach(detail);this.followSea();Toolbelt.arm(detail);
         requestAnimationFrame(()=>requestAnimationFrame(()=>{if(detail.isConnected)detail.style.transition='';}));
       }).catch(()=>{});
     },250);
@@ -199,6 +222,11 @@ const PhotoNotes = {
   },
   preview(host,p,edits) {
     if(this.active?.host===host&&this.active.comparing)edits={crop:'off',rotate:0,enhance:false};
+    if(host===this.seaDetail&&this.seaPose?.photo===p.id){
+      // The detail layer carries the writing, not a second visible photograph. Every preview must reach the
+      // real print, and decoding a new image level must keep that preview until it is released or saved.
+      this.seaPose.previewEdits=edits;this.seaPose.sea.frameImage(this.seaPose.item);
+    }
     let img=host.querySelector('.window img');
     if(!img){
       Cards.focus(host);img=host.querySelector('.window img');if(!img)return;
@@ -207,8 +235,10 @@ const PhotoNotes = {
       if(!host.isConnected)return;
       host.dataset.photo=p.id;host.dataset.frame='own';host.dataset.box=JSON.stringify(p.subject||null);
       host.dataset.crop=this.cropFor(host,edits);
+      host.dataset.cropBox=JSON.stringify(edits.crop_box||null);
       host.dataset.rotate=String(edits.rotate||0);host.dataset.enhance=(edits.enhance??(host.matches('.board-card')?true:S.filter))?'on':'off';
       host.dataset.look=JSON.stringify(edits.look||null);
+      host.dataset.straighten=String(edits.straighten||0);host.dataset.finishing=JSON.stringify({grade:edits.grade,masks:edits.masks});
       framePhoto(host,{dims:[p.width||img.naturalWidth||1,p.height||img.naturalHeight||1],box:p.subject},
         {crop:host.dataset.crop,rotate:edits.rotate||0,enhance:host.dataset.enhance==='on',knobs:edits.look?knobsOf(edits.look):null});
     };
@@ -238,6 +268,8 @@ const PhotoNotes = {
     host.style.removeProperty('--notes-shift');tab.setAttribute('aria-expanded','false');tab.removeAttribute('aria-controls');
     const tuck=()=>{
       paper.replaceChildren(tab);paper.inert=false;paper.scrollTop=0;paper.classList.remove('notes-returning');paper.removeAttribute('role');paper.removeAttribute('tabindex');host.classList.remove('notes-active');
+      for(const key of ['width','height','x','y'])paper.style.removeProperty(`--notes-${key}`);
+      paper.closest('.sea-note-underlay')?.classList.remove('notes-overlap');
       if(focus&&tab.isConnected)tab.focus({preventScroll:true});
     };
     if(!focus||reduceMotion)tuck();else if(state)this.afterMotion(host,state,tuck);
@@ -255,14 +287,21 @@ const PhotoNotes = {
     if(!this.sheet||!this.active)return;
     const host=this.active.host;host.classList.add('notes-active');
     const r=host.getBoundingClientRect(),current=parseFloat(getComputedStyle(host).translate)||0,left=r.left-current,right=r.right-current;
-    if(innerWidth<760){
-      host.style.removeProperty('--notes-shift');return;
-    }
-    const shift=Math.max(16-left,Math.min(0,innerWidth-16-r.width-18-right));
     if(host===this.seaDetail){
-      host.style.removeProperty('--notes-shift');
-      const sea=this.seaPose.sea;if(Math.abs(shift)>.5)sea.setCamera(sea.camera.zoom,sea.camera.tx+shift,sea.camera.ty);
-    }else host.style.setProperty('--notes-shift',`${shift}px`);
+      host.style.removeProperty('--notes-shift');this.followSea();
+      const width=parseFloat(this.sheet.style.getPropertyValue('--notes-width'))||r.width;
+      if(innerWidth>=760&&r.width+width+18+52<=innerWidth-32){
+        const shift=Math.max(16-left,Math.min(0,innerWidth-16-width-52-18-right)),sea=this.seaPose.sea;
+        if(Math.abs(shift)>.5)sea.setCamera(sea.camera.zoom,sea.camera.tx+shift,sea.camera.ty);
+      }
+      return;
+    }
+    const {margin,width,height,bottom}=this.paperSize(r.width),
+      shift=innerWidth>=760&&r.width+width+18+52<=innerWidth-2*margin?Math.max(margin-left,Math.min(0,innerWidth-margin-width-52-18-right)):0,
+      x=Math.max(margin,Math.min(innerWidth<760?left+8:left+shift+r.width+18,innerWidth-margin-width-52)),
+      y=Math.max(margin,Math.min(r.top+(innerWidth<760?10:0),bottom-margin-height-132));
+    host.style.setProperty('--notes-shift',`${shift}px`);
+    for(const [key,value] of Object.entries({width,height,x:x-left-shift,y:y-r.top}))this.sheet.style.setProperty(`--notes-${key}`,`${value}px`);
   },
   async reload() {
     const active=this.active,sheet=this.sheet;if(!active||!sheet)return;
@@ -337,8 +376,9 @@ const PhotoNotes = {
   },
   async edit(patch) {
     const active=this.active;if(!active)return;
-    await Toolbelt.save(active.pid,patch);
+    if(await Toolbelt.save(active.pid,patch)===false)return false;
     if(this.active===active){active.data.edits=Toolbelt.current(active.pid);this.controls();this.preview(active.host,active.data,active.data.edits);this.refreshHistory(active);}
+    return true;
   },
   async action(path,body) {
     const active=this.active;if(!active||this.busy)return;this.busy=true;
@@ -359,11 +399,11 @@ const PhotoNotes = {
     const active=this.active,sheet=this.sheet,p=active.data;
     if(!$('.notes-nav',sheet)){
       const pages=[['notes','Notes'],['tags','Tags'],['look','Look'],['details','Details']];
-      sheet.innerHTML=`<header class="notes-heading"><h2 id="${sheet.id}-title">Photo notes</h2><button type="button" class="btn notes-close" aria-label="Close photo notes">×</button></header>
-        <nav class="notes-nav" role="tablist" aria-label="Photo notes pages">${pages.map(([key,label])=>`<button type="button" role="tab" id="${sheet.id}-${key}-tab" data-notes-page="${key}" aria-controls="${sheet.id}-${key}">${label}</button>`).join('')}</nav>
+      sheet.innerHTML=`<nav class="notes-nav" role="tablist" aria-label="Photo notes sheets">${pages.map(([key,label])=>`<div class="notes-leaf"><button type="button" role="tab" id="${sheet.id}-${key}-tab" data-notes-page="${key}" aria-controls="${sheet.id}-${key}" aria-label="Bring ${label.toLowerCase()} sheet to the top"><span>${label}</span></button></div>`).join('')}</nav>
+        <div class="notes-face"><header class="notes-heading"><h2 id="${sheet.id}-title">Photo notes</h2><button type="button" class="btn notes-close" aria-label="Close photo notes">×</button></header>
         <div class="notes-body">${pages.map(([key])=>`<section class="notes-page" role="tabpanel" id="${sheet.id}-${key}" data-notes-panel="${key}" aria-labelledby="${sheet.id}-${key}-tab" tabindex="0" hidden></section>`).join('')}</div>
         <footer class="notes-footer"><div class="notes-save"><span class="notes-save-state" role="status" aria-live="polite"></span><button type="button" class="btn" data-retry-writing hidden>Retry</button></div>
-          <div class="notes-history-actions"><button type="button" class="btn ghost" data-notes-undo hidden aria-label="Undo last photo change">↶ <span>Undo</span></button><button type="button" class="btn ghost" data-notes-redo hidden aria-label="Redo last photo change">↷ <span>Redo</span></button></div></footer>`;
+          <div class="notes-history-actions"><button type="button" class="btn ghost" data-notes-undo hidden aria-label="Undo last photo change">↶ <span>Undo</span></button><button type="button" class="btn ghost" data-notes-redo hidden aria-label="Redo last photo change">↷ <span>Redo</span></button></div></footer></div>`;
       sheet.setAttribute('aria-labelledby',`${sheet.id}-title`);
       $('.notes-close',sheet).onclick=()=>this.close();
       $('[data-retry-writing]',sheet).onclick=()=>this.saveWriting(active);
@@ -399,15 +439,19 @@ const PhotoNotes = {
   },
   showPage(page) {
     if(!this.sheet||!this.active)return;
-    this.compare(false);
+    const changed=this.active.page!==page;if(changed)this.compare(false);
     if(page==='details'&&this.active.page!==page){
       const panel=$('[data-notes-panel=details]',this.sheet),open=new Set($$('details[open]',panel).map(d=>d.dataset.notesDetail));
       this.renderDetails();
       for(const detail of $$('details',panel))detail.open=open.has(detail.dataset.notesDetail);
     }
+    const order=this.active.paperOrder||=['notes','tags','look','details'],depth=order.indexOf(page);
+    if(depth>0){order.splice(depth,1);order.unshift(page);}
+    if(changed&&!reduceMotion)$('.notes-face',this.sheet).animate([{transform:`translate(${depth*12}px,${depth*32}px) rotate(${depth*.4}deg)`},{transform:'none'}],{duration:240,easing:'cubic-bezier(.22,.8,.25,1)'});
     this.page=this.active.page=page;
     for(const button of $$('[data-notes-page]',this.sheet)){
       const selected=button.dataset.notesPage===page;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;
+      button.parentElement.style.setProperty('--sheet-depth',order.indexOf(button.dataset.notesPage));
     }
     for(const panel of $$('[data-notes-panel]',this.sheet))panel.hidden=panel.dataset.notesPanel!==page;
     this.sheet.dataset.page=page;
@@ -468,10 +512,13 @@ const PhotoNotes = {
   renderLook() {
     const p=this.active.data,panel=$('[data-notes-panel=look]',this.sheet);
     panel.innerHTML=`<div class="notes-look-intro"><p class="notes-intro">Fine-tune this photo. Watch the print as you work.</p><button type="button" class="btn notes-compare" data-notes-compare aria-pressed="false">Hold for original</button></div>
-      <div class="notes-finishing edit-sheet"><fieldset><legend>Framing</legend><div class="sheet-seg">${[['best','Best'],['subject','Subject'],['height','Height'],['width','Width'],['off','Whole photo']].map(([key,label])=>`<button type="button" class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div><p class="notes-crop-hint"></p></fieldset>
+      <div class="notes-finishing edit-sheet"><fieldset><legend>Framing</legend><div class="sheet-seg">${[['best','Best'],['subject','Subject'],['height','Height'],['width','Width'],['off','Whole photo'],['custom','Custom…']].map(([key,label])=>`<button type="button" class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div><p class="notes-crop-hint"></p></fieldset>
       <fieldset><legend>Light & colour</legend><div class="sheet-row"><button type="button" class="btn" data-edit="enhance">Enhance</button><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
         <div class="sheet-knobs">${Object.entries(KNOBS).map(([key,[lo,hi]])=>`<div class="sheet-knob"><label for="${this.sheet.id}-${key}">${KNOB_WORD[key]}</label><input id="${this.sheet.id}-${key}" type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05"><output for="${this.sheet.id}-${key}"></output><button type="button" class="notes-knob-reset" data-knob-reset="${key}" aria-label="Reset ${KNOB_WORD[key]}" hidden>↶</button></div>`).join('')}</div></fieldset>
-      <fieldset><legend>Turn</legend><div class="sheet-row notes-turn"><button type="button" class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><output class="sheet-deg"></output><button type="button" class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div></fieldset></div>`;
+      <fieldset><legend>Alignment</legend><div class="sheet-row notes-turn"><button type="button" class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><output class="sheet-deg"></output><button type="button" class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div>
+        <div class="straighten-control"><label for="${this.sheet.id}-straighten">Straighten</label><output for="${this.sheet.id}-straighten" data-straighten-angle></output><input id="${this.sheet.id}-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${p.edits.straighten||0}"></div><button type="button" class="btn ghost" data-align>Align horizon…</button></fieldset>
+      <fieldset class="notes-grading"><legend>Colour grading</legend><p class="notes-hint">Tint the shadows, midtones and highlights independently. Drag a wheel or enter exact values.</p>${PhotoFinish.wheels(p.edits.grade)}</fieldset>
+      <fieldset><legend>Local adjustments</legend><p class="notes-mask-summary"></p><button type="button" class="btn" data-masks>Paint masks…</button><p class="notes-hint">Brush exposure and colour onto part of the photo. Erase or soften the mask whenever you like.</p></fieldset></div>`;
     const compare=$('[data-notes-compare]',panel),end=()=>this.compare(false);
     compare.onpointerdown=event=>{if(event.button)return;event.preventDefault();compare.setPointerCapture(event.pointerId);this.compare(true);};
     for(const type of ['pointerup','pointercancel','lostpointercapture','blur'])compare.addEventListener(type,end);
@@ -479,8 +526,14 @@ const PhotoNotes = {
     compare.onkeyup=event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();end();}};
     $('[data-edit=enhance]',panel).onclick=()=>this.edit({enhance:!this.enhanced()});
     $('[data-edit=auto]',panel).onclick=()=>this.edit({look:null});
-    for(const button of $$('[data-crop]',panel))button.onclick=()=>this.edit({crop:button.dataset.crop});
+    for(const button of $$('[data-crop]',panel))button.onclick=()=>button.dataset.crop==='custom'?PhotoCrop.open(this.active.data,patch=>this.edit(patch)):this.edit({crop:button.dataset.crop});
     for(const button of $$('[data-turn]',panel))button.onclick=()=>this.edit({rotate:((this.active.data.edits.rotate||0)+Number(button.dataset.turn)+360)%360});
+    const angle=$('[name=straighten]',panel);
+    angle.oninput=()=>{if(angle.value!==''&&angle.checkValidity()){$('[data-straighten-angle]',panel).textContent=`${angle.valueAsNumber>0?'+':''}${angle.valueAsNumber.toFixed(2)}°`;this.preview(this.active.host,this.active.data,{...this.active.data.edits,straighten:angle.valueAsNumber});}};
+    angle.onchange=()=>{if(angle.value!==''&&angle.checkValidity())this.edit({straighten:angle.valueAsNumber});};
+    $('[data-align]',panel).onclick=()=>PhotoCrop.open(this.active.data,patch=>this.edit(patch),true);
+    $('[data-masks]',panel).onclick=()=>PhotoMask.open(this.active.data,patch=>this.edit(patch));
+    PhotoFinish.bindWheels($('.notes-grading',panel),()=>this.active.data.edits.grade||{},grade=>this.preview(this.active.host,this.active.data,{...this.active.data.edits,grade}),grade=>this.edit({grade}));
     const knobs=()=>Object.fromEntries($$('[data-knob]',panel).map(r=>[r.dataset.knob,Number(r.value)]));
     for(const range of $$('[data-knob]',panel)){
       range.oninput=()=>{this.knobValue(range);this.preview(this.active.host,this.active.data,{...this.active.data.edits,look:knobs()});};
@@ -521,7 +574,7 @@ const PhotoNotes = {
         <details data-notes-detail="measurements"><summary>Measurements & match scores</summary><p class="notes-hint">Match scores describe the analysis, not a rating of your photo.</p>${this.facts([['Sharpness',number(p.sharp)],['Dark tones',number(p.luma_lo)],['Light tones',number(p.luma_hi)],['Colour range',number(p.chroma)],['Hue',number(p.hue)],['Starting appeal',number(p.prior)],['Current appeal',number(p.ranking?.appeal)],['Subject region',p.subject?.map(number).join(', ')],['Salient region',p.salient?.map(number).join(', ')]])}
         ${scoreRows(p.recognized_tags?.tags||p.recognized_tags)}${scoreRows(p.zs)}
         ${p.faces.map((face,i)=>`<h4>Face ${i+1}${face.label==='me'?' · You':''}</h4>${this.facts(Object.entries(face).filter(([key])=>!['id','photo_id','idx','person','label'].includes(key)).map(([key,value])=>[this.word(key),number(value)]))}`).join('')}</details></details>
-      <details data-notes-detail="saved"><summary>What you’ve changed</summary>${this.facts([['Writing',e.title||e.description?'Saved on this photo':null],['Pen & marker strokes',e.marks?.length],['Sticky notes',e.notes?.map(n=>n.text).join(' · ')],['Crop',e.crop],['Turn',e.rotate!==undefined?`${e.rotate}°`:null],['Enhance',e.enhance!==undefined?e.enhance?'On':'Off':null],['Export selection',p.pick?'Added by you':null]])}
+      <details data-notes-detail="saved"><summary>What you’ve changed</summary>${this.facts([['Writing',e.title||e.description?'Saved on this photo':null],['Pen & marker strokes',e.marks?.length],['Sticky notes',e.notes?.map(n=>n.text).join(' · ')],['Crop',e.crop],['Turn',e.rotate!==undefined?`${e.rotate}°`:null],['Straighten',e.straighten?`${e.straighten}°`:null],['Colour grading',e.grade?Object.keys(e.grade).filter(k=>PhotoFinish.zones.includes(k)).join(', ')||'Custom blend':null],['Local masks',e.masks?.map(m=>`${m.name}${m.enabled===false?' (disabled)':''}`).join(' · ')],['Enhance',e.enhance!==undefined?e.enhance?'On':'Off':null],['Export selection',p.pick?'Added by you':null]])}
         ${p.tag_edits.length?this.facts(p.tag_edits.map(tag=>[tag.label,tag.on?'Added by you':'Removed by you'])):'<p class="notes-hint">Tag corrections will appear here.</p>'}</details>
       <details data-notes-detail="calls"><summary>Recent choices</summary>${p.history.length?`<ol class="notes-history">${p.history.map(call=>`<li><span>${esc(({duel:'Compared',frame:'Chose a stack cover',toss:'Set aside',great:'Loved',meh:'Disliked',skip:'Deferred'})[call.kind]||this.word(call.kind))}${call.winner===p.id?' · won':call.kind==='duel'&&call.winner?' · lost':''}${call.undone?' · undone':''}</span><time>${esc(ago(call.ts))}</time></li>`).join('')}</ol>`:'<p class="notes-empty">No choices recorded for this take yet.</p>'}</details>`;
     for(const button of $$('[data-photo-action]',panel))button.onclick=()=>{
@@ -545,8 +598,11 @@ const PhotoNotes = {
     toggle.textContent=on?'Enhance on':'Enhance off';toggle.setAttribute('aria-pressed',String(on));
     $('[data-edit=auto]',sheet).hidden=!on||!e.look;$('.sheet-knobs',sheet).hidden=!on;
     for(const b of $$('[data-crop]',sheet))b.setAttribute('aria-pressed',String(b.dataset.crop===crop));
-    $('.notes-crop-hint',sheet).textContent={best:'The fullest framing that keeps your subject.',subject:'A closer view of the subject.',height:'Fill the height of the window.',width:'Fill the width of the window.',off:'Keep the whole photo in view.'}[crop]||'';
+    $('.notes-crop-hint',sheet).textContent={best:'The fullest framing that keeps your subject.',subject:'A closer view of the subject.',height:'Fill the height of the window.',width:'Fill the width of the window.',off:'Keep the whole photo in view.',custom:'Your own framing. Open Custom to adjust the rectangle or its exact measurements.'}[crop]||'';
     $('.sheet-deg',sheet).textContent=`${e.rotate||0}°`;
+    const angle=$('[name=straighten]',sheet);if(document.activeElement!==angle){angle.value=String(e.straighten||0);$('[data-straighten-angle]',sheet).textContent=`${e.straighten>0?'+':''}${Number(e.straighten||0).toFixed(2)}°`;}
+    if(!$('.notes-grading',sheet).contains(document.activeElement))PhotoFinish.fillWheels($('.notes-grading',sheet),e.grade||{});
+    $('.notes-mask-summary',sheet).textContent=e.masks?.length?`${e.masks.length} editable ${e.masks.length===1?'mask':'masks'} on this photo.`:'Paint an area to adjust it without changing the rest of the photo.';
     const k=knobsOf(e.look);for(const r of $$('[data-knob]',sheet))if(document.activeElement!==r){r.value=k[r.dataset.knob];this.knobValue(r);}
     this.writingStatus();
   }

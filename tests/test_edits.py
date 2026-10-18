@@ -70,6 +70,27 @@ def test_the_note_keeps_its_spot_without_an_undo_step(client):
     assert post(client, "/api/edit", {"photo": top["photo"], "note": [1, True]}).status_code == 400
 
 
+def test_custom_crop_is_saved_and_undone_with_its_rectangle(client):
+    play_duels(client, 2)
+    pid = client.get("/api/shortlist").get_json()["items"][0]["photo"]
+    patch = {"photo": pid, "crop": "custom", "crop_box": [.25, .2, .5, .4]}
+    result = post(client, "/api/edit", patch).get_json()
+    assert result["edits"] == {"crop": "custom", "crop_box": [.25, .2, .5, .4]}
+    assert result["undo"] == "edit"
+    assert client.get(f"/api/edit?photo={pid}").get_json()["edits"] == result["edits"]
+    post(client, "/api/draw/undo")
+    assert client.get(f"/api/edit?photo={pid}").get_json()["edits"] == {}
+    post(client, "/api/draw/redo")
+    assert client.get(f"/api/edit?photo={pid}").get_json()["edits"] == result["edits"]
+    # Trying an automatic mode does not discard the user's last rectangle.
+    automatic = post(client, "/api/edit", {"photo": pid, "crop": "best"}).get_json()["edits"]
+    assert automatic == {"crop": "best", "crop_box": [.25, .2, .5, .4]}
+    for rectangle in ([0, 0, 0, .5], [-.1, 0, .5, .5], [.6, .2, .5, .5], [0, 0, True, .5], [0, 0, .5], "deer", [0, 0, 1e-10, .5]):
+        assert post(client, "/api/edit", {"photo": pid, "crop": "custom", "crop_box": rectangle}).status_code == 400
+        assert client.get(f"/api/edit?photo={pid}").get_json()["edits"] == automatic
+    assert post(client, "/api/edit", {"photo": pid, "crop": "custom", "crop_box": None}).status_code == 400
+
+
 def test_crop_modes_and_look_knobs_are_kept_normalised(client):
     play_duels(client, 5)
     top = client.get("/api/shortlist").get_json()["items"][0]

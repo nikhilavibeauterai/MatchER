@@ -96,13 +96,14 @@ const problems=[],res={};let page;
     await page.setViewportSize({width,height});await page.waitForTimeout(500);
     for(const name of ['notes','tags','look','details']){
       await page.click(`[data-notes-page=${name}]`);
+      await page.waitForFunction(()=>!PhotoNotes.sheet.querySelector('.notes-face').getAnimations().some(a=>a.playState==='running'));
       const layout=await page.evaluate(()=>{
         const paper=PhotoNotes.sheet,r=paper.getBoundingClientRect(),footer=paper.querySelector('.notes-footer').getBoundingClientRect(),panel=paper.querySelector('.notes-page:not([hidden])');
         return {paper:r.toJSON(),footer:footer.toJSON(),overflow:document.documentElement.scrollWidth>innerWidth,panelSpills:panel.scrollWidth>panel.clientWidth+1};
       });
       assert(!layout.overflow&&!layout.panelSpills,`${name} ${width}: ${JSON.stringify(layout)}`);
       assert(layout.paper.left>=0&&layout.paper.right<=width&&layout.paper.top>=0&&layout.paper.bottom<=height,`${name} fits ${width}`);
-      assert(layout.footer.bottom<=layout.paper.bottom+1,'Save state and history stay on the sheet');
+      assert(layout.footer.bottom<=layout.paper.bottom+1,`Save state and history stay on the sheet: ${JSON.stringify(layout)}`);
       layouts.push({width,height,name});await page.screenshot({path:`${OUT}/notes-${name}-${width}.png`});
     }
   }

@@ -81,6 +81,33 @@ print(json.dumps(dict(shown=detail(images[0]), reference=detail(images[1]))))
     cases.push({dpr,hovered,fine:!!fine,retained,state,pixels});assert(pixels.reference>8/dpr,`The original fixture has real fine detail: ${JSON.stringify(cases.at(-1))}`);
     assert(pixels.shown>pixels.reference*.75,`The displayed original stays as detailed as a screen-sized photo: ${JSON.stringify(cases.at(-1))}`);
     await page.evaluate(()=>document.getElementById('original-reference').remove());
+    if(fine){
+      await page.evaluate(()=>{
+        S.filter=false;const s=World.sea;s.frameImage(originalItem);
+        window.originalPixels=ratio=>{
+          const img=originalItem.el.querySelector('.pile-cover'),r=img.getBoundingClientRect(),z=s.camera.zoom*ratio*img.naturalWidth/(r.width*devicePixelRatio);
+          s.setCamera(z,s.el.clientWidth/2-originalItem.x*z,s.el.clientHeight/2-originalItem.y*z);
+          const p=img.getBoundingClientRect();s.setCamera(z,s.camera.tx+s.el.clientWidth/2-p.left-p.width/2,s.camera.ty+s.el.clientHeight/2-p.top-p.height/2);
+        };
+        originalPixels(3.25);
+      });
+      await page.waitForTimeout(250);
+      assert(await page.evaluate(()=>originalImage.classList.contains('photo-pixels')),'Magnifying an original uses pixel-preserving sampling');
+      const clip={x:660,y:390,width:120,height:120},crisp=await page.screenshot({clip,path:`${OUT}/sea-pixels-crisp-${dpr}.png`});
+      await page.evaluate(()=>originalImage.style.imageRendering='auto');
+      const smooth=await page.screenshot({clip,path:`${OUT}/sea-pixels-smooth-${dpr}.png`});
+      const magnified=JSON.parse(execFileSync(path.resolve(__dirname,'../../../.venv/bin/python'),['-c',`
+import base64, io, json, sys
+import numpy as np
+from PIL import Image
+images = [np.asarray(Image.open(io.BytesIO(base64.b64decode(s))).convert('L')) for s in json.load(sys.stdin)]
+print(json.dumps([float(np.mean((im > 30) & (im < 225))) for im in images]))
+`],{input:JSON.stringify([crisp.toString('base64'),smooth.toString('base64')]),encoding:'utf8'}));
+      cases.at(-1).magnified={crisp:magnified[0],smooth:magnified[1]};
+      assert(magnified[0]<.03&&magnified[0]<magnified[1]*.25,`Magnification preserves source pixels instead of blending them: ${JSON.stringify(magnified)}`);
+      await page.evaluate(()=>{originalImage.style.removeProperty('image-rendering');originalPixels(.5);});await page.waitForTimeout(250);
+      assert(!await page.evaluate(()=>originalImage.classList.contains('photo-pixels')),'Reduced originals return to smooth sampling, including on high-density screens');
+    }
     await page.evaluate(()=>originalZoom(2.5));await page.waitForTimeout(200);
     assert(await page.evaluate(()=>originalImage.naturalHeight===3200&&originalImage.src.includes('m=full')&&originalItem.el.getBoundingClientRect().height>innerHeight*2),'Zooming into part of the photo keeps the original');
     await page.screenshot({path:`${OUT}/sea-original-part-${label}.png`});

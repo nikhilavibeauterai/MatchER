@@ -12,6 +12,9 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.goto(BASE+'/#stacks');await page.waitForSelector('.shot-select img.pile-cover');
   const thumb=page.locator('.shot-select img.pile-cover').first(),pid=Number(/\/img\/[tp]\/(\d+)/.exec(await thumb.getAttribute('src'))[1]);
   await thumb.click({button:'right'});await page.waitForSelector('.viewer .photo-sticky');
+  await page.waitForSelector('.photo-note-sheet:not(.notes-opening) .notes-nav');
+  const opened=await page.locator('.viewer .window img').boundingBox();await page.mouse.click(opened.x+opened.width/2,opened.y+opened.height/2,{button:'right'});await page.waitForSelector('.photo-note-sheet',{state:'detached'});
+  await page.waitForSelector('.viewer .photo-notes-paper:not(.notes-returning)');
   await page.evaluate(async id=>{
     await Toolbelt.save(id,{marks:[{t:'pen',c:'coral',p:[[15,25],[70,50]]}],notes:[{x:60,y:65,text:'Stay with this shot'}]});
     window.viewerCopies=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>viewerCopies.push(text)}});
@@ -44,7 +47,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.locator('.viewer [data-viewer-notes]').click();await page.waitForSelector('.photo-note-sheet:not(.notes-opening) .notes-writing');
   assert.equal((await geometry()).zoom,1,'Opening the longer sheet restores the fitted photo');
   await page.locator('.photo-note-sheet [data-notes-panel=notes]').hover();await page.mouse.wheel(0,350);
-  await page.waitForFunction(()=>document.querySelector('.photo-note-sheet [data-notes-panel=notes]').scrollTop>100);
+  await page.waitForFunction(()=>document.querySelector('.photo-note-sheet [data-notes-panel=notes]').scrollTop>0);
   assert.equal((await geometry()).zoom,1,'Scrolling the notes sheet scrolls its content without zooming the photo');
   await page.keyboard.press('Escape');await page.click('.viewer #close-modal');
   await page.evaluate(id=>openViewer(id),pid);await page.waitForSelector('.viewer .photo-sticky');

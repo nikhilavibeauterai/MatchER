@@ -52,7 +52,9 @@ const {LINK,LIB,OUT}=process.env;
       const before=await page.evaluate(()=>World.sea.camera.zoom);
       await page.mouse.move(720,400);await page.mouse.wheel(0,delta);
       await page.waitForFunction(before=>World.sea.camera.zoom!==before,before);
-      const during=await check('wheel');assert.deepEqual(during.geometry,start.geometry,'The camera transforms the card without reframing its photo');
+      const during=await check('wheel');
+      assert(during.geometry.slice(0,2).every((v,i)=>Math.abs(parseFloat(v)-parseFloat(start.geometry[i]))<.01)&&during.geometry[2]===start.geometry[2],
+        'The camera preserves the crop; rebasing local pixels can round relative sizes by less than a tenth of a screen pixel');
     }
     await page.mouse.move(720,400);await page.mouse.down();
     for(let i=1;i<=6;i++){await page.mouse.move(720-i*14,400-i*5);await check('focused pan');}

@@ -2120,8 +2120,10 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
 :is(#main, #world, #sea, #modal, .inspect) img.pile-take[src] { animation: none; }
 .game-paused :is(img, .paper, .tile-pile), body.sea-deep :is(img, .paper, .tile-pile), .photo-sea[data-deep="1"] :is(img, .paper, .tile-pile) { animation-play-state: paused !important; }
 /* Zoomed in until one print fills the view, the sea is that picture: the chrome hides until you zoom back out. */
-body.sea-deep > :not(#world, #modal, #af-defs, .inspect, .sea-photo-detail-layer, .photo-note-sheet, script, style), body.sea-deep #world :is(.vn-density-labels, .vn-catalog, .focus-bar, .sea-tags) { visibility: hidden; }
+body.sea-deep > :not(#world, #modal, #af-defs, .inspect, .sea-photo-detail-layer, .photo-note-sheet, .photo-crop-editor, .photo-mask-editor, script, style), body.sea-deep #world :is(.vn-density-labels, .vn-catalog, .sea-tags, .focus-bar) { visibility: hidden; }
 /* The picture stays clear in deep zoom. Reaching for the belt reveals it; a tool in use keeps it open. */
 body.sea-deep #toolbelt { visibility: visible; opacity: 0; transition: opacity .15s; }
 body.sea-deep #toolbelt:is(:hover, :focus-within), body.sea-deep:not([data-tool="hand"]) #toolbelt { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { :is(#main, #world, #sea, #modal, #menu, #settings, #topbar, #journey-dock, #toast, #history-hud, .inspect) img, .print > .paper, .tile-pile { animation: none; } }
+/* Enlarging an original reveals its pixels; small pictures retain the browser's smooth downsampling. */
+img.photo-pixels { image-rendering:pixelated;image-rendering:crisp-edges;will-change:transform;backface-visibility:hidden; }

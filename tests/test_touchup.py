@@ -4,6 +4,26 @@ import numpy as np
 from PIL import Image
 
 from matcher import export, touchup
+import pytest
+
+
+@pytest.mark.parametrize("turn", [0, 90, 180, 270])
+def test_custom_crop_exports_the_selected_original_rectangle_after_a_turn(tmp_path, turn):
+    src, dst = tmp_path / "original.png", tmp_path / "cropped.jpg"
+    pixels = np.zeros((300, 400, 3), dtype=np.uint8)
+    pixels[:150, :200] = [220, 20, 20]
+    pixels[:150, 200:] = [20, 220, 20]
+    pixels[150:] = [20, 20, 220]
+    original = Image.fromarray(pixels)
+    original.save(src)
+    touchup.touch_up(src, dst, {"crop": "custom", "crop_box": [.25, .2, .5, .5], "rotate": turn, "enhance": False})
+    expected = original.crop((100, 60, 300, 210))
+    if turn:
+        expected = expected.transpose(touchup.TURNS[turn])
+    with Image.open(dst) as cropped:
+        assert cropped.size == expected.size
+        assert np.abs(np.asarray(cropped).astype(float) - np.asarray(expected)).mean() < 4
+    assert np.array_equal(np.asarray(Image.open(src)), pixels)
 
 
 def flat_photo(path, size=(120, 90), lo=70, hi=130, orientation=1):

@@ -1,0 +1,39 @@
+.photo-crop-editor { width:min(1180px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:16px 24px;box-sizing:border-box;background:var(--paper);color:var(--ink);overflow:auto; }
+.photo-crop-editor header { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.photo-crop-editor h2 { margin:0;font:700 32px/1.2 var(--hand); }
+.photo-crop-editor header .btn { min-width:44px;min-height:44px;font-size:26px; }
+.photo-crop-editor > p { margin:6px 0 16px;max-width:70ch;font-size:15px; }
+.crop-work { display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:24px;align-items:center; }
+.crop-stage { display:grid;place-items:center;min-width:0;min-height:0;container-type:inline-size; }
+.crop-card { position:relative;width:min(100%,calc((100dvh - 210px)*.75));aspect-ratio:3/4;container-type:inline-size; }
+.crop-card > .paper { animation:none!important;rotate:none; }
+.crop-viewport { position:absolute;z-index:8;touch-action:none;cursor:crosshair; }
+.crop-shade { position:absolute;inset:0;pointer-events:none;background:#0008; }
+.crop-horizon { position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible; }.crop-horizon line { stroke:#ffe66d;stroke-width:3;filter:drop-shadow(0 1px 1px #000); }
+.crop-controls [name=straighten] { margin-bottom:8px; }.crop-horizon-help { font-size:14px; }
+.crop-selection { position:absolute;box-sizing:border-box;border:2px solid #fff;outline:1px solid #222;cursor:move;touch-action:none; }
+.crop-selection:focus-visible { outline:3px solid var(--accent); }
+.crop-viewport.is-drawing .crop-selection { cursor:crosshair; }.crop-controls [aria-pressed=true] { background:var(--highlight); }
+.crop-thirds { position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent 33%,#fff8 33% calc(33% + 1px),transparent calc(33% + 1px) 66%,#fff8 66% calc(66% + 1px),transparent calc(66% + 1px)),linear-gradient(transparent 33%,#fff8 33% calc(33% + 1px),transparent calc(33% + 1px) 66%,#fff8 66% calc(66% + 1px),transparent calc(66% + 1px)); }
+.crop-handle { position:absolute;width:44px;height:44px;padding:0;border:0;background:transparent;box-shadow:none;touch-action:none; }
+.crop-handle::after { content:'';position:absolute;inset:16px;background:#fff;border:1px solid #222; }
+.crop-handle.nw { left:-22px;top:-22px;cursor:nwse-resize; }.crop-handle.ne { right:-22px;top:-22px;cursor:nesw-resize; }
+.crop-handle.sw { left:-22px;bottom:-22px;cursor:nesw-resize; }.crop-handle.se { right:-22px;bottom:-22px;cursor:nwse-resize; }
+.crop-controls { padding:16px;min-width:0;max-height:calc(100dvh - 200px);box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain; }
+.crop-controls > .crop-actions:last-child { position:sticky;bottom:-16px;padding:12px 0 2px;background:var(--paper);z-index:10; }
+.crop-controls fieldset { border:0;padding:0;margin:0 0 16px;min-width:0; }
+.crop-controls legend { font:700 24px/1.2 var(--hand);margin-bottom:12px; }.crop-controls legend small { font-size:16px; }
+.crop-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.crop-controls label { margin:0;font-size:14px;min-width:0; }.crop-controls input,.crop-controls select { width:100%;min-width:0;box-sizing:border-box;min-height:44px;font-size:18px; }
+.crop-controls > label { margin:0 0 12px; }.crop-size { font-size:14px;line-height:1.5; }.crop-error { color:#a03a2e;font-size:14px; }
+.crop-ratio-fields { display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) 44px;gap:6px;align-items:center; }
+.crop-ratio-fields .btn { min-width:44px;min-height:44px;padding:0;font-size:26px; }
+.crop-ratio-presets { display:flex;flex-wrap:wrap;gap:6px;margin-top:10px; }.crop-ratio-presets .btn { min-height:40px;flex:1 0 auto; }
+.crop-actions { display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap; }.crop-actions .btn,.crop-controls > .btn { min-height:44px; }
+body.sea-deep > .photo-crop-editor { visibility:visible; }
+@media(max-width:759px) {
+  .photo-crop-editor { padding:12px; }.photo-crop-editor h2 { font-size:28px; }
+  .crop-work { grid-template-columns:minmax(0,1fr);gap:18px; }.crop-card { width:min(80%,calc((100dvh - 200px)*.75)); }
+  .crop-controls { padding:12px;max-height:none;overflow:visible; }.crop-fields { grid-template-columns:repeat(4,minmax(0,1fr));gap:6px; }
+  .crop-controls input { padding:4px 2px; }.crop-actions { position:sticky;bottom:-12px;padding:10px 0;background:var(--paper);z-index:10; }
+}

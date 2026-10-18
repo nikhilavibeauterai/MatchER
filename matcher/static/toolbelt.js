@@ -169,6 +169,7 @@ const Toolbelt = {
     const source=this.source,jobs=this.jobs.get(pid)||[];jobs.push(change);this.jobs.set(pid,jobs);this.render(pid);
     if(this.saving.has(pid))return this.saving.get(pid);
     const task=(async()=>{
+      let failed=false;
       await this.loading.get(pid);
       this.syncSource();
       while(jobs.length&&source===this.source){
@@ -180,8 +181,9 @@ const Toolbelt = {
           if(source!==this.source)return;
           jobs.shift();this.know(pid,r.edits||{});
           if(typeof refreshHud==='function')refreshHud(true);
-        }catch(e){if(source!==this.source)return;jobs.shift();this.render(pid);toast(e.message);}
+        }catch(e){if(source!==this.source)return;failed=true;jobs.shift();this.render(pid);toast(e.message);}
       }
+      return !failed;
     })();
     this.saving.set(pid,task);
     task.finally(()=>{if(this.saving.get(pid)===task){this.saving.delete(pid);this.jobs.delete(pid);}});
