@@ -34,7 +34,7 @@ from .analyze import Analyzer, TooManyPhotos, list_photos
 from .config import DATA_DIR, DEFAULT_SETTINGS, PHOTO_EXTS
 from .ranker import W_BAR, W_FRAME, W_TOSS, Obs, Ranker
 from .store import ClosedStoreError, Store, unblob
-from .platforms import desktop_env, open_directory
+from .platforms import desktop_env, mounted_folders, open_directory
 
 STATIC = Path(__file__).parent / "static"
 DONE_QUALITY = 0.90      # ~450 duels in simulation; past this, more duels mostly reshuffle near-ties
@@ -193,7 +193,7 @@ class Session:
         with self.analyzer._start_lock:
             self.analyzer.closed = True
             self.analyzer.cancel.set()
-        for worker in (self.analyzer.thread, self._refresh_thread):
+        for worker in (self.analyzer.thread, self._refresh_thread, self._subjects_thread):
             if worker and worker is not threading.current_thread():
                 worker.join()
         with self.lock:
@@ -1640,6 +1640,12 @@ def suggestions() -> list[dict]:
     if sys.platform.startswith("linux"):
         for mount in sorted(Path(f"/run/user/{os.getuid()}").glob("*/storage/emulated/0")):  # KDE Connect phone mounts
             out.append({"label": "Phone (KDE Connect)", "path": str(mount)})
+    known = {item["path"] for item in out}
+    for path in mounted_folders():
+        if path not in known:
+            label = PureWindowsPath(path).drive if sys.platform == "win32" else Path(path).name
+            out.append({"label": label or path, "path": path})
+            known.add(path)
     return out
 
 
@@ -1853,7 +1859,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
     def state():
         s = app.session
         st = app._state()
-        out = {"library": None, "recent": [r for r in st.get("recent", []) if Path(r["path"]).is_dir()],
+        out = {"library": None, "recent": st.get("recent", []),
                "debug": bool(getattr(app, "debug_panel", False))}
         if s:
             out["library"] = {
@@ -1902,8 +1908,24 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                     dirs.append({"name": e.name, "path": str(Path(e.path)), "photos": None})
             except OSError:
                 continue
-        return jsonify(path=str(p), parent=str(p.parent) if p.parent != p else None, dirs=dirs,
+        crumbs = [{"label": ancestor.name or str(ancestor), "path": str(ancestor)}
+                  for ancestor in [*reversed(p.parents), p]]
+        return jsonify(path=str(p), parent=str(p.parent) if p.parent != p else None, dirs=dirs, crumbs=crumbs,
                        photos=None, suggestions=suggestions())
+
+    @flask_app.get("/api/storage")
+    def storage():
+        # Poll connectivity without reopening save databases, scanning photos or starting analysis.
+        out = {"saves": [{"path": r["path"], "exists": Path(r["path"]).is_dir()}
+                         for r in app._state().get("recent", [])]}
+        if request.args.get("browse") == "1":
+            out["suggestions"] = suggestions()
+            path = request.args.get("path")
+            if path:
+                out["folder"] = {"path": path, "exists": Path(path).expanduser().is_dir()}
+        resp = jsonify(out)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @flask_app.post("/api/library")
     def open_library():

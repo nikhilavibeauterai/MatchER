@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -66,6 +67,32 @@ def desktop_env() -> dict:
         else:
             env.pop("LD_LIBRARY_PATH", None)
     return env
+
+
+def mounted_folders() -> list[str]:
+    """Discover media roots from OS metadata, without walking a drive's contents."""
+    if sys.platform == "win32":
+        import ctypes
+        try:
+            mask = ctypes.windll.kernel32.GetLogicalDrives()
+        except (AttributeError, OSError):
+            return []
+        return [f"{chr(65 + i)}:\\" for i in range(26) if mask & (1 << i)]
+    if sys.platform.startswith("linux"):
+        try:
+            lines = Path("/proc/self/mountinfo").read_text().splitlines()
+        except OSError:
+            return []
+        roots = set()
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 6:
+                continue
+            path = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[4])
+            if path == "/mnt" or path.startswith(("/media/", "/run/media/", "/mnt/")):
+                roots.add(path)
+        return sorted(roots)
+    return []
 
 
 def open_directory(path: Path) -> None:

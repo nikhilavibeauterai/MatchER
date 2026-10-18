@@ -49,10 +49,12 @@ def test_open_export_on_windows_and_linux(monkeypatch, tmp_path):
     assert opened[-1] == ["xdg-open", str(tmp_path / "photo export & notes")]
 
 
-def test_windows_folder_dialog_keeps_unicode_and_paths_out_of_code(monkeypatch):
+def test_windows_folder_dialog_keeps_unicode_and_paths_out_of_code(monkeypatch, tmp_path):
     from matcher import server
     calls = []
     monkeypatch.setattr(server.sys, "platform", "win32")
+    monkeypatch.setattr(server.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(server, "mounted_folders", lambda: [])
     monkeypatch.setattr(server.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
     def run(args, **kw):
         calls.append((args, kw))
@@ -62,3 +64,32 @@ def test_windows_folder_dialog_keeps_unicode_and_paths_out_of_code(monkeypatch):
     assert calls[0][1]["env"]["MATCHER_PICK_START"] == "C:\\a';bad"
     assert "C:\\a';bad" not in " ".join(calls[0][0])
     assert server.suggestions()[0]["label"] == "Home"
+
+
+def test_linux_media_roots_come_from_mount_metadata(monkeypatch):
+    monkeypatch.setattr(platforms.sys, "platform", "linux")
+    lines = r"""1 0 0:1 / / rw - ext4 /dev/root rw
+2 1 8:1 / /run/media/test/0123-4567 rw - vfat /dev/sdb1 rw
+3 1 8:2 / /media/test/Photo\040card rw - vfat /dev/sdc1 rw
+4 1 8:3 / /mnt/archive rw - ext4 /dev/sdd1 rw
+5 1 8:1 / /run/media/test/0123-4567 rw - vfat /dev/sdb1 rw
+6 1 0:2 / /proc rw - proc proc rw
+incomplete
+"""
+    def read(path):
+        assert str(path) == "/proc/self/mountinfo"
+        return lines
+    monkeypatch.setattr(platforms.Path, "read_text", read)
+    assert platforms.mounted_folders() == ["/media/test/Photo card", "/mnt/archive", "/run/media/test/0123-4567"]
+    monkeypatch.setattr(platforms.Path, "read_text", lambda path: (_ for _ in ()).throw(OSError()))
+    assert platforms.mounted_folders() == []
+
+
+def test_windows_drive_roots_follow_the_current_mask(monkeypatch):
+    import ctypes
+    monkeypatch.setattr(platforms.sys, "platform", "win32")
+    kernel = SimpleNamespace(GetLogicalDrives=lambda: (1 << 2) | (1 << 4))
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False)
+    assert platforms.mounted_folders() == ["C:\\", "E:\\"]
+    kernel.GetLogicalDrives = lambda: 1 << 2
+    assert platforms.mounted_folders() == ["C:\\"]

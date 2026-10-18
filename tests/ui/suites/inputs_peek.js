@@ -46,16 +46,17 @@ const { BASE, LINK, LIB, OUT } = process.env;
   res.urlAfterRename = page.url().replace(/^.*#/, "#");
   res.cardAfterRename = (await page.$eval("#dtop", (d) => d.dataset.photo).catch(() => null)) === photoBefore;
   res.renamed = await page.evaluate(async () => (await (await fetch("/api/draw/board?per=4&uper=4")).json()).groups.some((g) => g.name === "A Rather Long Group Name For Testing Overflow"));
-  await page.evaluate(async () => {  // enough groups for the 10th and 11th keys
-    const h = { "Content-Type": "application/json", "X-MatchER": "1" };
-    for (let k = 0; k < 12; k++) {
-      const b = await (await fetch("/api/draw/board?per=400")).json();
-      const n = b.groups.length;
-      if (n >= 12) break;
-      const donor = b.groups.find((g) => g.shots.length > 1);
-      if (!donor) break;
-      await fetch("/api/draw/new", { method: "POST", headers: h, body: JSON.stringify({ photos: [donor.shots[donor.shots.length - 1].rep] }) });
-    }
+  await page.evaluate(async () => {  // Eleven groups and two loose takes fit the 13-photo public sample.
+    const world = await api('/api/world?per=1000');
+    await api('/api/rescue', { ids: world.photos.map(p => p.id), on: true });
+    let b = await api('/api/draw/board?per=400&uper=400');
+    for (const shot of [...b.groups.flatMap(g => g.shots), ...b.unsorted.shots])
+      for (const photo of shot.members.filter(id => id !== shot.rep)) await api('/api/groups/split', { photo });
+    b = await api('/api/draw/board?per=400&uper=400');
+    const photos = [...b.groups.flatMap(g => g.shots), ...b.unsorted.shots].map(s => s.rep);
+    if (photos.length < 13) throw new Error('Input keys need thirteen eligible public-fixture takes');
+    await api('/api/draw/move', { photos, theme: null });
+    for (const photo of photos.slice(0, 11)) await api('/api/draw/new', { photos: [photo] });
   });
   await page.goto(BASE + "/#home");
   await page.waitForSelector(".journey");
@@ -68,7 +69,9 @@ const { BASE, LINK, LIB, OUT } = process.env;
     const gid = await page.$$eval("#bins [data-bin]", (x, i) => x[i] && x[i].dataset.bin, idx);
     await page.keyboard.press(press);
     await page.waitForTimeout(1200);
-    return page.evaluate(async ([p, g]) => { const b = await (await fetch("/api/draw/board?per=400")).json(); const grp = b.groups.find((x) => String(x.id) === g); return !!grp && grp.shots.some((x) => x.rep === p || x.members.includes(p)); }, [photo, gid]);
+    const placed = await page.evaluate(async ([p, g]) => { const b = await (await fetch("/api/draw/board?per=400")).json(); const grp = b.groups.find((x) => String(x.id) === g); return !!grp && grp.shots.some((x) => x.rep === p || x.members.includes(p)); }, [photo, gid]);
+    await page.evaluate(p => api('/api/draw/move', { photos: [p], theme: null }), photo);  // Keep takes for the next input check.
+    return placed;
   };
   const order0 = await page.$$eval("#bins [data-bin]:not(.new)", (x) => x.map((e) => e.dataset.bin));
   await page.keyboard.press("ArrowUp");  // highlight the first group (from the ★ one, wherever it is)

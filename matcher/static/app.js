@@ -235,10 +235,35 @@ const FAILED = (msg) => `<div class="screen no-rail"><div class="screen-body fil
 // True once the person has moved on from the page that started this request (its reply must not render).
 const left = (token) => token !== S.view;
 
+// Removable media can change while a picker stays open. Check only connectivity, and leave with the view.
+function watchStorage(url, update) {
+  const view = S.view, signal = S.events.signal;
+  let pending = null;
+  const refresh = () => {
+    if (pending) return pending;
+    const path = url();
+    if (signal.aborted || left(view) || document.hidden || !path) return Promise.resolve();
+    pending = (async () => {
+      try {
+        const data = await api(path);
+        if (!signal.aborted && !left(view) && path === url()) await update(data);
+      } finally { pending = null; }
+    })();
+    return pending;
+  };
+  const check = () => { refresh().catch(() => {}); };  // A temporary connection failure keeps the last known state.
+  const timer = setInterval(check, 1500);
+  signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+  window.addEventListener("focus", check, { signal });
+  document.addEventListener("visibilitychange", check, { signal });
+  check();
+  return refresh;
+}
+
 // ---------------------------------------------------------------- onboarding
 function viewOnboard(main) {
   const view = S.view;
-  let browsing = 0, opening = false;
+  let browsing = 0, opening = false, browserPath = null, browserExists = true, browserLoading = false;
   main.innerHTML = `
     <div class="screen onboard no-rail">
       <div class="screen-head">
@@ -316,7 +341,11 @@ function viewOnboard(main) {
     b.disabled = false;
     b.textContent = "Choose folder…";
   };
-  $("#toggle-browse").onclick = () => ($("#browser").hidden ? openBrowser() : ($("#browser").hidden = true));
+  $("#toggle-browse").onclick = () => {
+    const box = $("#browser");
+    if (box.hidden) openBrowser(browserPath);
+    else { box.hidden = true; browsing++; browserLoading = false; }
+  };
   $("#sample").onclick = async (ev) => {
     const b = ev.currentTarget;
     b.disabled = true;
@@ -338,19 +367,44 @@ function viewOnboard(main) {
   $("#use-path").onclick = () => openLibrary($("#path").value);
   $("#path").addEventListener("keydown", (e) => { if (e.key === "Enter") openLibrary($("#path").value); });
 
+  const refreshStorage = watchStorage(() => $("#browser", main)?.hidden || !browserPath || browserLoading ? null
+    : `/api/storage?browse=1&path=${encodeURIComponent(browserPath)}`, async (data) => {
+    const box = $("#browser", main);
+    showSuggestions(data.suggestions);
+    if (!data.folder || data.folder.exists === browserExists) return;
+    browserExists = data.folder.exists;
+    $("#use-this", box).disabled = !browserExists;
+    $(".dirs", box).hidden = !browserExists;
+    $(".browser-missing", box).hidden = browserExists;
+    if (browserExists) await openBrowser(browserPath);
+  });
+
+  function showSuggestions(items) {
+    const el = $("#browser .suggest", main), signature = JSON.stringify(items);
+    if (!el || el.dataset.items === signature) return;
+    el.dataset.items = signature;
+    el.innerHTML = items.map((s) => `<button class="chip" data-go="${esc(s.path)}">${esc(s.label)}</button>`).join("");
+    $$("[data-go]", el).forEach((b) => (b.onclick = () => openBrowser(b.dataset.go)));
+  }
+
   async function openBrowser(path) {
     const request = ++browsing;
+    browserLoading = true;
     const box = $("#browser");
     box.hidden = false;
     let d;
-    try { d = await api(`/api/browse?path=${encodeURIComponent(path || "")}`); } catch (e) { err(e.message); return; }
+    try { d = await api(`/api/browse?path=${encodeURIComponent(path || "")}`); }
+    catch (e) { if (request === browsing) { browserLoading = false; err(e.message); } return; }
     if (left(view) || request !== browsing) return;
-    const parts = d.path.split("/").filter(Boolean);
-    const crumbs = `<button data-go="/">/</button>` + parts.map((p, i) =>
-      `<button data-go="/${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`).join('<span class="faint">/</span>');
+    browserLoading = false;
+    browserPath = d.path;
+    browserExists = true;
+    err("");
+    const crumbs = d.crumbs.map((p) => `<button data-go="${esc(p.path)}">${esc(p.label)}</button>`).join('<span class="faint">/</span>');
     box.innerHTML = `
-      <div class="suggest">${d.suggestions.map((s) => `<button class="chip" data-go="${esc(s.path)}">${esc(s.label)}</button>`).join("")}</div>
+      <div class="suggest"></div>
       <div class="crumbs">${crumbs}</div>
+      <div class="dir faint browser-missing" role="status" hidden>Folder disconnected. Plug the drive back in, or choose another folder.</div>
       <div class="dirs">${d.dirs.length ? d.dirs.map((x) => `
         <button class="dir" data-go="${esc(x.path)}"><span>${esc(x.name)}</span>
           <span class="n ${x.photos ? "has" : ""}">${x.photos ? `${fmt(x.photos)} photo${x.photos === 1 ? "" : "s"}` : ""}</span></button>`).join("")
@@ -360,7 +414,12 @@ function viewOnboard(main) {
         <button class="btn primary" id="use-this">Use this folder</button>
       </div>`;
     $$("[data-go]", box).forEach((b) => (b.onclick = () => openBrowser(b.dataset.go)));
-    $("#use-this", box).onclick = () => openLibrary(d.path);
+    showSuggestions(d.suggestions);
+    $("#use-this", box).onclick = async () => {
+      try { await refreshStorage(); } catch (e) { err(e.message); return; }
+      if (!left(view) && browserExists) openLibrary(d.path);
+    };
+    refreshStorage().catch(() => {});
   }
 
   async function openLibrary(path, resume = false) {
@@ -415,7 +474,7 @@ async function viewSaves(main) {
     return `
     <div class="save-card ${sv.current ? "current" : ""} ${sv.exists ? "" : "missing"}" data-save="${i}" role="group"
       aria-label="${esc(sv.name)}${sv.current ? " (playing now)" : ""}" style="--i:${i}">
-      <button class="save-open" aria-label="Play ${esc(sv.name)}">
+      <button class="save-open" aria-label="Play ${esc(sv.name)}" aria-disabled="${!sv.exists}">
       <span class="save-art">${sv.cover ? `<img src="/img/save/${esc(sv.slug)}/${sv.cover}.jpg" alt="" loading="lazy">`
         : `<span class="save-blank">${sv.mode === "me" ? "💘" : "🌄"}</span>`}
         ${sv.current ? `<span class="save-ribbon">Playing</span>` : ""}
@@ -427,12 +486,12 @@ async function viewSaves(main) {
         <span class="xpbar"><i style="width:${xp}%"></i></span>
         <span class="save-stats"><span title="Photos">📷 ${fmt(sv.photos)}</span><span title="Calls">⚔️ ${fmt(sv.calls)}</span>
           <span title="Themed groups">🗂️ ${fmt(sv.groups)}</span><span title="Champions">🏆 ${fmt(sv.champions)}</span></span>`}
-        <span class="faint small">${sv.exists ? (sv.played ? `Played ${ago(sv.played)}` : "") : "Folder missing (moved or unplugged?)"}</span>
+        <span class="save-status faint small">${sv.exists ? (sv.played ? `Played ${ago(sv.played)}` : "") : "Folder missing (moved or unplugged?)"}</span>
       </span>
       </button><button class="save-forget" data-forget="${i}" title="Forget this save" aria-label="Forget the save for ${esc(sv.name)}">✕</button>
     </div>`;
   };
-  const cur = d.saves.findIndex((sv) => sv.current && sv.exists);
+  let cur = d.saves.findIndex((sv) => sv.current && sv.exists), go;
   main.innerHTML = `
     <div class="screen saves no-rail">
       <div class="screen-head">
@@ -453,24 +512,54 @@ async function viewSaves(main) {
           : `<a class="btn primary big" href="#onboard?new=1">＋ New save</a>`}</div>
       </div>
     </div>`;
+  let opening = false;
   const open = async (sv) => {
-    if (sv.current && S.lib) { location.hash = "#home"; return; }
-    if (!sv.exists) { toast("That folder isn't there any more. Plug it back in, or forget the save."); return; }
+    if (opening) return;
+    opening = true;
     try {
+      await refreshStorage();
+      if (left(view)) return;
+      if (!sv.exists) { toast("That folder isn't there any more. Plug it back in, or forget the save."); return; }
+      if (sv.current && S.lib) { location.hash = "#home"; return; }
       await api("/api/library", { path: sv.path });
+      if (left(view)) return;
       await loadState();
+      if (left(view)) return;
       S.game = null;
       Sound.play("level");
       location.hash = S.lib && S.lib.analyzed && !S.lib.analyzing ? "#home" : "#analyze";
       route();
-    } catch (e) { toast(e.message); }
+    } catch (e) { if (!left(view)) toast(e.message); }
+    finally { opening = false; }
   };
   $$("[data-save]", main).forEach((el) => {
     el.onclick = (e) => { if (!e.target.closest("[data-forget]")) open(d.saves[Number(el.dataset.save)]); };
     el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(d.saves[Number(el.dataset.save)]); } };
   });
-  const go = $("#continue", main);
-  if (go) go.onclick = () => open(d.saves[cur]);
+  const bindContinue = () => {
+    go = $("#continue", main);
+    if (go) go.onclick = () => open(d.saves[cur]);
+  };
+  bindContinue();
+  const refreshStorage = watchStorage(() => "/api/storage", (data) => {
+    const availability = new Map(data.saves.map((sv) => [sv.path, sv.exists]));
+    d.saves.forEach((sv, i) => {
+      const exists = availability.get(sv.path);
+      if (exists === undefined || exists === sv.exists) return;
+      sv.exists = exists;
+      const el = $(`[data-save="${i}"]`, main);
+      el.classList.toggle("missing", !exists);
+      $(".save-open", el).setAttribute("aria-disabled", !exists);
+      $(".save-status", el).textContent = exists ? (sv.played ? `Played ${ago(sv.played)}` : "") : "Folder missing (moved or unplugged?)";
+    });
+    const current = d.saves.findIndex((sv) => sv.current && sv.exists);
+    if (cur === current) return;
+    cur = current;
+    $(".bar-mid", main).innerHTML = cur >= 0 ? `<a class="btn ghost" href="#onboard?new=1">＋ New save</a>` : "";
+    $(".bar-right", main).innerHTML = cur >= 0 ? `<button class="btn primary big" id="continue">Continue this save <kbd>Enter</kbd></button>`
+      : `<a class="btn primary big" href="#onboard?new=1">＋ New save</a>`;
+    bindContinue();
+  });
   // arrows walk the saves like a game's save menu; Enter plays the focused one (or the one you were playing)
   S.onKey = (e) => {
     const cards = $$(".save-open, .save-card.new", main), at = cards.indexOf(document.activeElement);

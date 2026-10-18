@@ -152,9 +152,12 @@ def test_settings_change_resizes_the_shortlist(client):
     assert len(set(scenes)) == len(scenes)
 
 
-def test_browse_and_open_library_validation(client, tmp_path):
+def test_browse_and_open_library_validation(client, tmp_path, monkeypatch):
+    monkeypatch.setattr("matcher.server.suggestions", lambda: [])
     b = client.get(f"/api/browse?path={client.src}").get_json()
     assert {d["name"] for d in b["dirs"]} >= {"cam", "other"}
+    assert b["crumbs"][0] == {"label": "/", "path": "/"}
+    assert b["crumbs"][-1] == {"label": client.src.name, "path": str(client.src.resolve())}
     assert post(client, "/api/library", {"path": str(tmp_path / "nope")}).status_code == 400
     empty = tmp_path / "empty"
     empty.mkdir()

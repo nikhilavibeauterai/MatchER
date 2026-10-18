@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from matcher.analyze import Analyzer
-from matcher.server import App, create_app
+from matcher.server import App, Session, create_app
 from matcher.store import ClosedStoreError, Store
 
 
@@ -67,6 +67,33 @@ def test_transient_threads_share_one_connection_and_serialize_writes(tmp_path):
     assert store._connection is None
     with pytest.raises(ClosedStoreError):
         store.conn()
+
+
+def test_shutdown_waits_for_subject_backfill_before_closing_its_store(tmp_path, monkeypatch):
+    from matcher import library
+    entered, finish = threading.Event(), threading.Event()
+    def fill(store, *args, **kwargs):
+        entered.set()
+        assert finish.wait(3)
+        store.set_meta("backfill_finished", True)
+    monkeypatch.setattr(library, "fill_salient", fill)
+    session = Session(tmp_path / "source", tmp_path / "saves")
+    with session.store.tx() as c:
+        c.execute("INSERT INTO photos(rel,status) VALUES('synthetic.jpg','analyzed')")
+    session._fill_subjects()
+    closing = threading.Thread(target=session.shutdown)
+    try:
+        assert entered.wait(2)
+        closing.start()
+        closing.join(.05)
+        assert closing.is_alive() and session.store._connection is not None
+    finally:
+        finish.set()
+        if closing.ident is not None:
+            closing.join(3)
+        else:
+            session.shutdown()
+    assert not closing.is_alive() and session.store._connection is None
 
 
 @pytest.mark.parametrize("leave_again", [False, True])

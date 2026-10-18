@@ -59,6 +59,8 @@ Keep what catches your eye, set aside what doesn't, and teach the filter with Lo
 from each stack. Give the contenders a home, play their groups and follow the bracket to your winners.
 There are no required voting marathons: move on when you're ready, skip a hard choice, and return later.
 Every folder has its own saved progress, trophies and leaderboard.
+The save picker notices when you plug in or unplug a drive. Disconnected saves stay on the list and become
+playable again when their folder returns; Browse here also updates its mounted-drive shortcuts automatically.
 
 Stacks shows loose photos alongside piles of takes, so you can drag either onto another to combine them.
 Switch on **Stacks only** when you want to concentrate on existing piles.

@@ -114,7 +114,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 10
 .step p { margin: 3px 0 0; color: var(--muted); }
 .step h3 { margin: 4px 0 0; font-size: 16px; }
 .pickers { margin-top: 14px; display: grid; gap: 12px; }
-.browser { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.browser { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .crumbs { display: flex; flex-wrap: wrap; gap: 2px; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .crumbs button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 4px; border-radius: 6px; }
 .crumbs button:hover { color: var(--text); background: var(--panel-2); }
@@ -755,6 +755,7 @@ h1 { background: linear-gradient(92deg, var(--text) 30%, #ffc9a8 70%, #ff8f7a); 
 .save-class { position: absolute; right: 10px; bottom: 10px; background: rgba(0, 0, 0, 0.72); font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; }
 .save-body { display: grid; gap: 6px; padding: 12px 14px 14px; align-content: start; }
 .save-name { font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.save-status { min-height: 2lh; } /* Connecting a drive must not change the row height or scroll position. */
 .save-lvl { font-size: 13px; color: var(--muted); }
 .save-lvl .lvl-n { margin-right: 4px; }
 .save-body .xpbar { margin-top: 0; }

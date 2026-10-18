@@ -136,7 +136,8 @@ body.sea-on #view-duel.crown-play #controls [data-o=b] { border-radius:8px 24px 
 }
 @media(max-width:560px) {
   body:not(.no-bar) { --hud-height:148px; }
-  #topbar .reward-note { top:10px; right:230px; max-width:calc(100vw - 292px); }
+  #topbar .reward-note { top:10px; right:12px; max-width:calc(100vw - 210px); }
+  #topbar:has(.reward-note:not([hidden])) .save-chip { visibility:hidden; }
   #journey-dock .track { grid-template-rows:44px 44px; gap:0 4px; }
   #journey-dock .track-stages { grid-column:1/-1; grid-row:1; gap:2px; }
   #journey-dock .journey-step { height:44px; font-size:27px; }
