@@ -90,6 +90,10 @@ During analysis, scroll over the sea to zoom, drag open water to pan, and double
 again. Refreshing restores the photos and discoveries already shown. Restarting MatchER resumes saved analysis,
 including its completed photo count, without reading those photos again.
 
+The open sea has a slow, gentle swell. Photos keep their places, the water pauses when you reach for a print,
+and close-ups become steady for reading and editing. Reduced-motion preferences still the waves; the developer
+panel also lets you adjust their height, speed and spacing.
+
 ## Help build it
 
 MatchER is young, and real Windows/Linux feedback will make it better. Try the sample, file a clear bug report,

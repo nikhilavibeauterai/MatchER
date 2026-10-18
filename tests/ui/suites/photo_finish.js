@@ -13,6 +13,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.route(`**/img/p/${pid}.jpg*`,r=>r.fulfill({contentType:'image/png',body:png}));
   await page.evaluate(id=>openViewer(id),pid);await page.waitForSelector('.viewer .photo-notes-tab');await page.click('.viewer .photo-notes-tab');await page.waitForSelector('.photo-note-sheet:not(.notes-opening) .notes-nav');
   await page.click('[data-notes-page=look]');await page.waitForTimeout(300);
+  assert(await page.locator('.notes-grading').evaluate(el=>el.closest('fieldset')===document.querySelector('[data-edit=enhance]').closest('fieldset')),'Grading and Enhance share the Light & colour editor');
   await page.evaluate(()=>PhotoNotes.edit({crop:'off',enhance:false}));
   const straighten=page.locator('.notes-page [name=straighten]');assert.equal(await straighten.getAttribute('type'),'range');
   await straighten.focus();await straighten.press('ArrowRight');await page.waitForFunction(()=>Toolbelt.current(PhotoNotes.active.pid).straighten===.01);

@@ -20,7 +20,7 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=120000;
   await page.evaluate(async FIRST=>{
     const s=World.sea,photo=World.photos.values().next().value,cell=World.sprites.get(photo.id);
     clearInterval(World.watch);World.stale=false;
-    s.tune({domLimit:80,liveMin:80,wobbleDeg:0},false);
+    s.tune({domLimit:80,liveMin:80,wobbleDeg:0,waveHeight:0},false);
     const items=Array.from({length:1600},(_,i)=>({id:FIRST+i,photo:FIRST+i,tags:[],n:1,visual:{colorfulness:(i%40)/39,brightness:Math.floor(i/40)/39}}));
     s.setVenn([],items);for(const it of items)s.sprites.set(it.id,cell);
     await new Promise(resolve=>setTimeout(resolve,1200));
@@ -88,7 +88,7 @@ const {BASE,LINK,LIB,OUT}=process.env,FIRST=120000;
       const atlas=document.createElement('canvas');atlas.width=atlas.height=16;
       const source=s.atlasCell(atlas,0,dims),ctx=atlas.getContext('2d');ctx.fillStyle='#ef241a';ctx.fillRect(0,0,16,16);
       const canvas=document.createElement('canvas'),gpu=new SpriteLayer(canvas);
-      const data=new Float32Array([120,100,120,source.x,source.y,16,16,1,.5,.5,.5,source.aspect,0]);
+      const data=new Float32Array(SpriteLayer.STRIDE);data.set([120,100,120,source.x,source.y,16,16,1,.5,.5,.5,source.aspect,0]);
       gpu.draw({W:240,H:240,dpr:1,zoom:1,tx:0,ty:0,time:0,wobble:[5600,0,0,0,0]},[{image:atlas,version:0,data,n:1,upload:true}]);
       const pixels=new Uint8Array(240*240*4);gpu.gl.readPixels(0,0,240,240,gpu.gl.RGBA,gpu.gl.UNSIGNED_BYTE,pixels);
       const flipped=new Uint8Array(pixels.length);for(let y=0;y<240;y++)flipped.set(pixels.subarray(y*960,(y+1)*960),(239-y)*960);

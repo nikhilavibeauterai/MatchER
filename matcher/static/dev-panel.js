@@ -19,7 +19,7 @@ const DevPanel = {
     try { localStorage.setItem("matcher-dev-open", open ? "1" : "0"); } catch (_) { /* private mode */ }
   },
   render() {
-    const groups = [["macro", "Macro: visual geography"], ["micro", "Micro: boid mechanics"], ["render", "Render"], ["camera", "Camera"], ["wobble", "Wobble"]];
+    const groups = [["macro", "Macro: visual geography"], ["micro", "Micro: boid mechanics"], ["waves", "Waves"], ["render", "Render"], ["camera", "Camera"], ["wobble", "Wobble"]];
     const v = this.values();
     const row = (p) => `<label class="dev-row" data-key="${p.key}" title="${esc(p.hint || "")}">
         <span class="dev-label">${esc(p.label)}</span>

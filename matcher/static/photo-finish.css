@@ -1,4 +1,5 @@
 .grade-wheels { display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:12px 0; }
+.notes-grading { margin-top:20px;padding-top:18px;border-top:1px dashed var(--pencil); }
 .photo-notes-paper .grade-zone legend { font-size:21px; }
 .grade-wheel { position:relative;width:min(100%,160px);aspect-ratio:1;border-radius:50%;margin:6px auto 12px;background:radial-gradient(closest-side,#fff,transparent),conic-gradient(from 90deg,red,yellow,#0f0,cyan,blue,#f0f,red);box-shadow:inset 0 0 0 1px #0003;touch-action:none;cursor:crosshair; }
 .grade-wheel:focus-visible { outline:3px solid var(--accent);outline-offset:4px; }

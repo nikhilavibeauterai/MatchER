@@ -80,7 +80,8 @@ const PhotoNotes = {
     // camera never reframes, reloads or replaces the photograph, or restarts its paper animation.
     const camera=`translate(${c.tx.toFixed(2)}px,${c.ty.toFixed(2)}px) scale(${(c.zoom/zoom).toFixed(7)})`;
     if(this.seaLayer.style.transform!==camera)this.seaLayer.style.transform=camera;
-    const body=`translate3d(${(Number(it.x.toFixed(2))*zoom).toFixed(3)}px,${(Number(it.y.toFixed(2))*zoom).toFixed(3)}px,0) translate(-50%,-50%) scale(${(it.renderScale||1)*s/size})`;
+    const [wx,wy]=sea.waveOffset(it),px=Number(it.x.toFixed(2))+wx,py=Number(it.y.toFixed(2))+wy,
+      body=`translate3d(${(px*zoom).toFixed(3)}px,${(py*zoom).toFixed(3)}px,0) translate(-50%,-50%) scale(${(it.renderScale||1)*s/size})`;
     if(this.seaDetail.style.transform!==body)this.seaDetail.style.transform=body;
     this.seaDetail.classList.toggle('pinned',it.el.classList.contains('pinned'));
     // The sheet follows the print, but lays out its writing in screen pixels. Scaling its controls with the
@@ -90,7 +91,7 @@ const PhotoNotes = {
       const scale=c.zoom/zoom*(it.renderScale||1)*s/size,width=size*zoom*scale,height=width*4/3;
       under.style.width=`${width}px`;under.style.height=`${height}px`;under.style.transform=`scale(${1/scale})`;
       if(this.active?.host===this.seaDetail)this.seaSheet(under,{width,height,
-        left:Number(it.x.toFixed(2))*c.zoom+c.tx-width/2,top:Number(it.y.toFixed(2))*c.zoom+c.ty-height/2});
+        left:px*c.zoom+c.tx-width/2,top:py*c.zoom+c.ty-height/2});
     }
   },
   seaSheet(under,photo) {
@@ -513,11 +514,11 @@ const PhotoNotes = {
     const p=this.active.data,panel=$('[data-notes-panel=look]',this.sheet);
     panel.innerHTML=`<div class="notes-look-intro"><p class="notes-intro">Fine-tune this photo. Watch the print as you work.</p><button type="button" class="btn notes-compare" data-notes-compare aria-pressed="false">Hold for original</button></div>
       <div class="notes-finishing edit-sheet"><fieldset><legend>Framing</legend><div class="sheet-seg">${[['best','Best'],['subject','Subject'],['height','Height'],['width','Width'],['off','Whole photo'],['custom','Custom…']].map(([key,label])=>`<button type="button" class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div><p class="notes-crop-hint"></p></fieldset>
-      <fieldset><legend>Light & colour</legend><div class="sheet-row"><button type="button" class="btn" data-edit="enhance">Enhance</button><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
-        <div class="sheet-knobs">${Object.entries(KNOBS).map(([key,[lo,hi]])=>`<div class="sheet-knob"><label for="${this.sheet.id}-${key}">${KNOB_WORD[key]}</label><input id="${this.sheet.id}-${key}" type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05"><output for="${this.sheet.id}-${key}"></output><button type="button" class="notes-knob-reset" data-knob-reset="${key}" aria-label="Reset ${KNOB_WORD[key]}" hidden>↶</button></div>`).join('')}</div></fieldset>
       <fieldset><legend>Alignment</legend><div class="sheet-row notes-turn"><button type="button" class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><output class="sheet-deg"></output><button type="button" class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div>
         <div class="straighten-control"><label for="${this.sheet.id}-straighten">Straighten</label><output for="${this.sheet.id}-straighten" data-straighten-angle></output><input id="${this.sheet.id}-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${p.edits.straighten||0}"></div><button type="button" class="btn ghost" data-align>Align horizon…</button></fieldset>
-      <fieldset class="notes-grading"><legend>Colour grading</legend><p class="notes-hint">Tint the shadows, midtones and highlights independently. Drag a wheel or enter exact values.</p>${PhotoFinish.wheels(p.edits.grade)}</fieldset>
+      <fieldset><legend>Light & colour</legend><div class="sheet-row"><button type="button" class="btn" data-edit="enhance">Enhance</button><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
+        <div class="sheet-knobs">${Object.entries(KNOBS).map(([key,[lo,hi]])=>`<div class="sheet-knob"><label for="${this.sheet.id}-${key}">${KNOB_WORD[key]}</label><input id="${this.sheet.id}-${key}" type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05"><output for="${this.sheet.id}-${key}"></output><button type="button" class="notes-knob-reset" data-knob-reset="${key}" aria-label="Reset ${KNOB_WORD[key]}" hidden>↶</button></div>`).join('')}</div>
+        <div class="notes-grading"><h3>Colour grading</h3><p class="notes-hint">Shape the colour after the light adjustments. Drag a wheel or enter exact values.</p>${PhotoFinish.wheels(p.edits.grade)}</div></fieldset>
       <fieldset><legend>Local adjustments</legend><p class="notes-mask-summary"></p><button type="button" class="btn" data-masks>Paint masks…</button><p class="notes-hint">Brush exposure and colour onto part of the photo. Erase or soften the mask whenever you like.</p></fieldset></div>`;
     const compare=$('[data-notes-compare]',panel),end=()=>this.compare(false);
     compare.onpointerdown=event=>{if(event.button)return;event.preventDefault();compare.setPointerCapture(event.pointerId);this.compare(true);};

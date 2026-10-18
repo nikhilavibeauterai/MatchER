@@ -11,7 +11,8 @@ const {LINK,LIB,OUT}=process.env;
     const batch=(colour,depth)=>{
       const image=document.createElement('canvas');image.width=image.height=16;
       const ctx=image.getContext('2d');ctx.fillStyle=colour;ctx.fillRect(0,0,16,16);
-      return {image,version:0,data:new Float32Array([120,120,120,0,0,16,16,1,.5,.5,.5,1,depth]),n:1,upload:true};
+      const data=new Float32Array(SpriteLayer.STRIDE);data.set([120,120,120,0,0,16,16,1,.5,.5,.5,1,depth]);
+      return {image,version:0,data,n:1,upload:true};
     };
     const cover=batch('#2457ef',-.3),take=batch('#ef241a',.3),rows=[];
     for(const batches of [[take,cover],[cover,take],[take,cover],[cover,take]]){

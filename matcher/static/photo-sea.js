@@ -19,6 +19,8 @@ class PhotoSea {
     this.mouse = { x: -1e5, y: -1e5, vx: 0, vy: 0 };
     this.s = 72; this.raf = 0; this.last = 0; this.drag = null; this.hover = null; this.alive = true;
     this.events = new AbortController();
+    this.motionQuery=matchMedia('(prefers-reduced-motion: reduce)');
+    this.motionQuery.addEventListener('change',()=>{this.waveWasPlaying=false;this.paintWaves();this.densityDirty=true;this.paintSoon?.();this.wobbleLoop?.();},{signal:this.events.signal});
     el.classList.add("photo-sea");
     // The sea has a camera: prints sit in world units on one layer that pans and zooms as a whole. At zoom 1
     // the world is the viewport, so everything fits; zooming in is how you explore.
@@ -38,6 +40,37 @@ class PhotoSea {
   worldX(sx){return (sx-this.camera.tx)/this.camera.zoom;}
   localWorld(e){const [sx,sy]=this.local(e);return this.toWorld(sx,sy);}
   enableCamera(on){this.cameraOn=!!on;this.resetCamera();}
+  // The water lifts the whole paper, including its stack and markings. Geography and physics stay asleep.
+  waveHeight(){return this.calm&&!(this.motionQuery?.matches??(typeof reduceMotion!=='undefined'&&reduceMotion))?Math.max(0,this.tuning?.waveHeight||0):0;}
+  wavePlaying(){return !!(this.waveHeight()&&!this.paused&&!this.deep&&!this.presentation&&!document.hidden&&this.held==null&&!this.drag&&!this.pan&&(this.s||0)*(this.camera?.zoom||1)<220);}
+  waveClock(now){
+    if(!this.waveHeight())return;
+    now??=performance.now();const playing=this.wavePlaying();
+    if(playing&&this.waveWasPlaying)this.waveTime=(this.waveTime||0)+Math.min(1000,Math.max(0,now-this.waveLast));
+    this.waveLast=now;this.waveWasPlaying=playing;
+  }
+  waveShape(it){
+    const body=it.take?this.items.get(it.stack)||it:it;
+    return [(body.x+body.y*.35)/(this.tuning?.waveLength||750)*Math.PI*2,body.size||this.s||0];
+  }
+  wavePhase(){return (this.waveTime||0)/((this.tuning?.wavePeriod||28)*1000)*Math.PI*2;}
+  waveOffset(it){
+    const height=this.waveHeight();if(!height)return [0,0];
+    const [space,size]=this.waveShape(it),zoom=this.camera?.zoom||1,t=Math.max(0,Math.min(1,(size*zoom-64)/156)),
+      amplitude=Math.min(height,size*.2)/Math.max(1,zoom)*(1-t*t*(3-2*t)),phase=space-this.wavePhase();
+    if(!amplitude)return [0,0];
+    return [Math.cos(phase)*.18*amplitude,Math.sin(phase)*amplitude];
+  }
+  waveItem(it){
+    const offset=this.waveOffset(it),translate=offset.some(n=>Math.abs(n)>.0005)?`${offset[0].toFixed(3)}px ${offset[1].toFixed(3)}px`:'';
+    it.swellOffset=offset;if(it.el.style.translate!==translate)it.el.style.translate=translate;
+  }
+  paintWaves(){
+    const c=this.camera||{zoom:1,tx:0,ty:0},x0=-c.tx/c.zoom,y0=-c.ty/c.zoom,
+      x1=x0+(this.width||this.el.clientWidth)/c.zoom,y1=y0+(this.height||this.el.clientHeight)/c.zoom;
+    for(const it of this.moving||[])if(it.el.isConnected&&this.inView(it,x0,y0,x1,y1,8/c.zoom))this.waveItem(it);
+    this.presentation?.follow();
+  }
   // Bound independent image elements. A deliberate tuning override stands; smaller devices can lower the default.
   liveCap(){const auto=(navigator.deviceMemory||4)*(innerWidth<760?60:250),set=this.tuning.domLimit;return Math.max(40,set===seaTuningDefaults().domLimit?Math.min(set,auto):set);}
   bigCap(){return this.domLimit;}
@@ -146,6 +179,9 @@ class PhotoSea {
     Object.assign(this.tuning,values||{});
     if(persist){try{localStorage.setItem("matcher-sea-tuning",JSON.stringify({version:3,tuning:this.tuning}));}catch(_){}}
     this.domLimit=this.liveCap();
+    if(Object.keys(values||{}).length&&Object.keys(values).every(k=>['waveHeight','wavePeriod','waveLength'].includes(k))){
+      this.waveClock();this.paintWaves();this.densityDirty=this.spritesDirty=true;this.paintSoon();this.wobbleLoop();return;
+    }
     this.worker?.postMessage({kind:"tune",values:this.tuning});if(typeof Cards!=="undefined")Cards.tune(this.tuning);this.layout();this.kick();
   }
   tuneReset(){this.tuning=seaTuningDefaults();try{localStorage.removeItem("matcher-sea-tuning");}catch(_){}this.tune({},false);}
@@ -157,6 +193,7 @@ class PhotoSea {
     c.zoom=z;c.tx=Math.min(sx,Math.max(W*(1-z)-sx,tx));c.ty=Math.min(sy,Math.max(H*(1-z)-sy,ty));
     this.layer.style.transform=z===1&&!c.tx&&!c.ty?'':`translate(${c.tx.toFixed(2)}px,${c.ty.toFixed(2)}px) scale(${z.toFixed(4)})`;this.el.style.setProperty('--zoom',z.toFixed(4));this.el.style.setProperty('--camera-zoom',z.toFixed(4));
     this.el.dataset.zoom=z.toFixed(2);this.followCamera();this.scheduleCull();
+    this.paintWaves();
     // Both renderers draw only the current viewport. Camera movement never changes a print's paint order.
     this.densityDirty=true;this.paintSoon();
     // Zoomed in until one print fills the view, the sea is a picture: physics and wobble stop, the chrome hides
@@ -208,7 +245,7 @@ class PhotoSea {
     }
   }
   // Whether a print's card reaches into the view (sea coordinates) widened by pad.
-  inView(it,x0,y0,x1,y1,pad){const s=it.size||this.s;return it.x+s/2>x0-pad&&it.x-s/2<x1+pad&&it.y+s*2/3>y0-pad&&it.y-s*2/3<y1+pad;}
+  inView(it,x0,y0,x1,y1,pad){const s=it.size||this.s,[wx,wy]=this.waveOffset(it),x=it.x+wx,y=it.y+wy;return x+s/2>x0-pad&&x-s/2<x1+pad&&y+s*2/3>y0-pad&&y-s*2/3<y1+pad;}
   // A drag on an over-zoomed print pans the camera, like dragging the water (a print that fills the screen is not
   // being rearranged); the middle button pans at any zoom.
   panAnywhere(e){return this.cameraOn&&(e.button===1||this.overZoomed(e.target))&&!e.target.closest('button,a,input,textarea,.ps-badge,.ps-stack');}
@@ -513,7 +550,7 @@ class VennSea extends PhotoSea {
     this.focusBar=document.createElement('div');this.focusBar.className='vn-focus';this.focusBar.hidden=true;this.tray.prepend(this.focusBar);
     this.tagRow=document.createElement('div');this.tagRow.className='vn-tags';this.tray.append(this.tagRow);
     this.worker=new Worker('/static/sea-worker.js');this.worker.onmessage=({data})=>this.receive(data);
-    this.wake=()=>{if(!document.hidden&&!this.paused)this.kick();};document.addEventListener('visibilitychange',this.wake);
+    this.wake=()=>{this.waveClock();if(!document.hidden&&!this.paused){this.wobbleLoop();this.kick();}};document.addEventListener('visibilitychange',this.wake);
     // The World lets clicks through to the game. Only a thumbnail in clear water captures a pointer.
     this.proxyPointer=e=>{
       const world=this.el.id==='world',inside=this.el.contains(e.target);
@@ -671,6 +708,7 @@ class VennSea extends PhotoSea {
     return water;
   }
   drawDensity(W, H) {
+    this.waveClock();this.paintWaves();
     if (!this.densityCanvas) {
       this.densityCanvas = document.createElement("canvas"); this.densityCanvas.className = "vn-density";
       this.el.prepend(this.densityCanvas);
@@ -711,7 +749,7 @@ class VennSea extends PhotoSea {
       const sprite = this.sprites?.get(it.id), preview = it.preview;
       const source=sprite&&(sprite.img instanceof HTMLCanvasElement||sprite.img.complete&&sprite.img.naturalWidth)?sprite:preview;
       // A sprite is the same 3:4 polaroid as a live print: paper, a dark window, the picture inside.
-      const sx=(it.x-size/2)*zoom+tx,sy=(it.y-size*2/3)*zoom+ty,shown=size*zoom,tall=shown*4/3;
+      const [wx,wy]=this.waveOffset(it),sx=(it.x+wx-size/2)*zoom+tx,sy=(it.y+wy-size*2/3)*zoom+ty,shown=size*zoom,tall=shown*4/3;
       if(sx>W+ox||sy>H+oy||sx+shown<-ox||sy+tall<-oy)continue;  // outside the drawn region: culled from drawing
       // Every print is on the sea: one whose picture has not arrived yet (its sheet still loading) is a blank card.
       if(!source){dots.push({source:null,sx,sy,shown,tall,opacity});this.densityStats.blank=(this.densityStats.blank||0)+1;continue;}
@@ -735,10 +773,11 @@ class VennSea extends PhotoSea {
     // Projected Filter changes mark the real tiny prints too, without promoting thousands of DOM nodes.
     if(this.outcomeChanges?.size){
       ctx.beginPath();ctx.strokeStyle='#ffe099';ctx.lineWidth=1;
-      for(const id of this.outcomeChanges){const it=this.items.get(id);if(!it?.density||it.lifted||it.pileLifted)continue;const size=((it.size||this.densitySize||4)+4)*zoom;ctx.rect(it.x*zoom+tx-size/2,it.y*zoom+ty-size*2/3,size,size*4/3);}
+      for(const id of this.outcomeChanges){const it=this.items.get(id);if(!it?.density||it.lifted||it.pileLifted)continue;const size=((it.size||this.densitySize||4)+4)*zoom,[wx,wy]=this.waveOffset(it);ctx.rect((it.x+wx)*zoom+tx-size/2,(it.y+wy)*zoom+ty-size*2/3,size,size*4/3);}
       ctx.stroke();
     }
     this.spriteMax=max;this.spritesDirty=false;this.densityDirty=false;
+    this.wobbleLoop();
   }
   // The GPU sprite layer (sea-gl.js), unless the knob is off or the browser has no WebGL2; then the 2D canvas above.
   initSprites(){
@@ -765,7 +804,7 @@ class VennSea extends PhotoSea {
       for(const it of this.paintOrder||this.items.values())if(it.density||it.imagePending){
         if(it.lifted||it.pileLifted)continue;
         const size=(it.size||this.densitySize||4)*(it.density?1:it.renderScale||1);
-        const half=size*zoom/2,tall=size*zoom*2/3,sx=it.x*zoom+tx,sy=it.y*zoom+ty;
+        const pad=this.waveHeight(),half=size*zoom/2+pad,tall=size*zoom*2/3+pad,sx=it.x*zoom+tx,sy=it.y*zoom+ty;
         if(sx+half<0||sx-half>W||sy+tall<0||sy-tall>H){stats.culled=(stats.culled||0)+1;continue;}
         const hit=Math.floor(it.y/16)*this.hitCols+Math.floor(it.x/16);let cell=this.hitGrid.get(hit);if(!cell){cell=[];this.hitGrid.set(hit,cell);}if(cell.length<24)cell.push(it);
         const opacity=this.highlightIds&&!this.highlightIds.has(it.id)?.22:it.cut?.4:1;
@@ -780,12 +819,13 @@ class VennSea extends PhotoSea {
         else{d[o+3]=d[o+4]=d[o+5]=d[o+6]=0;stats.blank=(stats.blank||0)+1;}
         d[o+7]=opacity;d[o+8]=r1;d[o+9]=r2;d[o+10]=r3;d[o+11]=source?.aspect||0;
         d[o+12]=.8-1.6*((it.order||1)/(this.items.size+1));b.n++;if(size>max)max=size;
+        const swell=this.waveShape(it);d[o+13]=Math.sin(swell[0]);d[o+14]=Math.cos(swell[0]);d[o+15]=swell[1];
       }
       this.gpu.release([...previous.values()]);this.glBatches=[...batches.values()];this.spriteMax=max;this.spritesDirty=false;this.spriteView=viewKey;
     }
     for(const b of this.glBatches)if(b.image)b.version=this.previewVersions?.get(b.image)||0;  // a mutable preview page is uploaded again when it changed
-    const T=this.tuning||{};
-    this.gpu.draw({W,H,dpr,zoom,tx,ty,time:this.wobbleNow||performance.now(),wobble:[(T.wobblePeriod||5.6)*1000,T.wobbleDeg??1,T.wobbleSpeedSpread??.25,T.wobbleForceSpread??.35,T.wobbleDelaySpread??1]},this.glBatches,this.spriteImages);
+    const T=this.tuning||{},phase=this.wavePhase();
+    this.gpu.draw({W,H,dpr,zoom,tx,ty,time:this.wobbleNow||performance.now(),waves:[this.waveHeight(),Math.sin(phase),Math.cos(phase)],wobble:[(T.wobblePeriod||5.6)*1000,T.wobbleDeg??1,T.wobbleSpeedSpread??.25,T.wobbleForceSpread??.35,T.wobbleDelaySpread??1]},this.glBatches,this.spriteImages);
     this.drawOutcomeMarks(W,H,dpr,zoom,tx,ty);
     this.densityRegion=null;this.densityDirty=false;this.wobbleLoop();
   }
@@ -798,17 +838,23 @@ class VennSea extends PhotoSea {
     canvas.style.transform='';ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
     if(!marks)return;
     ctx.beginPath();ctx.strokeStyle='#ffe099';ctx.lineWidth=1;
-    for(const id of this.outcomeChanges){const it=this.items.get(id);if(!it?.density||it.lifted||it.pileLifted)continue;const size=((it.size||this.densitySize||4)+4)*zoom;ctx.rect(it.x*zoom+tx-size/2,it.y*zoom+ty-size*2/3,size,size*4/3);}
+    for(const id of this.outcomeChanges){const it=this.items.get(id);if(!it?.density||it.lifted||it.pileLifted)continue;const size=((it.size||this.densitySize||4)+4)*zoom,[wx,wy]=this.waveOffset(it);ctx.rect((it.x+wx)*zoom+tx-size/2,(it.y+wy)*zoom+ty-size*2/3,size,size*4/3);}
     ctx.stroke();
   }
   // A sprite repaint on the next frame, outside the physics tick: a camera move at rest must not wait for one.
   paintSoon(){if(this.paintRaf||!this.alive)return;this.paintRaf=requestAnimationFrame(()=>{this.paintRaf=0;if(this.alive&&this.densityDirty&&this.el.isConnected)this.drawDensity(this.width||this.el.clientWidth,this.height||this.el.clientHeight);});}
-  // Sprites big enough for their wobble to show (a card over thirty pixels) rock at a gentle rate on the GPU. At
-  // rest with small sprites, or deep in one print, nothing is drawn at all.
+  // Sprites big enough for their wobble to show (a card over thirty pixels) rock at a gentle rate on the GPU.
+  // Waves reuse uploaded batches and a shared clock. They never request worker steps, pictures or new geometry.
   wobbleLoop(){
     const T=this.tuning||{};
-    if(this.wobbleTimer||!this.gpu||!this.alive||this.deep||document.hidden||!(T.wobbleDeg??1)||(this.spriteMax||0)*(this.camera?.zoom||1)<30||!this.glBatches?.length)return;
-    this.wobbleTimer=setTimeout(()=>{this.wobbleTimer=0;if(!this.alive)return;this.wobbleNow=performance.now();this.densityDirty=true;this.paintSoon();},45);
+    if(this.wobbleTimer||!this.alive||this.paused||this.deep||document.hidden)return;
+    const waves=this.wavePlaying(),wobble=this.gpu&&(T.wobbleDeg??1)&&(this.spriteMax||0)*(this.camera?.zoom||1)>=30&&this.glBatches?.length;
+    if(!waves&&!wobble)return;
+    // Tiny prints rise by about a pixel across half a minute. Repaint only a fraction of a pixel of travel,
+    // rather than making a large library redraw at video rates for motion too small to see.
+    const amplitude=Math.min(this.waveHeight(),(this.s||0)*.2),interval=waves?Math.max(80,Math.min(320,(T.wavePeriod||28)*80/(Math.PI*2*Math.max(.1,amplitude)))):45;
+    this.wobbleTimer=setTimeout(()=>{this.wobbleTimer=0;if(!this.alive)return;this.waveClock();if(this.paused||this.deep||document.hidden)return;
+      this.wobbleNow=performance.now();this.densityDirty=true;this.paintSoon();},wobble?Math.min(45,interval):interval);
   }
   // The card's three wobble randoms (start, speed, force): the same generator as cards.js, so a sprite and its
   // live card rock alike.
@@ -906,10 +952,10 @@ class VennSea extends PhotoSea {
     }
   }
   smallAt(x,y){
-    const cx=Math.floor(x/16),cy=Math.floor(y/16),radius=8/(this.camera?.zoom||1);let near=null,distance=radius*radius;
-    for(let a=cx-1;a<=cx+1;a++)for(let b=cy-1;b<=cy+1;b++)for(let it of this.hitGrid?.get(b*this.hitCols+a)||[]){
+    const cx=Math.floor(x/16),cy=Math.floor(y/16),radius=8/(this.camera?.zoom||1),reach=Math.max(1,Math.ceil((radius+this.waveHeight())/16));let near=null,distance=radius*radius;
+    for(let a=cx-reach;a<=cx+reach;a++)for(let b=cy-reach;b<=cy+reach;b++)for(let it of this.hitGrid?.get(b*this.hitCols+a)||[]){
       if(it.take)it=this.items.get(it.stack)||it;
-      const d=(it.x-x)**2+(it.y-y)**2;if(d<distance){near=it;distance=d;}}
+      const [wx,wy]=this.waveOffset(it),d=(it.x+wx-x)**2+(it.y+wy-y)**2;if(d<distance){near=it;distance=d;}}
     return near;
   }
   // Live cards are bounded; tiny prints use the atlas hit grid. A stack only targets another physical stack,
@@ -920,13 +966,13 @@ class VennSea extends PhotoSea {
     const check=it=>{
       if(it.take)it=this.items.get(it.stack);
       if(!it||skip.has(it.stack||it.id)||it.lifted||it.pileLifted||it.el.classList.contains('lifted'))return;
-      const size=(it.size||this.s)*(it.id===this.held?1.15:1),dx=(x-it.x)/size,dy=(y-it.y)/size;
+      const size=(it.size||this.s)*(it.id===this.held?1.15:1),[wx,wy]=this.waveOffset(it),dx=(x-it.x-wx)/size,dy=(y-it.y-wy)/size;
       if(Math.abs(dx)>.5||Math.abs(dy)>2/3)return;
       const z=it.density?0:100+(it.id===this.held?19:it.focused?8:it.dropped?5:0),d=dx*dx+dy*dy;
       if(z>top||z===top&&d<distance){near=it;top=z;distance=d;}
     };
     for(const it of this.moving)check(it);
-    const cx=Math.floor(x/16),cy=Math.floor(y/16),reach=Math.ceil((this.spriteMax||this.densitySize||this.s)*2/3/16);
+    const cx=Math.floor(x/16),cy=Math.floor(y/16),reach=Math.ceil(((this.spriteMax||this.densitySize||this.s)*2/3+this.waveHeight())/16);
     for(let a=cx-reach;a<=cx+reach;a++)for(let b=cy-reach;b<=cy+reach;b++)for(const it of this.hitGrid?.get(b*this.hitCols+a)||[])if(it.density)check(it);
     return near;
   }
@@ -944,6 +990,7 @@ class VennSea extends PhotoSea {
     if(it.el.isConnected&&!it.lifted&&it.transform){
       const r=it.el.getBoundingClientRect(),base=this.el.getBoundingClientRect();
       [it.x,it.y]=this.toWorld(r.left+r.width/2-base.left,r.top+r.height/2-base.top);
+      it.x-=it.swellOffset?.[0]||0;it.y-=it.swellOffset?.[1]||0;
     }
     this.paintItem(it);it.el.classList.add('pinned');
   }
@@ -952,6 +999,7 @@ class VennSea extends PhotoSea {
     this.settled=false;
     const before=this.items.get(this.held);if(before&&!this.drag?.members.has(before))before.el.classList.remove('pinned');
     this.held=id;
+    this.waveClock();this.wobbleLoop();
     const it=this.items.get(id);if(it)this.catchItem(it);
     if(this.cameraOn)this.scheduleCull(true);
   }
@@ -968,6 +1016,7 @@ class VennSea extends PhotoSea {
     if(it.renderSize!==size){it.renderSize=size;it.el.style.width=`${size}px`;it.el.style.height=`${size*4/3}px`;}  // every print is a 3:4 card
     if(it.renderBasis!==basis){it.renderBasis=basis;it.el.style.setProperty('--image-scale',String(basis));}
     it.el.classList.toggle('pinned',held||!!drag);
+    this.waveItem(it);
     const priority=drag?4:held?3:it.focused?2:it.dropped?1:0;
     it.el.style.zIndex=String(priority*(this.items.size+1)+(it.order||1));
     if(this.presentation?.item===it)this.presentation.follow();
@@ -1169,6 +1218,7 @@ class VennSea extends PhotoSea {
     this.raf=0;
     if(!this.alive||!this.el.isConnected){this.destroy();return;}
     if(this.paused||document.hidden||this.deep)return;  // deep in one print nothing moves; setCamera kicks on the way out
+    this.wobbleLoop();
     if(this.busy||!this.ready){this.kick();return;}
     // A settled world asks the worker rarely; a hold, drag or pin brings the full rate back.
     const idle=this.settled&&!this.drag&&this.held==null&&!this.releasePins&&!this.pan;

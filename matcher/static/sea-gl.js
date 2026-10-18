@@ -3,7 +3,7 @@
 // sheets: each sheet is uploaded once, each draw call covers every print on that sheet, and the camera is a uniform.
 // Only visible quads are submitted, with a stable depth per print so texture batching cannot reorder a stack.
 // A pan or a zoom costs one pass over the visible quads, every print is a
-// real thumbnail at any size (a dot of paper is never needed), and at rest nothing is drawn. The fragment shader
+// real thumbnail at any size (a dot of paper is never needed). Slow waves change only uniforms. The fragment shader
 // paints the same polaroid as drawCard in photo-sea.js: paper 3:4, the picture contained at the top of its window,
 // corners rounded in proportion. photo-sea.js keeps its 2D canvas for browsers without WebGL2 (and for the `gpu` knob).
 class SpriteLayer {
@@ -15,11 +15,13 @@ class SpriteLayer {
     layout(location=3) in vec4 look;   // opacity, then the card's three wobble randoms
     layout(location=4) in float aspect;
     layout(location=5) in float depth;
+    layout(location=6) in vec3 swell;   // shared stack sine, cosine and width
     uniform vec2 view;                 // the sea's size (css px)
     uniform vec3 cam;                  // zoom, tx, ty
     uniform float time;                // ms
     uniform vec4 wob;                  // period ms, degrees, speed spread, force spread
     uniform float wobDelay;            // delay spread
+    uniform vec3 waves;                // height in screen pixels, sine and cosine of the travelling phase
     out vec2 vq; out vec4 vcell; out float vopacity; out float vpx; out float vaspect;
     void main() {
       float w = pos.z, h = w * 4.0 / 3.0;
@@ -29,7 +31,14 @@ class SpriteLayer {
       float angle = wob.y == 0.0 ? 0.0 : sin((time / period + look.y * wobDelay) * 6.2831853) * deg * 0.017453292;
       float c = cos(angle), s = sin(angle);
       vec2 r = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
-      vec2 screen = (pos.xy + r) * cam.x + cam.yz;
+      vec2 lift = vec2(0.0);
+      if (waves.x > 0.0) {
+        float t = clamp((swell.z * cam.x - 64.0) / 156.0, 0.0, 1.0);
+        float a = min(waves.x, swell.z * 0.2) / max(1.0, cam.x) * (1.0 - t * t * (3.0 - 2.0 * t));
+        // The spatial sine/cosine is uploaded once; the clock's pair is one uniform, not six trig calls per print.
+        lift = vec2((swell.y * waves.z + swell.x * waves.y) * 0.18, swell.x * waves.z - swell.y * waves.y) * a;
+      }
+      vec2 screen = (pos.xy + lift + r) * cam.x + cam.yz;
       gl_Position = vec4(screen.x / view.x * 2.0 - 1.0, 1.0 - screen.y / view.y * 2.0, depth, 1.0);
       vq = q; vcell = cell; vopacity = look.x; vpx = w * cam.x; vaspect = aspect;
     }`;
@@ -61,7 +70,7 @@ class SpriteLayer {
       if (a <= 0.0) discard;
       color = vec4(rgb * a, a);
     }`;
-  static STRIDE = 13;  // x, y, w, u0, v0, cw, ch, opacity, r1, r2, r3, aspect, depth
+  static STRIDE = 16;  // x, y, w, u0, v0, cw, ch, opacity, r1, r2, r3, aspect, depth, swell sine/cosine/width
 
   constructor(canvas) {
     const gl = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: true, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: "high-performance" });
@@ -82,7 +91,7 @@ class SpriteLayer {
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) || "program");
     this.program = program;
-    this.u = {}; for (const name of ["view", "cam", "time", "wob", "wobDelay", "sheet", "sheetSize"]) this.u[name] = gl.getUniformLocation(program, name);
+    this.u = {}; for (const name of ["view", "cam", "time", "wob", "wobDelay", "waves", "sheet", "sheetSize"]) this.u[name] = gl.getUniformLocation(program, name);
     this.vao = gl.createVertexArray(); gl.bindVertexArray(this.vao);
     const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), gl.STATIC_DRAW);
@@ -94,6 +103,7 @@ class SpriteLayer {
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 28); gl.vertexAttribDivisor(3, 1);
     gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 44); gl.vertexAttribDivisor(4, 1);
     gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 48); gl.vertexAttribDivisor(5, 1);
+    gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6, 3, gl.FLOAT, false, stride, 52); gl.vertexAttribDivisor(6, 1);
     gl.bindVertexArray(null);
     this.blank = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.blank);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([201, 194, 180, 255]));
@@ -120,7 +130,7 @@ class SpriteLayer {
   // Sheets the sea no longer uses give their texture memory back.
   prune(live) { for (const [image, t] of this.textures) if (!live.has(image)) { this.gl.deleteTexture(t.tex); this.textures.delete(image); } }
   // Draw every batch ({image, version, data, n, upload}): one upload per changed batch, one draw call per batch.
-  draw({ W, H, dpr, zoom, tx, ty, time, wobble }, batches, liveImages = null) {
+  draw({ W, H, dpr, zoom, tx, ty, time, wobble, waves = [0, 0, 1] }, batches, liveImages = null) {
     const gl = this.gl, canvas = this.canvas;
     if (this.lost) return false;
     const cw = Math.max(1, Math.round(W * dpr)), ch = Math.max(1, Math.round(H * dpr));
@@ -133,6 +143,7 @@ class SpriteLayer {
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS);
     gl.uniform2f(this.u.view, W, H); gl.uniform3f(this.u.cam, zoom, tx, ty); gl.uniform1f(this.u.time, time);
     gl.uniform4f(this.u.wob, wobble[0], wobble[1], wobble[2], wobble[3]); gl.uniform1f(this.u.wobDelay, wobble[4]);
+    gl.uniform3f(this.u.waves, waves[0], waves[1], waves[2]);
     gl.uniform1i(this.u.sheet, 0); gl.activeTexture(gl.TEXTURE0);
     const live = new Set(liveImages||[]);
     for (const b of batches) {
@@ -146,6 +157,7 @@ class SpriteLayer {
       gl.vertexAttribPointer(1, 3, gl.FLOAT, false, stride, 0); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 12); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 28);
       gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 44);
       gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 48);
+      gl.vertexAttribPointer(6, 3, gl.FLOAT, false, stride, 52);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, b.n);
     }
     gl.bindVertexArray(null);
