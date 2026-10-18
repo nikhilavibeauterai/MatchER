@@ -85,7 +85,7 @@ body.filter-update-required #game-help-hint { display:none; }
 .filter-stage:is([data-feedback=away],[data-feedback=aside]) .filter-pulse { border-color:#efaaa8; }
 .filter-stage[data-feedback=toward] .filter-pulse { border-color:#ff8fc2; }
 @keyframes filter-pulse { from { opacity:.8; transform:scale(.96); } to { opacity:0; transform:scale(1.1); } }
-#world.filter-world .ps-item:is(.focused,:hover,:focus-visible)::after { position:absolute; z-index:15; right:3px; top:3px; width:24px; height:24px; display:grid; place-items:center; border:2px solid currentColor; border-radius:50%; font-size:19px; font-weight:900; line-height:1; box-shadow:0 3px 10px #0009; pointer-events:none; }
+#world.filter-world .ps-item:is(.focused,:hover,:focus-visible)::after { position:absolute; z-index:15; right:calc(3px / var(--zoom,1)); top:calc(3px / var(--zoom,1)); width:24px; height:24px; display:grid; place-items:center; border:2px solid currentColor; border-radius:50%; font-size:19px; font-weight:900; line-height:1; box-shadow:0 3px 10px #0009; transform:scale(calc(1 / var(--zoom,1))); transform-origin:top right; pointer-events:none; }
 #world.filter-world .ps-item[data-filter-result=pass]:is(.focused,:hover,:focus-visible)::after { content:'✓'; color:#8eebbf; background:#102c22; }
 #world.filter-world .ps-item[data-filter-result=fail]:is(.focused,:hover,:focus-visible)::after { content:'✕'; color:#ff817a; background:#3b171b; }
 #world.filter-world .ps-item[data-filter-change=true] { outline:2px dashed #ffe099; outline-offset:3px; }

@@ -41,6 +41,26 @@ const problems=[],res={};let page;
   assert.deepEqual(await camera(),before);check('clickChangesReviewWithoutZoomingBackground',true);
   check('seaRetainsPhotoDimensions',await page.evaluate(()=>[...World.sea.items.values()].every(it=>it.dims?.length===2)));
   await page.screenshot({path:`${OUT}/filter-focus-selected.png`});
+  const marks=[],hover=await target();assert(hover,'Another sea print is available to hover');
+  for(const zoom of [1,2,4]){
+    await page.evaluate(({zoom,id})=>{
+      const sea=World.sea,it=sea.items.get(id);sea.setCamera(zoom,innerWidth*.23-it.x*zoom,innerHeight*.45-it.y*zoom);
+    },{zoom,id:hover.id});
+    const point=await page.evaluate(id=>{const r=World.sea.items.get(id).el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height*.25};},hover.id);
+    await page.mouse.move(point.x,point.y);await page.waitForTimeout(180);
+    for(const outcome of ['pass','fail']){
+      const mark=await page.evaluate(({id,outcome})=>{
+        const sea=World.sea,it=sea.items.get(id);it.el.dataset.filterResult=outcome;
+        const style=getComputedStyle(it.el,'::after'),scale=sea.camera.zoom*(it.renderScale||1)*new DOMMatrix(style.transform).a;
+        return {zoom:sea.camera.zoom,outcome,content:style.content,width:parseFloat(style.width)*scale,height:parseFloat(style.height)*scale,font:parseFloat(style.fontSize)*scale,border:parseFloat(style.borderTopWidth)*scale};
+      },{id:hover.id,outcome});
+      assert(mark.width>=20&&mark.width<=32&&mark.height>=20&&mark.height<=32&&mark.font<=24&&mark.border<=3,`Filter marks keep their screen size: ${JSON.stringify(mark)}`);
+      assert(mark.content.includes(outcome==='pass'?'✓':'✕'));marks.push(mark);
+    }
+    await page.screenshot({path:`${OUT}/filter-hover-marks-${zoom}.png`});
+  }
+  await page.evaluate(()=>World.sea.resetCamera());
+  check('hoverMarksKeepTheirScreenSize',marks.length===6);
   const open=await water();assert(open,'Filter leaves open water for wheel zoom');
   await page.mouse.move(open.x,open.y);await page.mouse.wheel(0,-700);await page.waitForTimeout(350);
   check('wheelStillZooms', (await camera()).zoom>1.5);

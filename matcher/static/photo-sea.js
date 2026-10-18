@@ -46,11 +46,19 @@ class PhotoSea {
     const x=index%50*16,y=Math.floor(index/50)*16;
     return {img,x,y,aspect:dims?.[0]&&dims?.[1]?dims[0]/dims[1]:1};
   }
+  // A full-size picture needs local pixels as well as decoded pixels: filtering a four-pixel card and
+  // magnifying it hundreds of times blurs fine detail. Its inverse scale keeps the same card and framing.
+  imageBasis(it){
+    const current=Number(it.el.dataset.imageScale)||1,wanted=this.cameraOn&&this.fullSize(it)?this.camera.zoom*(it.renderScale||1):1;
+    if(current===wanted||current>1&&wanted>1&&wanted/current>=.5&&wanted/current<=2)return false;
+    it.el.dataset.imageScale=String(wanted);return true;
+  }
   // A live sea print keeps the same paper and picture while it is hovered, dragged or focused. Only its
   // resolution changes. Framing and enhancement happen on decode or an edit, never on a camera frame.
   frameImage(it){
     if(this.el.id!=='world')return;
     const img=it.el.querySelector('.pile-cover');if(!img?.naturalWidth)return;
+    if(this.imageBasis(it))this.paintItem?.(it,true);
     const old=img.getAnimations().find(a=>a.animationName==='cardwobble'),pose=this.stillCards?.get(img),time=old?.currentTime??pose?.time;
     if(pose)this.stillCards.delete(img);  // its saved phase passes to the paper when the bare image is wrapped
     it.el.dataset.photo=it.photo;Cards.focus(it.el);
@@ -114,13 +122,16 @@ class PhotoSea {
     const next=new Image(),task={img:next,source};it.imageRequest=task;next.src=source;
     const valid=()=>this.alive&&this.items.get(it.id)===it&&!it.density&&it.el.querySelector('.pile-cover')===img;
     next.decode().then(()=>{
-      if(valid()&&it.wantedImage===source)img.src=source;
+      if(!valid()||it.wantedImage!==source)return;
+      const c=this.camera,W=this.el.clientWidth,H=this.el.clientHeight;
+      if(source.includes('m=full')&&(!this.fullSize(it)||!this.inView(it,-c.tx/c.zoom,-c.ty/c.zoom,(W-c.tx)/c.zoom,(H-c.ty)/c.zoom,0)))return;
+      img.src=source;
     }).catch(()=>{
-      if(valid()&&it.wantedImage===source&&source.includes('m=full')&&attempt<2){
+      if(valid()&&it.wantedImage===source&&source.includes('m=full')){
         it.imageRetry=setTimeout(()=>{
           it.imageRetry=null;const c=this.camera,W=this.el.clientWidth,H=this.el.clientHeight;
           if(valid()&&it.wantedImage===source&&this.fullSize(it)&&this.inView(it,-c.tx/c.zoom,-c.ty/c.zoom,(W-c.tx)/c.zoom,(H-c.ty)/c.zoom,0))this.requestImage(it,source,attempt+1);
-        },400*(attempt+1));
+        },Math.min(10000,400*Math.pow(2,Math.min(attempt,5))));
       }
     }).finally(()=>{
       if(it.imageRequest===task)it.imageRequest=null;
@@ -141,7 +152,7 @@ class PhotoSea {
     // pointer (and in the middle of the screen) while you zoom into it.
     const sx=z>1?W/2:0,sy=z>1?H/2:0;
     c.zoom=z;c.tx=Math.min(sx,Math.max(W*(1-z)-sx,tx));c.ty=Math.min(sy,Math.max(H*(1-z)-sy,ty));
-    this.layer.style.transform=z===1&&!c.tx&&!c.ty?'':`translate(${c.tx.toFixed(2)}px,${c.ty.toFixed(2)}px) scale(${z.toFixed(4)})`;this.el.style.setProperty('--zoom',z.toFixed(4));
+    this.layer.style.transform=z===1&&!c.tx&&!c.ty?'':`translate(${c.tx.toFixed(2)}px,${c.ty.toFixed(2)}px) scale(${z.toFixed(4)})`;this.el.style.setProperty('--zoom',z.toFixed(4));this.el.style.setProperty('--camera-zoom',z.toFixed(4));
     this.el.dataset.zoom=z.toFixed(2);this.followCamera();this.scheduleCull();
     // Both renderers draw only the current viewport. Camera movement never changes a print's paint order.
     this.densityDirty=true;this.paintSoon();
@@ -266,6 +277,7 @@ class PhotoSea {
       // A live print on screen carries the pyramid level its size needs, both ways as the camera moves; off screen
       // it keeps what it has. One filling four fifths of the screen gets the original file.
       if(!it.density&&this.inView(it,x0,y0,x1,y1,pad)){
+        if(this.imageBasis(it)){this.paintItem?.(it,true);this.frameImage(it);}
         if(this.fullSize(it))this.stillCard(it);
         this.requestImage(it,M(it.photo,this.imageSize(it),this.fullSize(it)));
       }
@@ -944,12 +956,13 @@ class VennSea extends PhotoSea {
       it.el.style.transition='none';
       requestAnimationFrame(()=>requestAnimationFrame(()=>{if(this.alive)it.el.style.transition='';}));
     }
-    const held=it.id===this.held,drag=this.drag?.members.has(it),size=it.size||this.s;
+    const held=it.id===this.held,drag=this.drag?.members.has(it),basis=Number(it.el.dataset.imageScale)||1,size=(it.size||this.s)*basis;
     const scale=drag&&this.drag.moving?1.32:held?1.15:1;
-    const transform=`translate3d(${it.x.toFixed(2)}px, ${it.y.toFixed(2)}px,0) translate(-50%,-50%) scale(${scale})${it.take?` rotate(${it.pileTurn||0}deg)`:''}`;
+    const transform=`translate3d(${it.x.toFixed(2)}px, ${it.y.toFixed(2)}px,0) translate(-50%,-50%) scale(${scale/basis})${it.take?` rotate(${it.pileTurn||0}deg)`:''}`;
     const changed=it.transform!==transform||it.renderSize!==size;it.renderScale=scale;
     if(it.transform!==transform){it.el.style.transform=transform;it.transform=transform;}
     if(it.renderSize!==size){it.renderSize=size;it.el.style.width=`${size}px`;it.el.style.height=`${size*4/3}px`;}  // every print is a 3:4 card
+    if(it.renderBasis!==basis){it.renderBasis=basis;it.el.style.setProperty('--image-scale',String(basis));}
     it.el.classList.toggle('pinned',held||!!drag);
     const priority=drag?4:held?3:it.focused?2:it.dropped?1:0;
     it.el.style.zIndex=String(priority*(this.items.size+1)+(it.order||1));

@@ -18,7 +18,7 @@ const MIPS = [50, 100, 200, 400, 800, 1600];
 // Only a caller that says so (a print filling four fifths of the screen) gets the original file; every other
 // size stops at the preview.
 const M = (id, cssPx, full = false) => {
-  if (full) return `${P(id)}&m=full`;
+  if (full) return `${P(id)}&m=full&rev=2`;  // bypass cached lossy conversions from earlier versions
   const need = Math.max(1, cssPx) * (devicePixelRatio || 1), level = MIPS.find((l) => l >= need) || 1600;
   return level === 1600 ? P(id) : level === 400 ? T(id) : level === 800 ? `${P(id)}&m=800` : `${T(id)}&m=${level}`;
 };
@@ -1608,8 +1608,10 @@ function framePhoto(side, info, opts = {}) {
     }else img.style.cssText = base + `width:${ew}px;height:${eh}px;transform:translate(${x + w / 2 - ew / 2}px,${y + h / 2 - eh / 2}px)${rotate ? ` rotate(${rotate}deg)` : ""}`;
     paintFilter(img, Number(side.dataset.photo), enhance, opts.knobs || null);
   };
-  const { x, y, w, h } = frameRect(W, H, iw, ih, b, mode);
-  place(x, y, w, h);
+  // A deeply zoomed sea window uses larger local coordinates without changing its crop or subject zoom limit.
+  const basis=Number(side.dataset.imageScale)||1;
+  const { x, y, w, h } = frameRect(W/basis, H/basis, iw, ih, b, mode);
+  place(x*basis, y*basis, w*basis, h*basis);
 }
 // Where a picture of iw×ih goes in a W×H window (CSS px): "off" contains it at the top; "best" fills the window
 // exactly (the least paper showing), the subject or the centre deciding which part; "subject" zooms in past that

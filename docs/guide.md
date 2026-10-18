@@ -313,8 +313,8 @@ keeps the same takes behind its cover; only the top print gains the focused cont
 Its crop, enhancement, paper and shadow stay in place while you scroll, pan or drag; the notes and controls
 follow the print without replacing its picture.
 A print filling at least four fifths of the screen's height shows its original pixels, including when you zoom
-farther into just part of it. Its decoded preview stays visible while the original loads, with bounded retries
-if loading fails.
+farther into just part of it. Its decoded preview stays visible while the original loads. Temporary failures
+retry while that print remains enlarged and on screen, with longer pauses between attempts.
 
 **Developer mode** (`./matcher.sh --debug`, or add `?debug=1` to the address once; `?debug=0` forgets it) keeps a
 panel on every screen with the sea's knobs: the macro order (rank spread, margins, jitter, home pull), the micro
@@ -345,7 +345,7 @@ the tag minigame.
   your pointer, then drag to pan. Double-click or **Reset view** returns to the fitted card. Copy path and Close
   stay within reach while zoomed in. Image detail follows the same progressive levels as the sea, accounting for
   the screen's pixel density. Once the card fills four fifths of the screen's height, it loads the original;
-  RAW, HEIC and TIFF photos get a cached display copy at their full original resolution. The current picture
+  RAW, HEIC and TIFF photos get a lossless cached display copy at their full original resolution. The current picture
   stays visible until the next level has decoded. If clipboard access is blocked, the path
   appears selected for manual copying. A stack take copies its own path, even when another take is its cover.
 - The photos a screen brings to you (a duel's pair, the sweep's card, Twin check's pair, Quick sort's card, the finals)

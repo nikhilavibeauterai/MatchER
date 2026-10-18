@@ -2087,7 +2087,7 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
 #view-duel.crown-play .side.is-champ > .print > .paper { outline: 1px solid #ffd86b77; outline-offset: -1px; }
 /* The sea: the card is the print at every size and zoom; hover and selection rings stay on the item, the count sits on the chin. */
 /* Sea prints live on a zoomed layer: rings, shadows and captions scale with the card, not with the zoom. */
-.photo-sea .ps-item { border: 0; border-radius: var(--card-round); background: transparent; overflow: visible; container-type: inline-size;
+.photo-sea .ps-item { --zoom:calc(var(--camera-zoom,1) / var(--image-scale,1));border: 0; border-radius: var(--card-round); background: transparent; overflow: visible; container-type: inline-size;
   box-shadow: 0 calc(6px / var(--zoom, 1)) calc(18px / var(--zoom, 1)) rgba(0, 0, 0, 0.45); }
 .photo-sea .ps-item.selected { box-shadow: 0 0 0 calc(3px / var(--zoom, 1)) rgba(255, 216, 107, 0.45), 0 calc(10px / var(--zoom, 1)) calc(26px / var(--zoom, 1)) rgba(0, 0, 0, 0.55); }
 .photo-sea .ps-item.dragging { box-shadow: 0 calc(18px / var(--zoom, 1)) calc(40px / var(--zoom, 1)) rgba(0, 0, 0, 0.6); }

@@ -3483,18 +3483,19 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
     def _full_image(s: Session, pid: int, original: Path) -> Path:
         stamp = original.stat()
         key = hashlib.sha256(f"{original}:{stamp.st_mtime_ns}:{stamp.st_size}".encode()).hexdigest()[:16]
-        out = s.workdir / "full" / f"{pid}-{key}.jpg"
+        out = s.workdir / "full" / f"{pid}-{key}.png"
         if out.is_file():
             return out
         with full_images_lock:
             if not out.is_file():
                 # Browsers cannot display every imported format. Decode its full-size pixels, rather than sending
-                # the analysis preview under an original-image URL. Nothing here crops or enhances the photo.
+                # the analysis preview under an original-image URL. Lossless pixels preserve fine RAW detail;
+                # nothing here crops, enhances or adds JPEG compression to the photo.
                 decoded = imageio.decode(original)
                 tmp = out.with_suffix(f".{secrets.token_hex(4)}.tmp")
                 try:
                     out.parent.mkdir(parents=True, exist_ok=True)
-                    imageio.save_jpeg(decoded.image, tmp, quality=95)
+                    decoded.image.save(tmp, "PNG", compress_level=3)
                     tmp.replace(out)
                 finally:
                     decoded.image.close()
@@ -3514,7 +3515,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                 path, mimetype = original, SHOWABLE[original.suffix.lower()]
             else:
                 try:
-                    path = _full_image(s, pid, original)
+                    path, mimetype = _full_image(s, pid, original), "image/png"
                 except (OSError, ValueError, RuntimeError):
                     abort(422, "Could not decode this photo at full resolution.")
         else:

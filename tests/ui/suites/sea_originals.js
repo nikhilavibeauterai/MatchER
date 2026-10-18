@@ -4,21 +4,25 @@ const {execFileSync}=require('node:child_process'),path=require('node:path');
 const {LINK,OUT}=process.env;
 (async()=>{
   const browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']}),cases=[],problems=[];
-  for(const [dpr,hovered]of [[1,false],[1,true],[2,false],[2,true]]){
-    const label=`${dpr}${hovered?'-hover':''}`;
+  for(const [dpr,hovered,fine]of [[1,false],[1,true],[2,false],[2,true],[1,true,true],[2,true,true]]){
+    const label=`${dpr}${hovered?'-hover':''}${fine?'-fine':''}`;
     const context=await browser.newContext({viewport:{width:1440,height:900},deviceScaleFactor:dpr}),page=await context.newPage();
     page.on('pageerror',e=>problems.push(e.message));await page.goto(LINK);await page.waitForSelector('.mode-card[data-mode=gallery]');
-    const fixtures=await page.evaluate(()=>{
+    const fixtures=await page.evaluate(fine=>{
       const full=document.createElement('canvas');full.width=2400;full.height=3200;const ctx=full.getContext('2d');
       ctx.fillStyle='#eee';ctx.fillRect(0,0,2400,3200);ctx.fillStyle='#111';
       for(let y=0;y<3200;y+=16)for(let x=0;x<2400;x+=16)if((x+y)/16%2)ctx.fillRect(x,y,16,16);
+      if(fine){
+        ctx.fillStyle='#eee';ctx.fillRect(1040,1440,320,320);ctx.fillStyle='#111';
+        for(let y=1440;y<1760;y+=2)for(let x=1040;x<1360;x+=2)if((x+y)/2%2)ctx.fillRect(x,y,2,2);
+      }
       const small=document.createElement('canvas');small.width=12;small.height=16;small.getContext('2d').drawImage(full,0,0,12,16);
       return {full:full.toDataURL().split(',')[1],small:small.toDataURL().split(',')[1]};
-    });
-    let originals=0,release,waiting=new Promise(resolve=>{release=resolve;});
+    },fine);
+    let originals=0,failuresLeft=0,release,waiting=new Promise(resolve=>{release=resolve;});
     await page.route(/\/img\/[tp]\/900001\.jpg/,async r=>{
       const full=new URL(r.request().url()).searchParams.get('m')==='full';
-      if(full){if(++originals===1)return r.fulfill({status:503,body:'temporary original failure'});await waiting;}
+      if(full){if(++originals===1||failuresLeft-->0)return r.fulfill({status:503,body:'temporary original failure'});await waiting;}
       return r.fulfill({contentType:'image/png',body:Buffer.from(full?fixtures.full:fixtures.small,'base64')}).catch(()=>{});
     });
     await page.route('**/api/edit?photo=900001',r=>r.fulfill({json:{edits:{}}}));
@@ -74,7 +78,7 @@ def detail(im):
     return sum(abs(im.getpixel((x,y))-im.getpixel((x-1,y))) for y in range(im.height) for x in range(1,im.width))/(im.height*(im.width-1))
 print(json.dumps(dict(shown=detail(images[0]), reference=detail(images[1]))))
 `],{input:JSON.stringify([shown.toString('base64'),reference.toString('base64')]),encoding:'utf8'}));
-    cases.push({dpr,hovered,retained,state,pixels});assert(pixels.reference>8/dpr,`The original fixture has real fine detail: ${JSON.stringify(cases.at(-1))}`);
+    cases.push({dpr,hovered,fine:!!fine,retained,state,pixels});assert(pixels.reference>8/dpr,`The original fixture has real fine detail: ${JSON.stringify(cases.at(-1))}`);
     assert(pixels.shown>pixels.reference*.75,`The displayed original stays as detailed as a screen-sized photo: ${JSON.stringify(cases.at(-1))}`);
     await page.evaluate(()=>document.getElementById('original-reference').remove());
     await page.evaluate(()=>originalZoom(2.5));await page.waitForTimeout(200);
@@ -88,6 +92,18 @@ print(json.dumps(dict(shown=detail(images[0]), reference=detail(images[1]))))
     await page.waitForFunction(()=>!originalItem.imageRequest&&originalImage.naturalHeight===16);
     finish();
     await page.waitForFunction(()=>!originalItem.imageRequest);assert.equal(await page.evaluate(()=>originalImage.naturalHeight),16,'A late original cannot replace a zoomed-out preview');
+    failuresLeft=3;
+    await page.evaluate(()=>{S.lib={image_key:'recovered-original'};originalZoom(.85);});
+    await page.waitForFunction(()=>originalImage.naturalHeight===3200,null,{timeout:10000});
+    assert(failuresLeft<0,'An original recovers after repeated temporary failures without moving the camera again');
+    await page.evaluate(()=>{S.lib={image_key:'offscreen-original'};originalZoom(.79);});
+    await page.waitForFunction(()=>originalImage.naturalHeight===16);
+    let deliver;waiting=new Promise(resolve=>{deliver=resolve;});
+    const offscreen=page.waitForRequest(r=>r.url().includes('900001.jpg')&&r.url().includes('m=full'));
+    await page.evaluate(()=>originalZoom(.85));await offscreen;
+    await page.evaluate(()=>{const s=World.sea;s.hold(originalItem.id);s.setCamera(s.camera.zoom,s.el.clientWidth/2,s.el.clientHeight/2);});
+    deliver();await page.waitForFunction(()=>!originalItem.imageRequest);
+    assert.equal(await page.evaluate(()=>originalImage.naturalHeight),16,'A decoded original cannot commit after its held photo has left the viewport');
     await context.close();
   }
   assert.deepEqual(problems,[]);console.log(JSON.stringify({cases,problems}));await browser.close();

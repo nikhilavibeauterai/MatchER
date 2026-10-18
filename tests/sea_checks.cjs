@@ -74,6 +74,24 @@ test('a live editor can select another take while retaining wheel and pan contro
   assert(sea.cameraOn,'Selecting a Filter take must not disable manual camera gestures');
   sea.clickToZoom=true;sea.cameraOn=false;sea.clickPrint(item,event);assert.deepEqual(calls.pop(),['select',item,event]);
 });
+test('a full-size photo gains local rendering precision without resizing or replacing its card',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype',{requestAnimationFrame:fn=>fn()});
+  const card={dataset:{},classList:{toggle(){}},style:{setProperty(key,value){this[key]=value;}}},it={id:7,x:300,y:300,size:6,renderScale:1.15,el:card};
+  const sea=Object.assign(Object.create(proto),{alive:true,held:7,cameraOn:true,camera:{zoom:120},el:{clientHeight:900},s:6,items:new Map([[7,it]])});
+  const physicalWidth=()=>parseFloat(card.style.width)*Number(/scale\(([^)]+)\)/.exec(card.style.transform)[1])*sea.camera.zoom;
+  assert(sea.imageBasis(it));assert.equal(Number(card.dataset.imageScale),138);
+  sea.paintItem(it,true);assert(Math.abs(physicalWidth()-6*1.15*120)<1e-8,'The enlarged local coordinates cancel out on screen');
+  assert(!sea.imageBasis(it),'A settled original keeps the same basis');
+  sea.camera.zoom=160;assert(!sea.imageBasis(it),'Ordinary wheel movement cannot repeatedly reframe the photo');
+  sea.camera.zoom=400;assert(sea.imageBasis(it),'Much closer detail gets a larger local image');
+  sea.paintItem(it,true);assert(Math.abs(physicalWidth()-6*1.15*400)<1e-8);assert.equal(it.el,card);
+  const width=card.style.width;it.size=parseFloat(width);card.dataset.imageScale='1';sea.paintItem(it,true);
+  assert.equal(card.style.width,width);assert.equal(card.style['--image-scale'],'1','Screen-sized marks update even if the local width happens to stay identical');
+  it.size=6;card.dataset.imageScale='460';
+  sea.camera.zoom=1;assert(sea.imageBasis(it));assert.equal(card.dataset.imageScale,'1');
+  sea.paintItem(it,true);assert.equal(card.style.width,'6px');assert.equal(card.style.height,'8px');
+  assert(!sea.imageBasis(it),'The overview retains its cheap relative image layout');
+});
 test('resetting, wheeling, panning or leaving a mode cancels an unfinished click zoom',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),frames=[];
   const proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype',{
