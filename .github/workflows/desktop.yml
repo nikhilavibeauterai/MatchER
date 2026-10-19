@@ -80,6 +80,7 @@ jobs:
           MATCHER_UI_TMP: ${{ runner.temp }}/matcher-ui
           MATCHER_MODELS: ${{ runner.temp }}/matcher-ui/models
         run: |
+          python -m venv --system-site-packages .venv
           tests/ui/setup.sh
           tests/ui/run_all.sh experience_flow storage_media stacks_layout group_zoom auto_look photo_notes_camera performance
       - name: Save browser results
