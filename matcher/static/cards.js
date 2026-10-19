@@ -49,6 +49,7 @@ const Cards = {
   // The wobble's bases and spreads come from the sea's tuning (the developer panel's Wobble group).
   tune(values) {
     const root = document.documentElement.style, v = values || {};
+    if (v.focusGlowStrength != null) root.setProperty('--focus-glow-strength', v.focusGlowStrength);
     if (v.wobblePeriod != null) root.setProperty("--wobble-period", `${v.wobblePeriod}s`);
     if (v.wobbleDeg != null) root.setProperty("--wobble-deg", `${v.wobbleDeg}deg`);
     if (v.wobbleDelaySpread != null) root.setProperty("--wobble-delay-spread", v.wobbleDelaySpread);

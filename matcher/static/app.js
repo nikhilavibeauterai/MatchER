@@ -672,7 +672,8 @@ function viewAnalyze(main) {
     feeding = false;
     if (left(view0)) return false;
     for (const k of Object.keys(fr)) fr[k] += (f[k] || []).length;
-    for (const [id, boxes, smiles, blinks, visual, dims] of f.read) {
+    for (const [id, boxes, smiles, blinks, visual, dims, recipe] of f.read) {
+      AutoLook.know(id,recipe);
       addPhoto(id).visual=visual;addPhoto(id).dims=dims;changed.add(id);dirty=true;
       facesOf.set(id, { boxes, smiles, blinks });
       if (boxes.length) enqueue(id, tagOf("faces", "🙂", "Faces"));
@@ -1288,12 +1289,15 @@ function openSeaAxes(){
   if(!S.lib||!World.sea)return;
   const modal=$('#modal'),source=S.lib.source,opener=document.activeElement;
   let axes=SeaAxes.normalize(S.lib.settings?.sea_axes),revision=0;
+  const groups=[...new Set(SeaAxes.options.map(o=>SeaAxes.group(o)))],options=groups.map(group=>`<optgroup label="${esc(group)}">${SeaAxes.options.filter(o=>SeaAxes.group(o)===group).map(o=>`<option value="${o.key}">${esc(o.label)}</option>`).join('')}</optgroup>`).join('');
   modal.className='sea-axis-dialog';modal.onclick=e=>{if(e.target===modal)modal.close();};
   modal.innerHTML=`<header class="sea-axis-head"><div><span class="sea-axis-kicker">A different way to look</span><h2 id="sea-axis-title">Arrange the sea</h2></div><button class="icon" data-axis-close aria-label="Close sea axes">✕</button></header>
     <p class="sea-axis-intro">Choose what draws photos together. Their colours travel with them.</p>
+    <label class="sea-axis-search">Find an axis<input type="search" data-axis-search placeholder="Ranking, faces, time, folder…" autocomplete="off"></label>
+    <div class="sea-axis-presets" aria-label="Arrangements">${[['colour','Colour & light'],['favourites','Find favourites'],['timeline','Timeline'],['people','People'],['sorting','Stack & sort']].map(([key,label])=>`<button type="button" class="btn ghost" data-axis-preset="${key}">${label}</button>`).join('')}</div>
     <div class="sea-axis-fields">${['x','y'].map(axis=>`<section class="sea-axis-field"><label for="sea-axis-${axis}"><b>${axis.toUpperCase()}</b> ${axis==='x'?'Across the sea':'Up the sea'}</label>
-      <select id="sea-axis-${axis}" data-axis="${axis}">${SeaAxes.options.map(o=>`<option value="${o.key}">${esc(o.label)}</option>`).join('')}</select>
-      <button class="sea-axis-direction" data-axis-reverse="${axis}" aria-pressed="false"></button></section>`).join('')}</div>
+      <select id="sea-axis-${axis}" data-axis="${axis}">${options}</select>
+      <button class="sea-axis-direction" data-axis-reverse="${axis}" aria-pressed="false"></button><p class="sea-axis-description" data-axis-description="${axis}"></p></section>`).join('')}</div>
     <p class="sea-axis-hint">Photos without a measurement sit near the middle. Stacks stay together.</p>
     <form class="sea-axis-date" hidden><label for="sea-axis-day">Find a day</label><div><input type="date" id="sea-axis-day" required><button class="btn" type="submit">Jump →</button></div><small></small></form>
     <footer class="sea-axis-footer"><button class="btn" data-axis-reset>Reset axes</button><button class="btn primary" data-axis-close>Done</button></footer><p class="sea-axis-status" role="status"></p>`;
@@ -1307,10 +1311,12 @@ function openSeaAxes(){
       const low=reverse?option.high:option.low,high=reverse?option.low:option.high;
       button.textContent=axis==='x'?`${low} → ${high} ⇄`:`↑ ${high} · ↓ ${low} ⇄`;
       button.setAttribute('aria-label',`Reverse ${axis.toUpperCase()} axis; ${axis==='x'?`${low} at the left, ${high} at the right`:`${high} at the top, ${low} at the bottom`}`);
+      const photos=[...(World.photos?.values()||[])],measured=photos.filter(p=>SeaAxes.value(p,option.key)!=null).length;
+      $(`[data-axis-description="${axis}"]`,modal).textContent=`${option.description||`${option.label}${option.category?' groups alphabetically':' in measured order'}.`} ${fmt(measured)} of ${fmt(photos.length)} photos measured.`;
     }
     dateForm.hidden=!(axes.x==='date'||axes.y==='date')||!dates.length;
     $('.sea-axis-hint',modal).textContent=[axes.x,axes.y].includes('ranking')?'Your ranking learns from comparisons. Photos without a measurement sit near the middle.':
-      [axes.x,axes.y].includes('quality')?'Photo quality is the analysis estimate. Photos without a measurement sit near the middle.':'Photos without a measurement sit near the middle. Stacks stay together.';
+      [axes.x,axes.y].includes('quality')?'Machine ranking is the starting analysis estimate. Photos without a measurement sit near the middle.':'Photos without a measurement sit near the middle. Stacks stay together.';
     if(dates.length){const input=$('#sea-axis-day',modal);input.min=day(dates[0]);input.max=day(dates.at(-1));if(!input.value)input.value=input.min;$('small',dateForm).textContent=`${input.min} — ${input.max}`;}
   }
   function apply(){
@@ -1326,6 +1332,15 @@ function openSeaAxes(){
     }).catch(error=>{if(edit===revision)status.textContent=`Could not save: ${error.message}`;});
   }
   $$('[data-axis]',modal).forEach(select=>select.onchange=()=>{axes={...axes,[select.dataset.axis]:select.value};apply();});
+  $('[data-axis-search]',modal).oninput=e=>{
+    const query=e.target.value.trim().toLocaleLowerCase();
+    for(const select of $$('[data-axis]',modal))for(const group of select.querySelectorAll('optgroup')){
+      for(const option of group.children){const info=SeaAxes.option(option.value);option.hidden=!!query&&!`${info.label} ${info.description||''} ${group.label}`.toLocaleLowerCase().includes(query)&&option.value!==axes[select.dataset.axis];}
+      group.hidden=[...group.children].every(option=>option.hidden);
+    }
+  };
+  const presets={colour:SeaAxes.defaults,favourites:{x:'quality',y:'ranking'},timeline:{x:'date',y:'time'},people:{x:'face_size',y:'smile'},sorting:{x:'stack_size',y:'group'}};
+  $$('[data-axis-preset]',modal).forEach(button=>button.onclick=()=>{axes=SeaAxes.normalize(presets[button.dataset.axisPreset]);apply();});
   $$('[data-axis-reverse]',modal).forEach(button=>button.onclick=()=>{const key=button.dataset.axisReverse==='x'?'reverseX':'reverseY';axes={...axes,[key]:!axes[key]};apply();});
   $('[data-axis-reset]',modal).onclick=()=>{axes={...SeaAxes.defaults};apply();};
   $$('[data-axis-close]',modal).forEach(button=>button.onclick=()=>modal.close());
@@ -1333,7 +1348,7 @@ function openSeaAxes(){
     e.preventDefault();const target=$('#sea-axis-day',modal).value;if(!target)return;
     const stamp=new Date(`${target}T12:00:00`).getTime()/1000,closest=dates.reduce((best,p)=>Math.abs(p.measurements.date-stamp)<Math.abs(best.measurements.date-stamp)?p:best);
     const pid=closest.rep||closest.id;modal.close();
-    if(World.sea.cameraOn){const it=World.sea.items.get(pid);if(it)World.sea.zoomToPrint(it);}
+    if(World.sea.cameraOn&&!World.sea.externalFocus){const it=World.sea.items.get(pid);if(it)World.sea.zoomToPrint(it);}
     else{World.jumpPhoto={source,pid};location.hash='#home';}
   };
   modal.addEventListener('close',()=>{modal.removeAttribute('aria-labelledby');if(opener?.isConnected)opener.focus({preventScroll:true});},{once:true});
@@ -1750,14 +1765,13 @@ function frameRect(W, H, iw, ih, b, mode) {
 }
 
 // ---------------------------------------------------------------- auto-filter
-// A gentle auto-edit laid over the photo as an SVG filter: levels, a little white balance, midtones toward a
-// natural brightness, a touch of vibrance. Worked out on the fly from a 64-px sample of the photo itself, so
-// nothing is written to your files; F flips it on every judging screen.
+// The saved per-photo baseline, followed by the photographer's knobs, grading and masks. Older previews can
+// use the original 64-pixel proof until their saved baseline arrives; changing image levels never remeasures it.
 const FILTERS = new Map();  // photo id -> filter id, for the current library and analysis
 let filterCanvas = null, filterSource = null, filterSerial = 0;
 
 function filterPref() {
-  try { return localStorage.getItem(`matcher-filter-${MODE()}`) === "on"; } catch (_) { return false; }
+  try { return localStorage.getItem(`matcher-filter-${MODE()}`) !== "off"; } catch (_) { return true; }
 }
 
 // The Leaderboard's knobs on the auto look, name: [low, high, default]; matcher/touchup.py KNOBS agrees.
@@ -1842,14 +1856,16 @@ function autoFilterId(img, pid, knobs = null, finishing = null, on = true) {
   if (!img.complete || !img.naturalWidth) return null;
   const mask=paperFilterMask(img),maskKey=mask?mask.map(v=>Math.round(v*10000)).join('-'):'';
   const key = `${pid}${knobs?'|knobs':''}${finishing?'|finish':''}${on?'':'|manual'}${mask?'|paper'+maskKey:''}`;
-  const signature=JSON.stringify([knobs,finishing,on]);
+  AutoLook.sync();
+  const recipe=AutoLook.recipes.get(pid),autoEdits={...(Toolbelt.edits.get(pid)||{}),...finishing},baseline=recipe?AutoLook.resolve(recipe,autoEdits):null;
+  const signature=JSON.stringify([knobs,finishing,on,recipe,autoEdits.auto_amount,autoEdits.auto_parts]);
   if (FILTERS.has(key) && $(`#${FILTERS.get(key)}`)?.dataset.signature===signature) return FILTERS.get(key);
   if (FILTERS.size >= 1200) {
     const used = new Set($$("img[style*='filter']").map((shown) => /#(af-[\w-]+)/.exec(shown.style.filter)?.[1]));
     for (const [photo, id] of FILTERS) if (!used.has(id)) { $(`#${id}`)?.remove(); FILTERS.delete(photo); }
     if (FILTERS.size >= 1200) return null;
   }
-  let look = LOOKS.get(pid);
+  let look = baseline||LOOKS.get(pid);
   if (!look) { look = measureLook(img); LOOKS.set(pid, look); }
   let defs = $("#af-defs");
   if (!defs) {
@@ -1859,7 +1875,8 @@ function autoFilterId(img, pid, knobs = null, finishing = null, on = true) {
   const id = FILTERS.get(key) || (knobs ? `af-k${pid}-${++filterSerial}` : `af-${++filterSerial}`);
   let filter = $(`#${id}`, defs);
   if (!filter) { defs.insertAdjacentHTML("beforeend", `<filter id="${id}" color-interpolation-filters="sRGB"></filter>`); filter = $(`#${id}`, defs); }
-  const markup=(on?filterMarkup(tunedLook(look, knobs)):'')+(typeof PhotoFinish!=='undefined'&&finishing?PhotoFinish.markup(finishing,[img.naturalWidth,img.naturalHeight],mask):'');
+  const dims=[img.naturalWidth,img.naturalHeight];
+  const markup=(on?(baseline?AutoLook.detailMarkup(baseline.detail,dims):'')+filterMarkup(tunedLook(look, knobs))+(baseline?PhotoFinish.markup(baseline,dims,mask):''):'')+(typeof PhotoFinish!=='undefined'&&finishing?PhotoFinish.markup(finishing,dims,mask):'');
   filter.dataset.signature=signature;
   filter.setAttribute('primitiveUnits','objectBoundingBox');filter.setAttribute('x','0');filter.setAttribute('y','0');filter.setAttribute('width','1');filter.setAttribute('height','1');
   if(mask){
@@ -1880,6 +1897,7 @@ function paintFilter(img, pid, on = S.filter, knobs = null, finishing = null) {
 }
 
 function paintFilters() {
+  AutoLook.repaint();
   $$(".side[data-photo], .swipe-card[data-photo]").forEach((el) => paintFilter(el.querySelector("img"), Number(el.dataset.photo)));
   paintThumbFilters();
   paintCrops();
@@ -4438,53 +4456,78 @@ async function drawUndo(after) {
 // A dealt print stays on the shared sea camera. The deck carries its paper, notes and underprints together;
 // the group list stays on screen, and a close-up drag pans instead of making a filing decision.
 function draftPhotoCamera(card) {
-  World.draftCamera?.close();
-  if(!card||!World.sea)return;
-  const sea=World.sea,deck=card.closest('.deck'),print=$('.print',card),img=$('img',print),events=new AbortController(),{signal}=events,viewSignal=S.events.signal;
+  focusPhotoCamera(card?.closest('.deck'),card?[$('.print',card)]:[]);
+}
+
+// A comparison, a dealt take and the podium all carry the same paper through the same camera. The layer
+// moves as one; its controls keep their own scale and a close-up pointer gesture never makes a decision.
+function focusPhotoCamera(layer,prints=[]) {
+  prints=prints.filter(Boolean);
+  const signature=prints.map(p=>Toolbelt.pidOf(p)).join(','),old=World.draftCamera;
+  if(old&&old.layer===layer&&old.signature===signature&&prints.every((p,i)=>p===old.prints[i])){old.still();return;}
+  old?.close();
+  if(!layer||!prints.length||!World.sea)return;
+  const sea=World.sea,events=new AbortController(),{signal}=events,viewSignal=S.events.signal;
   const controls='button,a,input,textarea,select,.photo-notes-paper,.photo-sticky,.user-note,.twin-ask';
-  let sourceTimer,pending=null,wanted=img.getAttribute('src'),closed=false;
-  sea.enableCamera(true);sea.hold(null);sea.externalFocus=card;deck.classList.add('camera-deck');
+  let sourceTimer,closed=false,gestureUntil=0;
+  sea.enableCamera(true);sea.hold(null);sea.externalFocus=layer;layer.classList.add('focus-camera');
+  if(layer.matches('.deck'))layer.classList.add('camera-deck');
   let previous={...sea.camera},x=0,y=0;
-  const item={el:card,size:print.getBoundingClientRect().width};
-  const cancelCarry=()=>{if(card.classList.contains('held'))card.dispatchEvent(new Event('pointercancel'));};
-  const load=()=>{
-    if(closed||pending||img.getAttribute('src')===wanted)return;
-    const source=wanted,next=new Image();pending=next;next.src=source;
-    next.decode().then(()=>{if(!closed&&source===wanted){img.src=source;photoSampling(img,sea.camera.zoom);}}).catch(()=>{/* Keep the last decoded picture; the next gesture can retry. */}).finally(()=>{
-      if(pending===next)pending=null;if(!closed&&source!==wanted)load();
+  const photos=prints.map(print=>({print,side:print.closest('.side'),pid:Toolbelt.pidOf(print),pending:null,wanted:null,item:{el:print,size:print.getBoundingClientRect().width}}));
+  for(const p of photos){const img=p.print.querySelector('.window img');if(img?.complete&&img.naturalWidth)FocusGlow.attach(p.print,img);else img?.addEventListener('load',()=>FocusGlow.attach(p.print,img),{once:true,signal});}
+  const unfreeze=p=>{if(!p.pose)return;Object.assign(p.side.style,p.pose);p.pose=null;};
+  const cancelCarry=()=>{for(const card of $$('.held',layer))card.dispatchEvent(new Event('pointercancel'));};
+  const load=p=>{
+    const img=p.print.querySelector('.window img');if(closed||p.pending||!img||img.getAttribute('src')===p.wanted)return;
+    const source=p.wanted,next=new Image();p.pending=next;next.src=source;
+    next.decode().then(()=>{const current=p.print.querySelector('.window img');if(!closed&&source===p.wanted&&current){current.src=source;p.failures=0;photoSampling(current,sea.camera.zoom);}}).catch(()=>{
+      // A removable drive can pause while opening an original. Keep the decoded picture and retry gently.
+      if(!closed&&source===p.wanted){clearTimeout(p.retry);p.retry=setTimeout(()=>load(p),Math.min(8000,750*2**(p.failures=(p.failures||0)+1)));}
+    }).finally(()=>{
+      if(p.pending===next)p.pending=null;if(!closed&&source!==p.wanted)load(p);
     });
   };
   const paint=()=>{
-    if(closed||!card.isConnected)return;
+    if(closed||!layer.isConnected)return;
     cancelCarry();
     // Fonts and help can move the deck after it is dealt. Continue from its visible position; scaling the
     // first layout rectangle instead magnifies that drift into a large crop jump at deep zoom.
-    const c=sea.camera,r=sea.el.getBoundingClientRect(),base=deck.getBoundingClientRect(),ratio=c.zoom/previous.zoom;
+    const c=sea.camera,r=sea.el.getBoundingClientRect(),base=layer.getBoundingClientRect(),ratio=c.zoom/previous.zoom;
     x=c.zoom===1?0:c.tx-previous.tx*ratio+x+(base.left-r.left)*(ratio-1);
     y=c.zoom===1?0:c.ty-previous.ty*ratio+y+(base.top-r.top)*(ratio-1);
     previous={...c};
-    deck.style.transform=c.zoom===1?'':`translate(${x}px,${y}px) scale(${c.zoom})`;
-    deck.classList.toggle('zoomed',c.zoom>1.001);card.dataset.cameraZoom=String(c.zoom);photoSampling(img,c.zoom);
-    if(c.zoom>1.001)sea.stillCard(item);else sea.resumeCards(true);
+    layer.style.transform=c.zoom===1?'':`translate(${x}px,${y}px) scale(${c.zoom})`;
+    layer.classList.toggle('zoomed',c.zoom>1.001);
+    for(const p of photos){p.print.dataset.viewerZoom=String(c.zoom);photoSampling(p.print.querySelector('.window img'),c.zoom);
+      if(c.zoom>1.001){if(p.side&&!p.pose){p.pose={scale:p.side.style.scale,transition:p.side.style.transition};const scale=getComputedStyle(p.side).scale;p.side.style.transition='none';p.side.style.scale=scale;}sea.stillCard(p.item);}else unfreeze(p);}
+    FocusGlow.place(layer,prints,c.zoom);
+    if(c.zoom<=1.001)sea.resumeCards(true);
     clearTimeout(sourceTimer);sourceTimer=setTimeout(()=>{
-      if(closed)return;const r=print.getBoundingClientRect(),picture=img.getBoundingClientRect();
-      wanted=M(Number(card.dataset.photo),Math.max(picture.width,picture.height),r.height>=innerHeight*.8);load();
+      if(closed)return;
+      for(const p of photos){const img=p.print.querySelector('.window img');if(!img)continue;const r=p.print.getBoundingClientRect(),picture=img.getBoundingClientRect();
+        if(r.right<=0||r.left>=innerWidth||r.bottom<=0||r.top>=innerHeight)continue;
+        p.wanted=M(p.pid,Math.max(picture.width,picture.height),r.height>=innerHeight*.8);load(p);}
     },120);
   };
   const pointer=e=>{
     if(Toolbelt.tool!=='hand'||e.target.closest(controls))return;
     const pinching=sea.pinch(e);
-    if(pinching||e.pointerType==='touch'&&sea.touches.size>1){cancelCarry();e.preventDefault();e.stopImmediatePropagation();return;}
-    if(e.type==='pointerdown'&&sea.camera.zoom>1.001&&!e.button){cancelCarry();sea.panStart(e);e.stopImmediatePropagation();}
+    if(pinching||e.pointerType==='touch'&&sea.touches.size>1){gestureUntil=performance.now()+600;cancelCarry();e.preventDefault();e.stopImmediatePropagation();return;}
+    if(e.type==='pointerdown'&&sea.camera.zoom>1.001&&!e.button){gestureUntil=performance.now()+600;cancelCarry();sea.panStart(e);e.stopImmediatePropagation();}
   };
-  for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])card.addEventListener(type,pointer,{capture:true,signal});
-  card.addEventListener('dblclick',e=>{if(Toolbelt.tool==='hand'&&!e.target.closest(controls)){e.preventDefault();e.stopPropagation();sea.resetCamera();}},{signal});
+  for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])layer.addEventListener(type,pointer,{capture:true,signal});
+  layer.addEventListener('click',e=>{if(!e.target.closest(controls)&&(sea.camera.zoom>1.001||performance.now()<gestureUntil)){e.preventDefault();e.stopImmediatePropagation();}},{capture:true,signal});
+  layer.addEventListener('dblclick',e=>{if(Toolbelt.tool==='hand'&&!e.target.closest(controls)){e.preventDefault();e.stopPropagation();gestureUntil=performance.now()+350;sea.resetCamera();}},{signal});
   window.addEventListener('sea-camera',e=>{if(e.detail.sea===sea)paint();},{signal});
-  window.addEventListener('resize',()=>{sea.resetCamera();item.size=print.getBoundingClientRect().width;},{signal});
-  const focus=World.draftCamera={card,close(){
-    if(closed)return;closed=true;cancelCarry();events.abort();viewSignal.removeEventListener('abort',focus.close);clearTimeout(sourceTimer);
-    if(pending)pending.src='';deck.style.transform='';deck.classList.remove('camera-deck','zoomed');
-    if(sea.externalFocus===card)sea.externalFocus=null;sea.panEnd();sea.touches.clear();sea.resumeCards(true);sea.resetCamera();
+  window.addEventListener('resize',()=>{sea.resetCamera();for(const p of photos)p.item.size=p.print.getBoundingClientRect().width;},{signal});
+  const sizing=new ResizeObserver(entries=>{for(const entry of entries){const p=photos.find(p=>p.print===entry.target);if(p)p.item.size=entry.contentRect.width;}paint();});
+  for(const p of photos)sizing.observe(p.print);
+  const focus=World.draftCamera={layer,prints,signature,still(){if(sea.camera.zoom>1.001)for(const p of photos)sea.stillCard(p.item);},close(){
+    if(closed)return;closed=true;cancelCarry();events.abort();sizing.disconnect();viewSignal.removeEventListener('abort',focus.close);clearTimeout(sourceTimer);
+    for(const p of photos){clearTimeout(p.retry);if(p.pending)p.pending.src='';delete p.print.dataset.viewerZoom;unfreeze(p);}
+    FocusGlow.release(layer,prints);
+    layer.style.transform='';layer.classList.remove('focus-camera','camera-deck','zoomed');
+    if(sea.externalFocus===layer)sea.externalFocus=null;sea.panEnd();sea.touches.clear();sea.resumeCards(true);sea.resetCamera();
     if(World.draftCamera===focus)World.draftCamera=null;
   }};
   viewSignal.addEventListener('abort',focus.close,{once:true});paint();
@@ -6573,6 +6616,35 @@ const Sea = {
   },
 };
 
+// The glow belongs to the focused paper, above the sea's other photos and below its own picture and writing.
+// It keeps one palette per take, so decoding another image level never changes the light around it.
+const FocusGlow={
+  palettes:new Map(),nodes:new WeakMap(),source:null,
+  attach(host,img=host?.querySelector('.window img')){
+    if(!host||!img?.naturalWidth||host.closest('.under,.crew,.twin-ask')||host.classList.contains('world-fly'))return;
+    if(this.source!==S.lib?.source){this.source=S.lib?.source;this.palettes.clear();}
+    const pid=Toolbelt.pidOf(host);if(!pid)return;
+    let palette=this.palettes.get(pid);
+    if(!palette){palette=Sea.palette(img);if(!palette?.length)return;this.palettes.set(pid,palette);}
+    let glow=this.nodes.get(host)||host.querySelector(':scope > .photo-glow');
+    if(!glow){glow=document.createElement('div');glow.className='photo-glow';glow.setAttribute('aria-hidden','true');host.prepend(glow);}
+    this.nodes.set(host,glow);
+    palette.slice(0,3).forEach((rgb,i)=>glow.style.setProperty(`--glow-${i}`,rgb.map(Math.round).join(' ')));
+    if(palette.length<3)for(let i=palette.length;i<3;i++)glow.style.setProperty(`--glow-${i}`,palette[0].map(Math.round).join(' '));
+    const focus=World.draftCamera;if(focus?.prints.includes(host))this.place(focus.layer,focus.prints,World.sea.camera.zoom);
+  },
+  place(layer,prints,zoom){
+    const base=layer.getBoundingClientRect();
+    for(const print of prints){const glow=this.nodes.get(print);if(!glow||layer===print)continue;
+      if(glow.parentElement!==layer)layer.prepend(glow);
+      const r=print.getBoundingClientRect(),w=r.width/zoom,h=r.height/zoom;
+      Object.assign(glow.style,{inset:'auto',left:`${(r.left-base.left)/zoom-w*.28}px`,top:`${(r.top-base.top)/zoom-h*.28}px`,width:`${w*1.56}px`,height:`${h*1.56}px`});
+      glow.style.setProperty('--glow-blur',`${w*.05}px`);
+    }
+  },
+  release(layer,prints){for(const print of prints){const glow=this.nodes.get(print);if(!glow||glow.parentElement!==layer||layer===print)continue;print.prepend(glow);for(const key of ['inset','left','top','width','height','--glow-blur'])glow.style.removeProperty(key);}}
+};
+
 // ---------------------------------------------------------------- the world: one sea behind the whole game
 // Every screen sits on the same sea of photos: the cup's shots floating with their tags, groups held in lasso
 // bubbles, stacks as piles, dimmed behind whatever you're doing. The photos a screen brings to you lift out of their
@@ -6607,9 +6679,14 @@ const World = {
           }
         }
         const gone = this.focused || [];
-        this.swap(main, gone); this.focused = this.grab(main); this.fence();
+        this.swap(main, gone); this.focused = this.grab(main); this.fence();this.focusCamera(main);
       });
     }).observe(main, { childList: true, subtree: true });
+  },
+  focusCamera(main){
+    const layer=$('#dtop',main)?.closest('.deck')||$('#stage:has(.print),#f-arena:has(.print),.twin-arena:has(.print),.board-fit:has(.print),.podium:has(.print),.tag-call > .print',main);
+    const prints=layer?(layer.matches('.print')?[layer]:$$('.print',layer).filter(p=>!p.closest('.under,.crew,.twin-ask,.photo-notes-paper'))):[];
+    focusPhotoCamera(layer,prints);
   },
   // ambient: the sea is the map; focus: a screen is showing you photos; dim: a page of its own. In every mode the sea's
   // photos continue behind its translucent controls.
@@ -6710,6 +6787,7 @@ const World = {
     const retain=this.photoSource===source;this.photoSource = source;
     const loading = (async () => {
       let after = 0, more = true;
+      AutoLook.sync();AutoLook.pages.clear();
       const fromAnalysis=this.sea.source===source;
       const seed=fromAnalysis?[...this.sea.items.values()].map(it=>[it.id,{id:it.id,rep:it.stack,members:it.take?[it.id]:it.members,tags:it.tags,theme:typeof it.group==='number'?it.group:-1,category:it.category,cut:it.cut,visual:it.visual,dims:it.dims}]):[];
       const photos = new Map(retain?this.photos:seed),seen=new Set();this.photos = photos;
@@ -6721,10 +6799,10 @@ const World = {
         const page = await api(`/api/world?per=1000&after=${after}`);
         if (source !== S.lib?.source) return;
         const sheet = new Image(),key=imageKey();
-        sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;page.photos.forEach((p,i)=>this.sprites.set(p.id,this.sea.atlasCell(sheet,i,p.dims)));this.sea.densityDirty=this.sea.spritesDirty=true;this.sea.refreshColours();this.sea.kick(); };
+        sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;AutoLook.sheet(sheet,page.photos);this.sea.refreshColours();this.sea.kick(); };
         // A sheet that fails to arrive is asked for again (a few times): without it a thousand prints would stay blank.
         sheet.onerror = () => { if(source!==S.lib?.source||key!==imageKey()||(sheet.tries=(sheet.tries||0)+1)>3)return;setTimeout(()=>{if(source===S.lib?.source)sheet.src=`${sheet.src.split('&t=')[0]}&t=${Date.now()}`;},2000*sheet.tries); };
-        page.photos.forEach(p=>{photos.set(p.id,p);seen.add(p.id);});
+        page.photos.forEach(p=>{AutoLook.know(p.id,p.auto_look);photos.set(p.id,p);seen.add(p.id);});
         sheet.src = `/img/atlas.jpg?layout=2&per=1000&after=${before}&v=${imageKey()}`;
         this.total = page.total; after = page.after; more = page.more;
         onPage?.(page); await sleep(0);
@@ -6732,10 +6810,19 @@ const World = {
       if(source!==S.lib?.source)return;
       for(const id of photos.keys())if(!seen.has(id)){photos.delete(id);this.sprites.delete(id);}
       this.photosSource = source;
+      if(this.looksPolled!==source&&[...photos.values()].some(p=>!p.auto_look))this.pollLooks(source);
       onPage?.();
     })();
     this.photoLoading=loading;
     try { await loading; } finally { if(this.photoLoading===loading)this.photoLoading = null; }
+  },
+  async pollLooks(source){
+    this.looksPolled=source;
+    try{
+      let working=true;while(working&&source===S.lib?.source){await sleep(2000);working=(await api('/api/auto-looks')).working;}
+      if(source!==S.lib?.source)return;
+      this.photosSource=null;await this.allPhotos();paintFilters();PhotoNotes.scan();
+    }catch(_){/* cached recipes will be picked up on the next open */}
   },
   extras(items) {
     for(const it of items){const photo=this.photos?.get(it.photo||it.id);it.visual ||= photo?.visual;it.measurements ||= photo?.measurements;}

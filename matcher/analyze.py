@@ -21,7 +21,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from . import imageio, visual
+from . import auto_look, imageio, visual
 from .config import PHOTO_EXTS, PREVIEW_EDGE, THUMB_EDGE
 from .store import Store, f16, unblob, f32
 
@@ -122,6 +122,8 @@ def analyze_one(task: tuple[int, str, str, str, str]) -> dict:
                     row.update(m)
             out["faces"].append(row)
         out["n_faces"] = len(faces)
+        out["auto_look"] = json.dumps(auto_look.measure(im, out["faces"]))
+        out["auto_version"] = auto_look.VERSION
         out["status"] = "analyzed"
     except Exception as e:  # one bad file must not stop 2,000 others
         out["error"] = f"{type(e).__name__}: {e}"[:300]
@@ -154,7 +156,7 @@ _FACE_COLS = ("idx", "x", "y", "w", "h", "score", "lm", "emb", "sharp", "luma",
               "blink_l", "blink_r", "smile", "jaw", "squint", "yaw", "pitch", "roll")
 _PHOTO_COLS = ("status", "error", "size", "mtime_ns", "sha256", "width", "height", "fmt", "make", "model",
                "taken", "taken_ts", "taken_src", "phash", "luma", "luma_lo", "luma_hi", "sharp", "chroma", "saturation", "hue", "n_faces",
-               "salient")
+               "salient", "auto_look", "auto_version")
 
 
 def _save_phase1(store: Store, results: list[dict]) -> None:
@@ -163,7 +165,7 @@ def _save_phase1(store: Store, results: list[dict]) -> None:
     with store.tx() as c:
         for r in results:
             c.execute("DELETE FROM faces WHERE photo_id=?", (r["id"],))
-            vals = [r.get(k) for k in _PHOTO_COLS]
+            vals = [r.get(k, 0) if k == "auto_version" else r.get(k) for k in _PHOTO_COLS]
             c.execute(f"UPDATE photos SET {', '.join(k + '=?' for k in _PHOTO_COLS)}, emb=NULL, crop_emb=NULL, "
                       f"crop_face=NULL WHERE id=?", (*vals, r["id"]))
             for fr in r["faces"]:
@@ -416,7 +418,7 @@ class Analyzer:
         todo = self.store.q("SELECT id, rel FROM photos WHERE status='new' ORDER BY id")
         # The saved reads are already done. Restore their presentation without decoding them again, so a server
         # restart resumes the same library count and sea instead of appearing to begin a smaller scan at zero.
-        saved = self.store.q("SELECT id,width,height,luma,chroma,saturation,hue,category,recognized_tags,"
+        saved = self.store.q("SELECT id,width,height,luma,chroma,saturation,hue,category,recognized_tags,auto_look,"
                              "emb IS NOT NULL AS understood FROM photos WHERE status='analyzed' ORDER BY id")
         faces: dict[int, list] = {}
         for face in self.store.q("SELECT f.photo_id,f.x,f.y,f.w,f.h,f.smile,f.blink_l,f.blink_r FROM faces f "
@@ -433,7 +435,7 @@ class Analyzer:
             blinks = sum(min(f["blink_l"] or 0, f["blink_r"] or 0) >= .55 for f in fs)
             reads.append([row["id"], boxes, smiles, blinks,
                           visual.descriptor(*(row[k] for k in ("luma", "chroma", "saturation", "hue"))),
-                          [row["width"], row["height"]]])
+                          [row["width"], row["height"]], json.loads(row["auto_look"] or "null")])
             self.progress["faces"] += len(fs)
             self.progress["smiles"] += smiles
             self.progress["blinks"] += blinks
@@ -465,7 +467,7 @@ class Analyzer:
                                               sum(1 for f in fs if (f.get("smile") or 0) > 0.5),
                                               sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) >= 0.55),
                                               visual.descriptor(*(res.get(key) for key in ("luma", "chroma", "saturation", "hue"))),
-                                              [res.get("width"), res.get("height")]])
+                                              [res.get("width"), res.get("height")], json.loads(res.get("auto_look") or "null")])
                     self.progress["faces"] += len(fs)
                     self.progress["smiles"] += sum(1 for f in fs if (f.get("smile") or 0) > 0.5)
                     self.progress["blinks"] += sum(1 for f in fs if min(f.get("blink_l") or 0, f.get("blink_r") or 0) >= 0.55)

@@ -141,6 +141,7 @@ const Toolbelt = {
   know(pid, edits) {
     this.syncSource();
     this.edits.set(pid, edits || {});
+    if(typeof AutoLook!=='undefined')AutoLook.repaint(pid);
     this.render(pid);
     for (const fn of this.listeners) fn(pid, this.current(pid));
   },

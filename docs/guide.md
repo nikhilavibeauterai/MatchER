@@ -179,9 +179,17 @@ When the last winner returns in the next comparison, it stays on the same side a
 
 - After each pick a chip shows where your pick now sits on the leaderboard (`#7 ▲3`).
 - ⚡ **Lightning round**: 60 seconds, as many calls as you can, bonus XP for each; beat your record.
-- **Enhance** lays a gentle auto-edit over each photo (levels, a little white balance, midtones,
-  a touch of vibrance), worked out on the fly from the photo itself, so a dim or hazy shot that would
-  look great after a quick edit can compete fairly. Nothing is written to your files; `F` flips it.
+- **Enhance** uses a saved baseline measured once during analysis. Light, colour balance, scene colour,
+  restrained detail correction and a small backlit-subject lift respond to the photo’s own light. Night scenes
+  stay dark, coloured lighting retains its hue, monochrome stays neutral, and flat pictures are not stretched
+  into harsh black and white. Existing saves prepare these recipes from cached previews in the background,
+  without reading the originals or restarting analysis. The same recipe follows the photo through thumbnail,
+  preview, original and edited export. `F` flips the preview; a photo’s own Enhance choice takes priority.
+  New browsers start with Enhance on; an existing saved on/off preference is respected.
+  In **Notes → Look**, **Amount** runs from 0–150% and each automatic component can be switched off.
+  **Auto** restores that baseline without clearing your own light knobs, colour wheels, masks or framing.
+  A confident horizon estimate appears as a suggestion you can apply. A backlit-subject mask can be copied into
+  the mask painter for editing. Geometry is never silently applied. All your adjustments are undoable.
 - **Auto-crop** (on by default for profile pics) frames every photo the same way around the face, in a
   4:5 window with the overflow fading inside its own pane. A photo without a face gets its frame around whatever
   stands out in it instead (a dog, a flower, a car, someone seen from behind: the analysis keeps the salient region;
@@ -295,6 +303,13 @@ highlighted group (or ✏️), its emoji changes it.
 
 ## The sea
 
+Click the X/Y key below the photo count to **Arrange the sea**. The searchable picker groups more than 40
+choices into colour and light, ranking, time, file and camera, people and subjects, and your collection.
+Machine ranking is the starting estimate; Aesthetic score is the scene model’s saved assessment; Your ranking
+learns from your comparisons. Shortlist chance, uncertainty and comparison count are separate axes.
+Warm / cool palette describes the dominant hue’s character, rather than a camera’s Kelvin white balance.
+Reverse either direction or start with a preset; choices stay with the save. A capture-date axis adds a day picker.
+
 The sea is calm and explorable. Prints settle where their colour (left muted, right colourful) and brightness
 (low dark, high bright) put them, nudged locally by shared tags and spacing, and then stay put. Every photo in
 MatchER is the same polaroid: a 3:4 paper card with the picture contained in its window, so a landscape and a
@@ -320,7 +335,9 @@ retry while that print remains enlarged and on screen, with longer pauses betwee
 panel on every screen with the sea's knobs: the macro order (rank spread, margins, jitter, home pull), the micro
 order (wander, reach, contact buffer, repulsion, tag affinity, group cohesion, damping, force limits, settling),
 the renderer, the camera and the wobble (period, force, and how much each card's delay, speed and force may
-differ). Changes apply live and stay in that browser until Reset; **Export** copies the
+differ). The top margin defaults to **0.2** (20% of the height); the four edge margins remain independently
+editable. **Focus glow** controls the light below focused prints and above the background photos.
+Changes apply live and stay in that browser until Reset; **Export** copies the
 session as JSON to the clipboard and downloads it, and **Import** applies one. `F2` collapses the panel.
 
 Every screen sits in the same sea of photos: every photo, including takes, other cups and Set aside, floating with its tags (photos that share tags
@@ -412,8 +429,8 @@ From the **Reveal** or the **Leaderboard**:
 - **Save my best** copies your top shots as the original files (metadata and all) into
   `data/<folder>/exports/best-<cup>-<time>/`, named by rank: `01 - IMG_1234.jpg` is your best. The card that
   confirms it leads on to the next cup (or the share card), with *Open folder* beside the path.
-  `touched up/` inside that folder holds the same shots the way the Leaderboard shows them: enhanced (auto levels, a
-  mid-tone lift and a little colour) unless you switched that off, cropped to the subject or turned where you chose,
+  `touched up/` inside that folder holds the same shots with their saved automatic baseline and your own
+  light adjustments, colour grading, painted masks, crop, alignment and turns. Enhance can be switched off per photo;
   at full size with EXIF kept. What you saw is what you keep.
 - **Blind review package** (`exports/export-<time>/`) is for asking other people:
 

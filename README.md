@@ -15,7 +15,7 @@ Filter the misses. Stack the near-duplicates. Crown your favourites.
 
 </div>
 
-![Two takes compete in Crown, shown as paper photo prints on a colourful light table.](docs/images/crown.png)
+![MatchER’s sea of polaroids, with colour flowing out of the photos and a notebook game menu above.](docs/images/map.png)
 
 You know the feeling: a folder full of almost-the-same shot, and no idea which one to keep.
 MatchER makes choosing enjoyable. It recognizes subjects, gathers bursts into stacks and turns your
@@ -34,6 +34,11 @@ favourites into a tournament. You make quick, small choices; it learns what you 
   scroll inside it to read more. Undo is there when you change your mind.
 - **Find a photo with words.** Search for “red jacket”, a tag, a filename or your own writing from any stage.
   Visual search runs locally using the understanding already saved during analysis.
+- **Find another way to see the collection.** Arrange the sea by machine ranking, your own preferences, hue,
+  light, dates, expressions, camera, file details or groups. Search the axes or start with a preset.
+- **Give every photo a thoughtful starting edit.** A saved baseline balances light and colour while preserving
+  night scenes, warm light and monochrome. Adjust its amount and individual parts in the Look sheet, then add
+  your own grading, masks, crop and alignment. Hold for original; Undo brings every change back.
 - **Finish with something useful.** Crown the best take in each stack, play groups and knockouts, then export
   your winners with their crop, alignment, enhancement, colour grading and masks. Your original files are never overwritten.
 
@@ -47,7 +52,8 @@ favourites into a tournament. You make quick, small choices; it learns what you 
 
 Desktop releases include Python and the browser engine. **You don't need a terminal or a Python installation.**
 This is an early preview: installers are unsigned, and ARM/macOS builds are not available yet. If release assets
-are still building, use the source launchers below. [Installation details and troubleshooting →](docs/install.md)
+are still building, use the source launchers below. Screenshots and this guide describe the current source;
+the published 0.1 preview predates the latest sea and editing improvements. [Installation details and troubleshooting →](docs/install.md)
 
 On first launch, choose **Try it with sample photos** for the bundled public-domain paintings, NASA images and
 classic meme faces. Or choose your own folder. First analysis downloads about **256 MB of verified models**;
@@ -56,15 +62,24 @@ afterward, the game runs offline. Your photos, face data and choices stay on you
 **Already have Python 3.13?** Clone or download the repository, then open `matcher.cmd` on Windows or run
 `./matcher.sh` on Linux. It installs checked dependencies and opens MatchER in your browser.
 
+```sh
+git clone https://github.com/nikhilavibeauterai/MatchER.git
+cd MatchER
+./matcher.sh
+```
+
+On Windows, open `matcher.cmd` in that folder instead of the last command.
+
 ## From camera roll to champions
 
 **Filter → Stacks → Crown → Groups → Group stage → Knockouts → Finals → Reveal**
 
 Keep what catches your eye, set aside what doesn't, and teach the filter with Love and Hate. Crown one take
 from each stack. Give the contenders a home, play their groups and follow the bracket to your winners.
-In **Quick sort** and **Find more**, scroll or pinch over the dealt photo to zoom, then drag to pan around its
-detail. Double-click to reset. At the normal size, drag the photo into a group as usual; the next take starts at
-the normal size too. Zooming never files or sets aside a photo.
+Scroll or pinch to zoom in on a photo throughout the journey: Quick sort, Crown, Group stage, Knockouts,
+Finals, Leaderboard and Reveal share the sea’s camera. Drag a close-up to pan; double-click to reset.
+Large prints load their original image, and a new comparison resets the view. Zooming and panning never vote
+or file a photo. At normal size, drag the dealt photo into a group as usual.
 There are no required voting marathons: move on when you're ready, skip a hard choice, and return later.
 Every folder has its own saved progress, trophies and leaderboard.
 The save picker notices when you plug in or unplug a drive. Disconnected saves stay on the list and become
@@ -73,10 +88,15 @@ playable again when their folder returns; Browse here also updates its mounted-d
 Stacks shows loose photos alongside piles of takes, so you can drag either onto another to combine them.
 Switch on **Stacks only** when you want to concentrate on existing piles.
 
-| A map you can touch | A shortlist you can finish |
+| Choose the strongest take | Finish your favourites |
 |---|---|
-| ![The sample library on the map: floating polaroids, a stack and tag groups.](docs/images/map.png) | ![The leaderboard with a favourite, crop and enhancement controls, and handwritten notes.](docs/images/leaderboard.png) |
-| Pan, zoom, stack and organize your photo table. | Adjust your winners and save your best. |
+| ![Two takes compete in Crown, with the same paper frame, hanging sticky notes and focused glow.](docs/images/crown.png) | ![The Look sheet pulled out beside a photo, showing its automatic baseline and editing controls.](docs/images/notes.png) |
+| Compare expressions, framing and tiny details. | Start with Auto, then make the edit yours. |
+
+| Organize piles and loose photos | Explore the collection |
+|---|---|
+| ![The Stacks overview with loose photos and paperclipped piles.](docs/images/stacks.png) | ![Searchable sea axes, grouped by colour, ranking, time, subjects and collection.](docs/images/axes.png) |
+| Drag photos together; pull the clip to open a stack. | Change the axes without changing your photos or votes. |
 
 All screenshots use the [bundled public-domain demo](matcher/demo/manifest.json).
 
@@ -101,13 +121,15 @@ Photos keep their underlying places, the water pauses when you reach for a print
 reading and editing.
 Reduced-motion preferences still the waves; the developer panel adjusts their height, speed, spacing and ripples.
 
-The small axis key below the photo count changes what X and Y mean: colourfulness, brightness, hue, saturation,
-capture date, photo quality, your ranking, sharpness, aspect ratio or faces in the photo. Either axis can run in
-reverse. Choices stay with the save; Reset axes restores the original layout. A date axis also offers a jump to
-any day in the library. These controls are also under **Menu → Picture & sound → Sea axes**.
+The small axis key below the photo count opens **Arrange the sea**. Search more than 40 measurements or choose
+Colour & light, Find favourites, Timeline, People, or Stack & sort. Machine ranking, aesthetic score and your
+learned ranking are separate choices; uncertainty shows which photos need more comparisons. Capture dates,
+expressions, subject position, file dimensions, camera, folder and group are available too. Either axis can run
+in reverse. Choices stay with the save; Reset axes restores the colour-and-light layout. A date axis offers a
+jump to any day in the library. Find the same controls under **Menu → Picture & sound → Sea axes**.
 Brightness runs from dark at the bottom to bright at the top. Rearranging lets photos cross to their new homes
 before they settle. In debug mode, **Macro → Top/Right/Bottom/Left margin** tunes each edge independently;
-values are fractions of the viewport (0.04 = 4%). Each edge’s reset follows **All edge margins** again. The
+values are fractions of the viewport (0.04 = 4%); the standard top margin is **0.2**. Each edge can be tuned separately. The
 panel remembers these values in your browser and includes them in Export.
 
 ## Help build it

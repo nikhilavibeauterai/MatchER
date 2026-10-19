@@ -1,8 +1,6 @@
-"""Automatic touch-up for the photos you keep: the same auto levels, mid-tone lift and colour as the app's Enhance
-(F), measured and applied the way `autoFilterId()` in matcher/static/app.js does it, so a touched-up copy looks
-like its on-screen preview. Nothing clever: black and white points at 0.5% and 99.5% (three quarters of the way,
-per channel only 40% so sunsets stay warm), a gamma that brings the mean towards mid-grey, and a little saturation
-unless the photo is black and white."""
+"""Edited copies use the saved automatic baseline, then manual light, colour, masks and framing.
+The old proof-based look remains a fallback for exports from libraries that have not finished upgrading.
+"""
 from __future__ import annotations
 
 import math
@@ -11,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import finishing, imageio
+from . import auto_look, finishing, imageio
 
 PROOF = 64                 # the look is measured on a 64px-wide proof, like the on-screen filter
 LOW, HIGH = 0.005, 0.995   # black and white points
@@ -167,7 +165,7 @@ def apply(im: Image.Image, how: dict | None = None, look_knobs=None) -> Image.Im
     return out
 
 
-def touch_up(src: str | Path, dst: str | Path, edits: dict | None = None, box=None, quality: int = QUALITY) -> dict | None:
+def touch_up(src: str | Path, dst: str | Path, edits: dict | None = None, box=None, quality: int = QUALITY, recipe=None) -> dict | None:
     """Write `dst` as a JPEG of `src` the way the Leaderboard set it up: upright, turned (`rotate`, clockwise
     degrees), cropped (`crop` = "best" with a subject `box`, "height" or "width"), enhanced unless `enhance` is off,
     with its `look` knobs; full size, EXIF kept (its orientation reset, since the pixels are upright now). Returns
@@ -188,7 +186,10 @@ def touch_up(src: str | Path, dst: str | Path, edits: dict | None = None, box=No
     if rotate in TURNS:
         im = im.transpose(TURNS[rotate])
         box = rotate_box(box, rotate) if box else None
-    how = look(im) if e.get("enhance") is not False else None  # measured on the whole picture, like the preview
+    baseline = auto_look.resolve(recipe, e) if recipe and e.get("enhance") is not False else None
+    how = baseline or (look(im) if e.get("enhance") is not False else None)
+    if baseline:
+        im = auto_look.detail(im, baseline["detail"])
     mode = "subject" if e.get("crop") == "auto" else e.get("crop")
     manual = custom_crop(e.get("crop_box")) if mode == "custom" else None
     rectangle = (0, 0, im.width, im.height)
@@ -200,6 +201,8 @@ def touch_up(src: str | Path, dst: str | Path, edits: dict | None = None, box=No
         rectangle = crop_box(im.width, im.height, box, mode)
     im = im.crop(rectangle)
     out = apply(im, how, e.get("look")) if how else im.convert("RGB")
+    if baseline:
+        out = finishing.apply(out, baseline, original_size, rectangle, rotate)
     out = finishing.apply(out, e, original_size, rectangle, rotate)
     out = finishing.straighten(out, e.get("straighten", 0))
     if exif:

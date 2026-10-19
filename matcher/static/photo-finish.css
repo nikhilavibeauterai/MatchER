@@ -23,3 +23,10 @@
 .photo-mask-editor .crop-error { margin:0; }
 @media(max-width:759px) { .photo-mask-editor .crop-stage { position:relative; }.mask-card { width:min(80%,calc((100dvh - 200px)*.75)); } }
 @media(prefers-reduced-motion:reduce) { .notes-leaf { transition:none; } }
+/* Baseline controls describe the photo before the photographer's own light, colour and brush work. */
+.notes-auto-name { margin:.2em 0;font-weight:700; }
+.notes-auto-amount { display:grid;grid-template-columns:1fr auto;gap:.35em;margin:.7em 0; }
+.notes-auto-amount input { grid-column:1 / -1;width:100%; }
+.notes-auto-parts { display:flex;flex-wrap:wrap;gap:.45em .8em;margin:.65em 0; }
+.photo-notes-paper .notes-auto-parts label { display:flex;align-items:center;gap:.3em;min-height:32px; }
+.photo-notes-paper .notes-auto-parts input[type=checkbox] { flex:none;width:18px;height:18px;min-height:0;padding:0;accent-color:var(--marker); }

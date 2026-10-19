@@ -26,7 +26,7 @@ from PIL import Image
 
 from . import export as exporter
 from . import touchup
-from . import edit_history, filtering, finishing, game, imageio, library, tags, tournament, visual
+from . import auto_look, edit_history, filtering, finishing, game, imageio, library, sea_axes, tags, tournament, visual
 from .draw import Draw
 from .search import PhotoSearch
 from .sample import SampleFetcher
@@ -93,6 +93,7 @@ class Session:
         self._refresh_thread = None
         self._refresh_error = None
         self._subjects_thread = None
+        self._looks_thread = None
         self.closed = False
         self._game_history = None
         self._game_revision = -1
@@ -149,6 +150,17 @@ class Session:
         self._subjects_thread = threading.Thread(target=run, name="subjects", daemon=True)
         self._subjects_thread.start()
 
+    def _fill_looks(self) -> None:
+        if self._looks_thread is not None:
+            return
+        def run():
+            try:
+                auto_look.fill_missing(self.store, self.workdir, cancel=lambda: self.closed)
+            except (ClosedStoreError, OSError):
+                pass  # closing a library cancels its cache upgrade
+        self._looks_thread = threading.Thread(target=run, name="auto-looks", daemon=True)
+        self._looks_thread.start()
+
     def refresh_async(self, full: bool = True) -> None:
         """Refresh in the background (full=False: only the stacking changed, so just regroup). Requests that
         arrive mid-refresh coalesce into one more pass, so the last refresh always sees the latest choices."""
@@ -193,7 +205,7 @@ class Session:
         with self.analyzer._start_lock:
             self.analyzer.closed = True
             self.analyzer.cancel.set()
-        for worker in (self.analyzer.thread, self._refresh_thread, self._subjects_thread):
+        for worker in (self.analyzer.thread, self._refresh_thread, self._subjects_thread, self._looks_thread):
             if worker and worker is not threading.current_thread():
                 worker.join()
         with self.lock:
@@ -300,6 +312,7 @@ class Session:
         self.view = {pid: {"dims": list(library.preview_size(r["width"] or 1, r["height"] or 1)),
                            "box": json.loads(r["subject"]) if r["subject"] else None} for pid, r in rows.items()}
         self._fill_subjects()
+        self._fill_looks()
         self.distinct = {}
         saved = self._mini_saved.get("minis", []) + list(self.minis.values())
         seeds = {}
@@ -1073,6 +1086,9 @@ class Session:
         if kind == "bestof":
             rows = [{"rel": it["rel"], "rank": it["rank"], "edits": it.get("edits") or {}, "box": it.get("box")} for it in sl["items"]]
             rows += [{"rel": it["rel"], "rank": None, "edits": it.get("edits") or {}, "box": it.get("box")} for it in sl["added"]]
+            recipes = {r["rel"]: json.loads(r["auto_look"] or "null") for r in self.store.q("SELECT rel,auto_look FROM photos WHERE auto_look IS NOT NULL")}
+            for row in rows:
+                row["auto_look"] = recipes.get(row["rel"])
             name = "best-" + (self.cup if self.mode == "gallery" else "profile")
             return exporter.bestof(self.source, self.workdir / "exports", rows, name)
         rows = []
@@ -2003,7 +2019,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             cur["help"] = b["help"]
         if "sea_axes" in b:
             axes = b["sea_axes"]
-            choices = {"colorfulness", "brightness", "hue", "saturation", "date", "quality", "ranking", "sharpness", "aspect", "faces"}
+            choices = sea_axes.KEYS
             if not isinstance(axes, dict) or set(axes) - {"x", "y", "reverseX", "reverseY"}:
                 abort(400, "Choose the sea's horizontal and vertical axes.")
             if any(not isinstance(axes.get(key), str) or axes[key] not in choices for key in ("x", "y")):
@@ -2315,6 +2331,24 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                 edits["enhance"] = b["enhance"]
             else:
                 abort(400, "Enhance is on or off.")
+        if "auto_amount" in b:
+            try:
+                amount = finishing.number(b["auto_amount"], 0, 1.5) if b["auto_amount"] is not None else 1
+            except ValueError as error:
+                abort(400, str(error))
+            if amount == 1:
+                edits.pop("auto_amount", None)
+            else:
+                edits["auto_amount"] = amount
+        if "auto_parts" in b:
+            parts = {} if b["auto_parts"] is None else b["auto_parts"]
+            if not isinstance(parts, dict) or set(parts) - set(auto_look.PARTS) or any(not isinstance(v, bool) for v in parts.values()):
+                abort(400, "Auto adjustments are tone, colour, grade, detail and subject, each on or off.")
+            parts = {k: v for k, v in parts.items() if not v}
+            if parts:
+                edits["auto_parts"] = parts
+            else:
+                edits.pop("auto_parts", None)
         if "crop" in b:
             crop = "subject" if b["crop"] == "auto" else b["crop"]
             if crop not in (*touchup.CROPS, "custom", "none", "off", None):
@@ -2500,7 +2534,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         if row is None:
             abort(404, "Unknown photo.")
         photo = {k: row[k] for k in row.keys() if k not in {"emb", "crop_emb", "sha256", "phash", "mtime_ns"}}
-        for field in ("flags", "subject", "salient", "zs", "recognized_tags", "edits"):
+        for field in ("flags", "subject", "salient", "zs", "recognized_tags", "edits", "auto_look"):
             photo[field] = json.loads(photo[field]) if photo.get(field) else ({} if field in {"edits", "zs", "recognized_tags"} else [] if field == "flags" else None)
         meta = tags.rows(s.store)
         effective = tags.effective(s.store, [pid]).get(pid, set())
@@ -2873,28 +2907,29 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         hit = s.groups_cache.get("key") == key
         if hit:
             return s.groups_cache["shots"]
-        rows = {r["id"]: dict(r) for r in s.store.q(
+        rows = {r[0]: r for r in s.store.q(
             "SELECT id, taken, taken_ts, stack_key, rep_pref FROM photos WHERE group_id IS NOT NULL")}
+        empty = (None, None, None, None, None)
         shots = []
-        tm, pool = s.draw.theme_of(), s.draw.pool_mask()
+        tm, pool = (s.draw.theme_of(), s.draw.pool_mask()) if theme is not None else (None, None)
         for gid, g in s.groups.items():
             members = g["members"]
             if view == "stacks" and len(members) < 2:
                 continue
             if theme is not None and ((i := s.gidx.get(gid)) is None or not pool[i] or tm[i] != theme):
                 continue
-            rep = rows.get(g["rep"], {})
+            rep = rows.get(g["rep"], empty)
             if len(members) == 1:
-                stack_key = rep.get("stack_key") or ""
-                manual, solo, kept = stack_key.startswith("m:"), stack_key.startswith("solo:"), bool(rep.get("rep_pref"))
+                stack_key = rep[3] or ""
+                manual, solo, kept = stack_key.startswith("m:"), stack_key.startswith("solo:"), bool(rep[4])
             else:
-                keys = {rows.get(m, {}).get("stack_key") or "" for m in members}
+                keys = {rows.get(m, empty)[3] or "" for m in members}
                 manual, solo = any(k.startswith("m:") for k in keys), False
-                kept = any(rows.get(m, {}).get("rep_pref") for m in members)
+                kept = any(rows.get(m, empty)[4] for m in members)
             shots.append({"gid": gid, "rep": g["rep"], "members": members,
                           "manual": manual, "solo": solo, "kept": kept,
                           "crownable": bool(s.ranker.active[s.gidx[gid]]) and len(s.distinct.get(gid, [])) >= 2,
-                          "taken": rep.get("taken"), "ts": rep.get("taken_ts"),
+                          "taken": rep[1], "ts": rep[2],
                           "box": s.view.get(g["rep"], {}).get("box")})
         shots.sort(key=lambda x: (x["ts"] is None, x["ts"] or 0, x["gid"]))
         # The Stacks page and the Groups board both keep member slots across edits: a split, merge or crown changes
@@ -2906,22 +2941,32 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             if ledger is None:
                 ledger = {"members": {}, "next": 0, "family": max((x.get("family") or 0 for x in shots), default=0) + 1}
                 s.stack_orders[(view, order, theme)] = ledger
-            slots = {}
-            for shot in shots:
-                known = [ledger["members"][pid] for pid in shot["members"] if pid in ledger["members"]]
-                if known:
-                    slot, family = min(known, key=lambda entry: entry[0])
-                else:
-                    slot, family = ledger["next"], shot.get("family", ledger["family"])
-                    ledger["next"] += 1
+                # A new ledger is already in display order. Avoid another roster, lookup and sort for every
+                # loose photo when first opening a large library.
+                for slot, shot in enumerate(shots):
+                    family = shot.get("family", ledger["family"])
                     ledger["family"] += 1
-                # Keep every old member's slot: undoing a merge restores both original positions and family labels.
-                for pid in shot["members"]:
-                    ledger["members"].setdefault(pid, (slot, family))
-                if order == "look":
-                    shot["family"] = family
-                slots[shot["gid"]] = (slot, min(shot["members"]))
-            shots.sort(key=lambda shot: slots[shot["gid"]])
+                    ledger["members"].update((pid, (slot, family)) for pid in shot["members"])
+                    if order == "look":
+                        shot["family"] = family
+                ledger["next"] = len(shots)
+            else:
+                slots = {}
+                for shot in shots:
+                    known = [ledger["members"][pid] for pid in shot["members"] if pid in ledger["members"]]
+                    if known:
+                        slot, family = min(known, key=lambda entry: entry[0])
+                    else:
+                        slot, family = ledger["next"], shot.get("family", ledger["family"])
+                        ledger["next"] += 1
+                        ledger["family"] += 1
+                    # Keep every old member's slot: undoing a merge restores both original positions and family labels.
+                    for pid in shot["members"]:
+                        ledger["members"].setdefault(pid, (slot, family))
+                    if order == "look":
+                        shot["family"] = family
+                    slots[shot["gid"]] = (slot, min(shot["members"]))
+                shots.sort(key=lambda shot: slots[shot["gid"]])
         s.groups_cache = {"key": key, "shots": shots}
         return shots
 
@@ -3284,29 +3329,43 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         after = max(0, int(request.args.get("after", 0)))
         per = max(1, min(1000, int(request.args.get("per", 400))))
         rows = s.store.q("SELECT id, group_id, theme_id, category, cut, override, flags, width, height, luma, chroma, saturation, hue, "
-                         "taken, taken_ts, prior, sharp, n_faces FROM photos "
+                         "taken, taken_ts, prior, sharp, n_faces, rel, size, fmt, make, model, zs, subject, edits, auto_look, luma_lo, luma_hi FROM photos "
                          "WHERE id>? AND status IN ('analyzed','error') ORDER BY id LIMIT ?", (after, per + 1))
         more, part = len(rows) > per, rows[:per]
         sets = tags.effective(s.store, [r["id"] for r in part])
+        faces = {}
+        for start in range(0, len(part), 400):
+            batch = part[start:start + 400]
+            for f in s.store.q(f"SELECT photo_id,w,h,smile,blink_l,blink_r,yaw,roll FROM faces WHERE photo_id IN ({','.join('?' for _ in batch)})", [r["id"] for r in batch]):
+                previous = faces.get(f["photo_id"])
+                if previous is None or f["w"] * f["h"] > previous["w"] * previous["h"]:
+                    faces[f["photo_id"]] = f
+        themes = {r["id"]: dict(r) for r in s.store.q("SELECT id,name FROM themes")}
         out = []
         for r in part:
             g = s.groups.get(r["group_id"], {})
             index = s.gidx.get(r["group_id"])
-            appeal = float(s.ranker.post.mu[index]) if index is not None and s.ranker.post is not None else None
             out.append({"id": r["id"], "gid": r["group_id"], "rep": g.get("rep", r["id"]),
                         "members": g.get("members", [r["id"]]) if g.get("rep") == r["id"] else [r["id"]],
                         "theme": r["theme_id"] if r["theme_id"] is not None else -1,
                         "category": r["category"], "cut": r["cut"], "tags": sorted(sets.get(r["id"], [])),
                         "rescued": r["override"] == "keep", "box": s.view.get(r["id"], {}).get("box"),
                         "dims": [r["width"] or 1, r["height"] or 1],
+                        "auto_look": json.loads(r["auto_look"] or "null"),
+                        "render_edits": {k: v for k, v in json.loads(r["edits"] or "{}").items() if k in {"enhance", "look", "grade", "auto_amount", "auto_parts"}},
                         "taken": r["taken"],
-                        "measurements": {"date": r["taken_ts"], "quality": r["prior"], "sharpness": r["sharp"],
-                                         "ranking": appeal, "faces": r["n_faces"],
-                                         "aspect": r["width"] / r["height"] if r["width"] and r["height"] else None},
+                        "measurements": sea_axes.measurements(r, face=faces.get(r["id"]), stack=g, theme=themes.get(r["theme_id"]),
+                                                             post=s.ranker.post, index=index, tag_count=len(sets.get(r["id"], []))),
                         "visual": visual.descriptor(r["luma"], r["chroma"], r["saturation"], r["hue"])})
         total = s.store.one("SELECT COUNT(*) AS n FROM photos WHERE status IN ('analyzed','error')")["n"]
         return jsonify(photos=out, after=part[-1]["id"] if part else after, more=more, total=total,
                        version=[s.version, s.draw.ver, s.store.get_meta("tag_version", 0)])
+
+    @flask_app.get("/api/auto-looks")
+    @locked
+    def auto_looks():
+        s = sess()
+        return jsonify(working=bool(s._looks_thread and s._looks_thread.is_alive()))
 
     @flask_app.get("/api/tags")
     def tags_page():

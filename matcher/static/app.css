@@ -588,7 +588,7 @@ h1 { background: linear-gradient(92deg, var(--text) 30%, #ffc9a8 70%, #ff8f7a); 
 .finals-done { padding: 20px 0; }
 
 /* ---------- podium and the champion's ceremony */
-.podium { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin: 22px auto 10px; max-width: 760px; }
+.podium { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin: 22px auto 10px; width:100%;max-width: 760px; }
 .pod { display: grid; justify-items: center; flex: 1; max-width: 240px; animation: podrise 0.7s cubic-bezier(0.2, 1.3, 0.4, 1) both; }
 .pod.gold { animation-delay: 0.25s; max-width: 280px; }
 .pod.bronze { animation-delay: 0.1s; }
@@ -1936,10 +1936,10 @@ code.path { word-break: normal; overflow-wrap: anywhere; }
 .draw-play .screen-body > .deck { max-height: min(66vh, 720px); margin: auto 0; }
 /* The camera can carry a dealt print across the whole sea, underneath the fixed sorting controls. Only the
    viewport clips it; the old photo column must not cut a rectangle out of the paper at deep zoom. */
-#main:has(.camera-deck) { overflow: clip; }
-.draw-play .screen-body.fill:has(> .camera-deck) { overflow: visible; }
-#main .draw-play :is(.screen-head,.screen-rail,.screen-bar) { z-index:6; }
-.draw-play .camera-deck { transform-origin:0 0;touch-action:none; }
+#main:has(.focus-camera) { overflow: clip; }
+.screen-body:has(.focus-camera) { overflow: visible; }
+#main:has(.focus-camera) :is(.screen-head,.screen-rail,.screen-bar,.duel-head,.controls,.group-table) { z-index:6; }
+#main .focus-camera { position:relative;z-index:5;transform-origin:0 0;touch-action:none; }
 body.sea-panning .camera-deck .swipe-card.top { cursor:grabbing; }
 .swipe-card .stamp.toss { font-size: 22px; }
 @media (max-width: 760px) {
@@ -2085,6 +2085,9 @@ body[data-tool="eraser"] :is(.print, .ps-item, .tile, .ftile, .polaroid, .shot-s
 .filter-shot { container-type: size; }
 .print { container-type: inline-size; }
 .print > .paper { position: absolute; inset: 0; z-index: 6; background: var(--paper); border-radius: var(--card-round); box-shadow: 0 1px 1px #0005, 0 10px 26px #0007; }
+.photo-glow { position:absolute;inset:-28%;z-index:0;pointer-events:none;border-radius:35%;opacity:var(--focus-glow-strength,.85);filter:blur(var(--glow-blur,5cqw));
+  background:radial-gradient(ellipse at 22% 28%,rgb(var(--glow-0,255 185 112) / .7),transparent 66%),radial-gradient(ellipse at 82% 38%,rgb(var(--glow-1,255 185 112) / .65),transparent 64%),radial-gradient(ellipse at 50% 82%,rgb(var(--glow-2,255 185 112) / .6),transparent 65%); }
+.ps-item:not(.focused,.has-focus-glow) > .photo-glow { display:none; }
 .paper > .window { position: absolute; left: 5.5%; top: 4.125%; width: 89%; height: 83.125%; overflow: hidden; background: var(--window); }
 :is(#main, #modal) :is(.window, .picture) > img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; max-width: none; aspect-ratio: auto; padding: 0; background: none; border-radius: 0; object-fit: fill; }
 .window > .picture { position: absolute; }

@@ -127,6 +127,10 @@ class Store:
             if "extra" not in cols:  # added after the first release of the schema
                 c.execute("ALTER TABLE votes ADD COLUMN extra TEXT")
             photo_cols = {r[1] for r in c.execute("PRAGMA table_info(photos)")}
+            if "auto_look" not in photo_cols:
+                c.execute("ALTER TABLE photos ADD COLUMN auto_look TEXT")
+            if "auto_version" not in photo_cols:
+                c.execute("ALTER TABLE photos ADD COLUMN auto_version INTEGER NOT NULL DEFAULT 0")
             if "subject" not in photo_cols:
                 c.execute("ALTER TABLE photos ADD COLUMN subject TEXT")  # auto-crop box, set by refresh()
             if "salient" not in photo_cols:

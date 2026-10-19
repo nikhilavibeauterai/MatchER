@@ -99,6 +99,10 @@ def build_library(root: Path, workdir: Path, n_singles=24, bursts=((4, "burst"),
                  f16(sp["emb"]), f16(sp["emb"])))
             pid = cur.lastrowid
             Image.new("RGB", (120, 160), color).save(workdir / "previews" / f"{pid}.jpg")
+            # This synthetic library already stands in for completed analysis, including its saved look.
+            from matcher import auto_look
+            recipe = {**auto_look.IDENTITY, "version": auto_look.VERSION, "label": "Natural light", "reasons": []}
+            c.execute("UPDATE photos SET auto_look=?,auto_version=? WHERE id=?", (json.dumps(recipe), auto_look.VERSION, pid))
             Image.new("RGB", (60, 80), color).save(workdir / "thumbs" / f"{pid}.jpg")
             for k, (who, w) in enumerate(sp["faces"]):
                 c.execute("INSERT INTO faces(photo_id, idx, x, y, w, h, score, lm, emb, sharp, luma, blink_l, blink_r, smile, "

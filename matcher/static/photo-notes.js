@@ -145,6 +145,11 @@ const PhotoNotes = {
     if(this.hosts.has(host)||host.closest('#world,button,.an-grab,#an-sea,.world-fly,#history-hud')||!host.getClientRects().length)return;
     const pid=Toolbelt.pidOf(host);if(!pid)return;
     if(host.matches('.print'))Cards.focus(host);
+    if(typeof FocusGlow!=='undefined'&&host!==this.seaDetail&&!host.closest('.tile:not(.board-card),.ftile')){
+      const img=host.querySelector('.window img');
+      if(img?.complete&&img.naturalWidth)FocusGlow.attach(host,img);
+      else img?.addEventListener('load',()=>FocusGlow.attach(host,img),{once:true});
+    }
     const tab=document.createElement('button');tab.type='button';tab.className='photo-notes-tab';
     tab.innerHTML='<span>notes</span>';tab.setAttribute('aria-label','Open photo notes');tab.setAttribute('aria-expanded','false');
     for(const type of ['pointerdown','dblclick','dragstart'])tab.addEventListener(type,e=>e.stopPropagation());
@@ -222,6 +227,7 @@ const PhotoNotes = {
     this.controls();
   },
   preview(host,p,edits) {
+    AutoLook.know(p.id,p.auto_look);
     if(this.active?.host===host&&this.active.comparing)edits={crop:'off',rotate:0,enhance:false};
     if(host===this.seaDetail&&this.seaPose?.photo===p.id){
       // The detail layer carries the writing, not a second visible photograph. Every preview must reach the
@@ -239,7 +245,7 @@ const PhotoNotes = {
       host.dataset.cropBox=JSON.stringify(edits.crop_box||null);
       host.dataset.rotate=String(edits.rotate||0);host.dataset.enhance=(edits.enhance??(host.matches('.board-card')?true:S.filter))?'on':'off';
       host.dataset.look=JSON.stringify(edits.look||null);
-      host.dataset.straighten=String(edits.straighten||0);host.dataset.finishing=JSON.stringify({grade:edits.grade,masks:edits.masks});
+      host.dataset.straighten=String(edits.straighten||0);host.dataset.finishing=JSON.stringify({grade:edits.grade,masks:edits.masks,auto_amount:edits.auto_amount,auto_parts:edits.auto_parts});
       framePhoto(host,{dims:[p.width||img.naturalWidth||1,p.height||img.naturalHeight||1],box:p.subject},
         {crop:host.dataset.crop,rotate:edits.rotate||0,enhance:host.dataset.enhance==='on',knobs:edits.look?knobsOf(edits.look):null});
     };
@@ -516,7 +522,12 @@ const PhotoNotes = {
       <div class="notes-finishing edit-sheet"><fieldset><legend>Framing</legend><div class="sheet-seg">${[['best','Best'],['subject','Subject'],['height','Height'],['width','Width'],['off','Whole photo'],['custom','Custom…']].map(([key,label])=>`<button type="button" class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div><p class="notes-crop-hint"></p></fieldset>
       <fieldset><legend>Alignment</legend><div class="sheet-row notes-turn"><button type="button" class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><output class="sheet-deg"></output><button type="button" class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div>
         <div class="straighten-control"><label for="${this.sheet.id}-straighten">Straighten</label><output for="${this.sheet.id}-straighten" data-straighten-angle></output><input id="${this.sheet.id}-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${p.edits.straighten||0}"></div><button type="button" class="btn ghost" data-align>Align horizon…</button></fieldset>
-      <fieldset><legend>Light & colour</legend><div class="sheet-row"><button type="button" class="btn" data-edit="enhance">Enhance</button><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
+      <fieldset><legend>Light & colour</legend><section class="notes-auto"><h3>Automatic baseline</h3><p class="notes-auto-name"></p><p class="notes-hint notes-auto-why"></p>
+        <div class="sheet-row"><button type="button" class="btn" data-auto-reset>Auto</button><button type="button" class="btn ghost" data-edit="enhance">Enhance</button></div>
+        <label class="notes-auto-amount">Amount <output data-auto-value></output><input type="range" data-auto-amount min="0" max="1.5" step="0.01"></label>
+        <div class="notes-auto-parts">${[['tone','Light & contrast'],['colour','Colour balance'],['grade','Scene colour'],['detail','Detail'],['subject','Backlit subject']].map(([key,label])=>`<label data-auto-part-label="${key}"><input type="checkbox" data-auto-part="${key}">${label}</label>`).join('')}</div>
+        <div class="sheet-row"><button type="button" class="btn ghost" data-auto-align hidden>Use suggested horizon</button><button type="button" class="btn ghost" data-auto-mask hidden>Edit subject mask…</button></div></section>
+        <div class="sheet-row"><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
         <div class="sheet-knobs">${Object.entries(KNOBS).map(([key,[lo,hi]])=>`<div class="sheet-knob"><label for="${this.sheet.id}-${key}">${KNOB_WORD[key]}</label><input id="${this.sheet.id}-${key}" type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05"><output for="${this.sheet.id}-${key}"></output><button type="button" class="notes-knob-reset" data-knob-reset="${key}" aria-label="Reset ${KNOB_WORD[key]}" hidden>↶</button></div>`).join('')}</div>
         <div class="notes-grading"><h3>Colour grading</h3><p class="notes-hint">Shape the colour after the light adjustments. Drag a wheel or enter exact values.</p>${PhotoFinish.wheels(p.edits.grade)}</div></fieldset>
       <fieldset><legend>Local adjustments</legend><p class="notes-mask-summary"></p><button type="button" class="btn" data-masks>Paint masks…</button><p class="notes-hint">Brush exposure and colour onto part of the photo. Erase or soften the mask whenever you like.</p></fieldset></div>`;
@@ -526,6 +537,17 @@ const PhotoNotes = {
     compare.onkeydown=event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();this.compare(true);}};
     compare.onkeyup=event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();end();}};
     $('[data-edit=enhance]',panel).onclick=()=>this.edit({enhance:!this.enhanced()});
+    $('[data-auto-reset]',panel).onclick=()=>this.edit({enhance:true,auto_amount:null,auto_parts:null});
+    const autoAmount=$('[data-auto-amount]',panel);
+    autoAmount.oninput=()=>{$('[data-auto-value]',panel).textContent=`${Math.round(Number(autoAmount.value)*100)}%`;this.preview(this.active.host,this.active.data,{...this.active.data.edits,enhance:true,auto_amount:Number(autoAmount.value)});};
+    autoAmount.onchange=()=>this.edit({enhance:true,auto_amount:Number(autoAmount.value)});
+    for(const input of $$('[data-auto-part]',panel))input.onchange=()=>this.edit({enhance:true,auto_parts:Object.fromEntries($$('[data-auto-part]',panel).map(i=>[i.dataset.autoPart,i.checked]))});
+    $('[data-auto-align]',panel).onclick=()=>this.edit({straighten:this.active.data.auto_look.straighten});
+    $('[data-auto-mask]',panel).onclick=async()=>{
+      const e=this.active.data.edits,mask=this.active.data.auto_look.masks?.[0];if(!mask)return;
+      await this.edit({auto_parts:{...e.auto_parts,subject:false},masks:[...(e.masks||[]),{...mask,id:`subject-${Date.now()}`} ]});
+      PhotoMask.open(this.active.data,patch=>this.edit(patch));
+    };
     $('[data-edit=auto]',panel).onclick=()=>this.edit({look:null});
     for(const button of $$('[data-crop]',panel))button.onclick=()=>button.dataset.crop==='custom'?PhotoCrop.open(this.active.data,patch=>this.edit(patch)):this.edit({crop:button.dataset.crop});
     for(const button of $$('[data-turn]',panel))button.onclick=()=>this.edit({rotate:((this.active.data.edits.rotate||0)+Number(button.dataset.turn)+360)%360});
@@ -573,7 +595,7 @@ const PhotoNotes = {
       <details data-notes-detail="analysis"><summary>What the analysis found</summary><p class="notes-hint">Saved observations and measurements for this take.</p>
         ${this.facts([['Observations',p.flags.map(key=>this.word(key)).join(', ')],['Faces',p.n_faces],['Brightness',typeof p.luma==='number'?pct(p.luma/255):null],['Saturation',typeof p.saturation==='number'?pct(p.saturation):null]])}
         <details data-notes-detail="measurements"><summary>Measurements & match scores</summary><p class="notes-hint">Match scores describe the analysis, not a rating of your photo.</p>${this.facts([['Sharpness',number(p.sharp)],['Dark tones',number(p.luma_lo)],['Light tones',number(p.luma_hi)],['Colour range',number(p.chroma)],['Hue',number(p.hue)],['Starting appeal',number(p.prior)],['Current appeal',number(p.ranking?.appeal)],['Subject region',p.subject?.map(number).join(', ')],['Salient region',p.salient?.map(number).join(', ')]])}
-        ${scoreRows(p.recognized_tags?.tags||p.recognized_tags)}${scoreRows(p.zs)}
+        ${scoreRows(p.recognized_tags?.tags||p.recognized_tags)}${scoreRows(p.zs?.scores||p.zs)}
         ${p.faces.map((face,i)=>`<h4>Face ${i+1}${face.label==='me'?' · You':''}</h4>${this.facts(Object.entries(face).filter(([key])=>!['id','photo_id','idx','person','label'].includes(key)).map(([key,value])=>[this.word(key),number(value)]))}`).join('')}</details></details>
       <details data-notes-detail="saved"><summary>What you’ve changed</summary>${this.facts([['Writing',e.title||e.description?'Saved on this photo':null],['Pen & marker strokes',e.marks?.length],['Sticky notes',e.notes?.map(n=>n.text).join(' · ')],['Crop',e.crop],['Turn',e.rotate!==undefined?`${e.rotate}°`:null],['Straighten',e.straighten?`${e.straighten}°`:null],['Colour grading',e.grade?Object.keys(e.grade).filter(k=>PhotoFinish.zones.includes(k)).join(', ')||'Custom blend':null],['Local masks',e.masks?.map(m=>`${m.name}${m.enabled===false?' (disabled)':''}`).join(' · ')],['Enhance',e.enhance!==undefined?e.enhance?'On':'Off':null],['Export selection',p.pick?'Added by you':null]])}
         ${p.tag_edits.length?this.facts(p.tag_edits.map(tag=>[tag.label,tag.on?'Added by you':'Removed by you'])):'<p class="notes-hint">Tag corrections will appear here.</p>'}</details>
@@ -597,6 +619,16 @@ const PhotoNotes = {
       button.disabled=!!this.busy;
     }
     toggle.textContent=on?'Enhance on':'Enhance off';toggle.setAttribute('aria-pressed',String(on));
+    const baseline=this.active.data.auto_look;
+    $('.notes-auto-name',sheet).textContent=baseline?.label||'Preparing this photo’s baseline';
+    $('.notes-auto-why',sheet).textContent=baseline?baseline.reasons.join(' · '):'Existing libraries prepare their baselines from saved previews in the background.';
+    const amount=$('[data-auto-amount]',sheet);amount.disabled=!baseline;if(document.activeElement!==amount)amount.value=String(e.auto_amount??1);
+    $('[data-auto-value]',sheet).textContent=`${Math.round((e.auto_amount??1)*100)}%`;
+    $('[data-auto-reset]',sheet).disabled=!baseline;
+    for(const input of $$('[data-auto-part]',sheet)){input.checked=e.auto_parts?.[input.dataset.autoPart]!==false;input.disabled=!baseline;
+      input.closest('label').hidden=input.dataset.autoPart==='subject'&&!baseline?.masks?.length||input.dataset.autoPart==='grade'&&!Object.keys(baseline?.grade||{}).length;}
+    const align=$('[data-auto-align]',sheet);align.hidden=baseline?.straighten==null;if(!align.hidden)align.textContent=`Use suggested horizon (${baseline.straighten>0?'+':''}${baseline.straighten}°)`;
+    $('[data-auto-mask]',sheet).hidden=!baseline?.masks?.length||(e.masks?.length||0)>=8||e.auto_parts?.subject===false;
     $('[data-edit=auto]',sheet).hidden=!on||!e.look;$('.sheet-knobs',sheet).hidden=!on;
     for(const b of $$('[data-crop]',sheet))b.setAttribute('aria-pressed',String(b.dataset.crop===crop));
     $('.notes-crop-hint',sheet).textContent={best:'The fullest framing that keeps your subject.',subject:'A closer view of the subject.',height:'Fill the height of the window.',width:'Fill the width of the window.',off:'Keep the whole photo in view.',custom:'Your own framing. Open Custom to adjust the rectangle or its exact measurements.'}[crop]||'';

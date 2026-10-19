@@ -121,7 +121,7 @@ def bestof(source_root: Path, out_root: Path, rows: list[dict], label: str = "be
     dest.mkdir(parents=True)
     width = max(2, len(str(len(rows))))
     used: set[str] = set()
-    copies: list[tuple[Path, str, dict, list | None]] = []
+    copies: list[tuple[Path, str, dict, list | None, dict | None]] = []
     for r in rows:
         src = source_root / r["rel"]
         rank = str(r["rank"]).zfill(width) if r.get("rank") else "+" * width
@@ -131,7 +131,7 @@ def bestof(source_root: Path, out_root: Path, rows: list[dict], label: str = "be
             name, n = f"{rank} - {stem} ({n}){suffix}", n + 1
         used.add(name.lower())
         shutil.copy2(src, dest / name)
-        copies.append((src, name, r.get("edits") or {}, r.get("box")))
+        copies.append((src, name, r.get("edits") or {}, r.get("box"), r.get("auto_look")))
     touched = 0
     if touch:
         touched = touch_up_all(copies, dest / "touched up")
@@ -139,24 +139,24 @@ def bestof(source_root: Path, out_root: Path, rows: list[dict], label: str = "be
             "touched_dir": str(dest / "touched up") if touch else None}
 
 
-def touch_up_all(copies: list[tuple[Path, str, dict, list | None]], where: Path) -> int:
-    """Touched-up JPEG copies of (source, exported name, edits, subject box) under `where`, a few at a time
+def touch_up_all(copies: list[tuple[Path, str, dict, list | None, dict | None]], where: Path) -> int:
+    """Touched-up JPEG copies of (source, exported name, edits, subject box, saved baseline), a few at a time
     (decoding and encoding release the GIL). A photo that cannot be touched up is skipped, not fatal. Returns how
     many were written."""
     where.mkdir(exist_ok=True)
     taken: set[str] = set()
     jobs = []
-    for src, name, edits, box in copies:
+    for src, name, edits, box, recipe in copies:
         out, n = f"{Path(name).stem}.jpg", 2
         while out.lower() in taken:  # IMG_1.png and IMG_1.jpg both become IMG_1.jpg
             out, n = f"{Path(name).stem} ({n}).jpg", n + 1
         taken.add(out.lower())
-        jobs.append((src, where / out, edits, box))
+        jobs.append((src, where / out, edits, box, recipe))
 
-    def one(job: tuple[Path, Path, dict, list | None]) -> bool:
-        src, dst, edits, box = job
+    def one(job: tuple[Path, Path, dict, list | None, dict | None]) -> bool:
+        src, dst, edits, box, recipe = job
         try:
-            touchup.touch_up(src, dst, edits, box)
+            touchup.touch_up(src, dst, edits, box, recipe=recipe)
             return True
         except Exception as e:  # a corrupt or oversized file: the untouched original is still in the folder
             log.warning("could not touch up %s: %s", src, e)

@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {SeaField,seaSimilarity,seaForce}=require('../matcher/static/sea-worker.js');
 // These checks exercise the engine's mechanics under one known tuning; the shipped defaults (sea-tuning.js) are the owner's feel.
-const MECHANICS={...require('../matcher/static/sea-tuning.js').seaTuningDefaults(),speedCap:2.2,drag:.1,calmDrag:.18,repel:.8,groupCohesion:1,groupSeparation:.5,homeMax:.3,margin:.06,settleMove:.06,domLimit:160,hurry:0};
+const MECHANICS={...require('../matcher/static/sea-tuning.js').seaTuningDefaults(),marginTop:null,speedCap:2.2,drag:.1,calmDrag:.18,repel:.8,groupCohesion:1,groupSeparation:.5,homeMax:.3,margin:.06,settleMove:.06,domLimit:160,hurry:0};
 const field=(items)=>{const f=new SeaField();f.set({generation:1,tuning:MECHANICS,width:1200,height:750,items:items.map((it,i)=>({id:i+1,x:100+(i*317%1000),y:100+(i*179%550),baseSize:35,...it}))});return f;};
 test('an old worker reply cannot put newly discovered photos back to sleep',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype');
@@ -712,7 +712,9 @@ test('changing axes finishes crossing the sea and separating papers before the s
   const brightnessOrder=reverse=>{
     const sorted=[...f.items].sort((a,b)=>a.visual.brightness-b.visual.brightness),mean=rows=>rows.reduce((sum,it)=>sum+it.y,0)/rows.length,
       dark=mean(sorted.slice(0,60)),bright=mean(sorted.slice(-60));
-    assert(reverse?dark<height*.25&&bright>height*.75:bright<height*.25&&dark>height*.75,JSON.stringify({reverse,dark,bright}));
+    const margin=require('../matcher/static/sea-tuning.js').seaTuningMargins(f.tuning),span=1-margin.top-margin.bottom,
+      upper=height*(margin.top+span*.25),lower=height*(margin.top+span*.75);
+    assert(reverse?dark<upper&&bright>lower:bright<upper&&dark>lower,JSON.stringify({reverse,dark,bright}));
   };
   set();rest();brightnessOrder(false);separated();
   set({reverseY:true});rest();brightnessOrder(true);separated();
@@ -728,7 +730,8 @@ test('changing axes finishes crossing the sea and separating papers before the s
 });
 
 test('independent edge margins keep brightness upright, support zero, and inherit older shared tuning',()=>{
-  const {seaTuningDefaults,seaTuningMargins}=require('../matcher/static/sea-tuning.js'),tuning={...seaTuningDefaults(),margin:.08,jitter:0};
+  const {seaTuningDefaults,seaTuningMargins}=require('../matcher/static/sea-tuning.js'),tuning={...seaTuningDefaults(),marginTop:null,margin:.08,jitter:0};
+  assert.equal(seaTuningMargins(seaTuningDefaults()).top,.2,'The standard top margin leaves the top fifth clear');
   assert.deepEqual(seaTuningMargins(tuning),{top:.08,right:.08,bottom:.08,left:.08},'An existing tuning retains its shared margin');
   Object.assign(tuning,{marginTop:.2,marginRight:.15,marginBottom:.05,marginLeft:.12});
   const f=new SeaField(),items=Array.from({length:3},(_,i)=>({id:i+1,x:300,y:300,baseSize:10,tags:[],visual:{colorfulness:i/2,brightness:i/2},measurements:{date:i,quality:i}}));
@@ -768,6 +771,17 @@ test('an arrangement lands beside a focused group without waiting for its covere
   assert(f.items.filter(it=>!it.anchor).every(it=>!it.travelling));
   const o=f.focusZone;
   assert(f.items.filter(it=>!it.anchor).every(it=>it.x<=o.x0||it.x>=o.x1||it.y<=o.y0||it.y>=o.y1),'Landed prints leave the focused group clear');
+});
+
+test('categorical axes keep natural filename order, shared bands and unknown values',()=>{
+  const f=new SeaField(),items=Array.from({length:40},(_,i)=>({id:i+1,x:500,y:400,baseSize:12,tags:[],measurements:{filename:i<20?'IMG_2.jpg':'IMG_10.jpg',group:i<20?'Animals':'Places'}}));
+  items.push({id:41,x:500,y:400,baseSize:12,tags:[],measurements:{}});
+  f.set({generation:1,width:1200,height:800,calm:true,tuning:{...MECHANICS,jitter:0},items,axes:{x:'filename',y:'group'}});
+  const a=f.items.filter(it=>it.id<=20),b=f.items.filter(it=>it.id>20&&it.id<=40);
+  assert(Math.max(...a.map(it=>it.home.x))<Math.min(...b.map(it=>it.home.x)),'File 2 precedes File 10');
+  assert(Math.max(...b.map(it=>it.home.y))<Math.min(...a.map(it=>it.home.y)),'Alphabetically later groups sit above earlier groups');
+  assert(new Set(a.map(it=>it.home.x)).size===20,'Photos with the same filename spread inside their shared band');
+  assert(Math.abs(f.byId.get(41).home.x-600)<1e-9);assert(Math.abs(f.byId.get(41).home.y-400)<1e-9);
 });
 
 test('equal measurements share their rank band instead of crushing a custom axis into one line',()=>{

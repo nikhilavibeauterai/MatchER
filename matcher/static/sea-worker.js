@@ -3,6 +3,7 @@ const contourField = typeof module !== 'undefined' ? require('./sea-contours.js'
 const tuningDefaults = typeof module !== 'undefined' ? require('./sea-tuning.js').seaTuningDefaults : (importScripts('/static/sea-tuning.js'), seaTuningDefaults);
 const tuningMargins = typeof module !== 'undefined' ? require('./sea-tuning.js').seaTuningMargins : seaTuningMargins;
 const axisSettings = typeof module !== 'undefined' ? require('./sea-axes.js') : (importScripts('/static/sea-axes.js'), SeaAxes);
+const axisNames=new Intl.Collator('en',{numeric:true,sensitivity:'base'});
 const seaHash = (s) => { let h=2166136261; for(const c of String(s))h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0; };
 const seaSimilarity = (a,b) => {
   if(!a.length||!b.length)return 0;
@@ -102,7 +103,7 @@ class SeaField {
   // The macro order spreads the library across the whole canvas: colourfulness by rank left to right, brightness
   // by rank bottom to top. A mostly muted library then fills the width instead of piling into one half.
   ranks(key,ties=null){
-    const sorted=this.items.filter(it=>Number.isFinite(key(it))).sort((a,b)=>key(a)-key(b)||(ties?seaHash(`${a.id}:${ties}`)-seaHash(`${b.id}:${ties}`):0)),q=new Map(),n=sorted.length;
+    const sorted=this.items.filter(it=>typeof key(it)==='string'||Number.isFinite(key(it))).sort((a,b)=>(typeof key(a)==='string'?axisNames.compare(key(a),key(b)):key(a)-key(b))||(ties?seaHash(`${a.id}:${ties}`)-seaHash(`${b.id}:${ties}`):0)),q=new Map(),n=sorted.length;
     // Equal dates, face counts or initial ratings share their rank band's space. Giving every equal rating
     // the exact same coordinate crushes thousands of otherwise distinct homes into one line.
     if(ties){for(let i=0;i<n;i++)q.set(sorted[i].id,n>1?i/(n-1):.5);return q;}
@@ -118,7 +119,7 @@ class SeaField {
       const key=axes[axis],option=axisSettings.options.find(o=>o.key===key),value=it=>axisSettings.value(it,key),rank=this.ranks(value,option.unit?null:`${key}:${axis}`);
       coordinates[axis]=it=>{
         const raw=value(it);if(raw==null)return .5;
-        const absolute=key==='colorfulness'?Math.sqrt(clamp(raw)):clamp(raw),q=rank.get(it.id)??.5,
+        const absolute=option.unit?(key==='colorfulness'?Math.sqrt(clamp(raw)):clamp(raw)):.5,q=rank.get(it.id)??.5,
           position=option.unit?spread*q+(1-spread)*absolute:q;
         return axes[axis==='x'?'reverseX':'reverseY']?1-position:position;
       };

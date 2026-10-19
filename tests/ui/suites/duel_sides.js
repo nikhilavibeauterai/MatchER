@@ -13,6 +13,7 @@ let page;
   await page.goto(LINK);await page.click('.mode-card[data-mode="gallery"]');await page.fill('#path',LIB);await page.click('#use-path');
   await page.waitForSelector('#an-go',{timeout:300000});await page.click('#an-go');await page.waitForSelector('.journey');
   const members=await page.evaluate(async()=>{
+    await api('/api/rescue',{ids:(await api('/api/world?per=1000')).photos.map(p=>p.id),on:true});
     await api('/api/stacks/auto',{});
     const shots=(await api('/api/groups?view=all&per=400')).shots;
     const ids=shots.filter(x=>x.members.length===1).slice(0,6).map(x=>x.rep);
@@ -61,6 +62,9 @@ let page;
   await page.keyboard.press('z');await page.waitForFunction(ids=>!S.busy&&S.current?.type==='mini'&&S.current.frames.every(x=>ids.includes(x)),members);
   assert.deepEqual(await page.evaluate(()=>[S.current.a,S.current.b]),[last.a,last.b],'Undo restores the same displayed pair despite a new server card');
   await page.keyboard.press('ArrowLeft');await page.waitForFunction(()=>!S.busy&&!S.current);
+  // The sample's automatic stacks can leave exactly four contenders after our six-way merge. Give Knockouts
+  // a real elimination to exercise, rather than expecting a match on its intentional straight-to-Finals screen.
+  await page.evaluate(async()=>{const shots=(await api('/api/groups?view=all&per=400')).shots,pile=shots.find(s=>s.members.length>1);await api('/api/groups/split',{photo:pile.members.find(id=>id!==pile.rep)});await api('/api/stacks/auto',{});});
   // Force a canonical/display mismatch using controlled prior display history, then vote through each real UI.
   // The server still owns the unmodified card, bracket match and saved winner.
   const exercise=async(stage)=>{

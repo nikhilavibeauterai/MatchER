@@ -126,6 +126,8 @@ class PhotoSea {
     if(pose)this.stillCards.delete(img);  // its saved phase passes to the paper when the bare image is wrapped
     it.el.dataset.photo=it.photo;Cards.focus(it.el);
     const paper=it.el.querySelector(':scope > .paper');
+    it.el.classList.toggle('has-focus-glow',!!it.focused||this.fullSize(it));
+    if((it.focused||this.fullSize(it))&&typeof FocusGlow!=='undefined')FocusGlow.attach(it.el,img);
     if(time!=null){const motion=paper.getAnimations().find(a=>a.animationName==='cardwobble');if(motion)motion.currentTime=time;}
     const edits=this.presentation?.item===it&&this.presentation.previewEdits||
       (typeof Toolbelt!=='undefined'&&Toolbelt.source===S.lib?.source?Toolbelt.current(it.photo):{});
@@ -347,8 +349,10 @@ class PhotoSea {
       else if(!want&&!it.density&&!keep(it)){it.density=true;this.cancelImage(it);this.smallPreview(it);it.el.replaceChildren();it.el.remove();changed=true;}
       // A live print on screen carries the pyramid level its size needs, both ways as the camera moves; off screen
       // it keeps what it has. One filling four fifths of the screen gets the original file.
+      // A retained or hovered print can briefly leave the viewport while zooming. Its pixel sampling still
+      // follows the camera, so a magnified original cannot keep nearest-neighbour sampling after shrinking.
+      if(!it.density)photoSampling(it.el.querySelector('.pile-cover'),c.zoom*(it.renderScale||1)/(Number(it.el.dataset.imageScale)||1));
       if(!it.density&&this.inView(it,x0,y0,x1,y1,pad)){
-        photoSampling(it.el.querySelector('.pile-cover'),c.zoom*(it.renderScale||1)/(Number(it.el.dataset.imageScale)||1));
         if(this.imageBasis(it)){this.paintItem?.(it,true);this.frameImage(it);}
         if(this.fullSize(it))this.stillCard(it);
         this.requestImage(it,M(it.photo,this.imageSize(it),this.fullSize(it)));
