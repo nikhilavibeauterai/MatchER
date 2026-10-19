@@ -13,6 +13,8 @@ def client(tmp_path, fake_prompts):
     source, data = tmp_path / "photos", tmp_path / "data"
     store, _ = build_library(source, data / _slug(source.resolve()), n_singles=0,
                              bursts=tuple((3, f"burst{i}") for i in range(8)), strangers=0, screenshots=0)
+    with store.tx() as c:
+        c.execute("UPDATE photos SET salient='null'")  # A completed analysis, not an old save awaiting backfill.
     library.refresh(store)
     store.set_meta("analyzed_at", time.time())
     store.set_meta("source", str(source.resolve()))

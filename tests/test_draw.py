@@ -28,6 +28,8 @@ def client(tmp_path, fake_prompts):
     rng = np.random.default_rng(5)
     centers = [_unit(rng.normal(0, 1, 768)) for _ in range(4)]
     with store.tx() as c:
+        # These flat thumbnails are already analysed: JSON null means measured with no salient subject.
+        c.execute("UPDATE photos SET salient='null'")
         for i in range(40):
             e = _unit(centers[i % 4] + rng.normal(0, 0.035, 768))
             if i == 4:  # a near-twin of IMG_0000 (same look), 12 hours later
