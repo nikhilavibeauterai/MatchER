@@ -1,4 +1,4 @@
 # Build and test tools, separate from the shipped runtime.
 pyinstaller==6.22.3
 setuptools==84.0.0
-pytest==9.0.2
+pytest==9.0.3
