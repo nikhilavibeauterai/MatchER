@@ -1,6 +1,7 @@
 // The swarm and its tag clustering run away from the UI thread. Thumbnails never enter this worker.
 const contourField = typeof module !== 'undefined' ? require('./sea-contours.js').seaContours : (importScripts('/static/sea-contours.js'), seaContours);
 const tuningDefaults = typeof module !== 'undefined' ? require('./sea-tuning.js').seaTuningDefaults : (importScripts('/static/sea-tuning.js'), seaTuningDefaults);
+const axisSettings = typeof module !== 'undefined' ? require('./sea-axes.js') : (importScripts('/static/sea-axes.js'), SeaAxes);
 const seaHash = (s) => { let h=2166136261; for(const c of String(s))h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0; };
 const seaSimilarity = (a,b) => {
   if(!a.length||!b.length)return 0;
@@ -52,15 +53,17 @@ class SeaField {
     this.generation=message.generation;this.marginEff=message.margin;
     // The host resends its bodies whenever its layout runs. Only a real change (prints, water, focus, tuning or
     // calm) may wake a resting sea; an identical resend leaves every print asleep where it is.
-    let changed=this.calm!==!!message.calm;this.calm=!!message.calm;
+    const axes=axisSettings.normalize(message.axes),axesChanged=!axisSettings.equal(this.axes,axes);this.axes=axes;
+    let changed=this.calm!==!!message.calm||axesChanged;this.calm=!!message.calm;
     const tuningKey=message.tuning?JSON.stringify(message.tuning):'';
     if(tuningKey!==this.tuningKey){this.tuningKey=tuningKey;changed=true;if(message.tuning)Object.assign(this.T,message.tuning);}
     if(this.resize(message,false))changed=true;
     const old=this.byId;this.byId=new Map();const vocabulary=new Map(),touched=new Set();let semanticChange=old.size!==message.items.length;
     this.items=message.items.map(x=>{
-      const previous=old.get(x.id), it={...x,fresh:!previous,cluster:previous?.cluster,x:previous?.x??x.x,y:previous?.y??x.y,vx:previous?.vx||0,vy:previous?.vy||0,age:previous?.age||0,heat:previous?.heat||0,push:previous?.push||0,shoved:previous?.shoved||0,home:previous?.home,placed:previous?.placed};
+      const previous=old.get(x.id), it={...x,fresh:!previous,cluster:previous?.cluster,x:previous?.x??x.x,y:previous?.y??x.y,vx:previous?.vx||0,vy:previous?.vy||0,age:previous?.age||0,heat:previous?.heat||0,push:previous?.push||0,shoved:previous?.shoved||0,home:previous?.home,placed:axesChanged?null:previous?.placed};
       // New arrivals shrink the common footprint slightly. That creates room without waking the whole sea.
-      if(!previous||x.baseSize>previous.baseSize+.5||previous.label!==x.label||!seaSameVisual(previous.visual,x.visual))touched.add(it.id);
+      if(!previous||x.baseSize>previous.baseSize+.5||previous.label!==x.label||!seaSameVisual(previous.visual,x.visual)||
+        ['x','y'].some(axis=>axisSettings.value(previous,this.axes[axis])!==axisSettings.value(x,this.axes[axis])))touched.add(it.id);
       // Only a saved, numeric group is a deliberate team. Categories, set-aside and automatic shores are not.
       it.assignedGroup=typeof x.label==='string'&&/^g\d+$/.test(x.label)?x.label:null;
       it.tags=[...new Set(x.tags)].sort();
@@ -105,6 +108,16 @@ class SeaField {
     const T=this.T,colourOf=it=>Number.isFinite(it.visual?.colorfulness)?it.visual.colorfulness:it.visual?.saturation,brightOf=it=>it.visual?.brightness;
     const spread=Math.max(0,Math.min(1,T.spread)),qx=spread?this.ranks(colourOf):null,qy=spread?this.ranks(brightOf):null,m=this.marginEff??T.margin,span=1-2*m;
     const clamp=v=>Math.max(0,Math.min(1,v)),before=this.items.map(it=>it.home);
+    const axes=axisSettings.normalize(this.axes),custom=!axisSettings.equal(axes,axisSettings.defaults),coordinates={};
+    if(custom)for(const axis of ['x','y']){
+      const key=axes[axis],option=axisSettings.options.find(o=>o.key===key),value=it=>axisSettings.value(it,key),rank=this.ranks(value);
+      coordinates[axis]=it=>{
+        const raw=value(it);if(raw==null)return .5;
+        const absolute=key==='colorfulness'?Math.sqrt(clamp(raw)):clamp(raw),q=rank.get(it.id)??.5,
+          position=option.unit?spread*q+(1-spread)*absolute:q;
+        return axes[axis==='x'?'reverseX':'reverseY']?1-position:position;
+      };
+    }
     for(const it of this.items){
       let target=seaVisualHome(it.visual,this.width,this.height,it.id);
       if(target){
@@ -112,6 +125,10 @@ class SeaField {
         const phase=seaHash(it.id)*.0001,cx=clamp(Math.sqrt(clamp(colourOf(it)))),cy=clamp(brightOf(it));
         const ux=qx?.has(it.id)?spread*qx.get(it.id)+(1-spread)*cx:cx,uy=qy?.has(it.id)?spread*qy.get(it.id)+(1-spread)*cy:cy;
         target={x:this.width*(m+span*ux+Math.cos(phase)*T.jitter),y:this.height*(1-m-span*uy+Math.sin(phase)*T.jitter)};
+      }
+      if(custom){
+        const phase=seaHash(it.id)*.0001;
+        target={x:this.width*(m+span*coordinates.x(it)+Math.cos(phase)*T.jitter),y:this.height*(1-m-span*coordinates.y(it)+Math.sin(phase)*T.jitter)};
       }
       const score=this.outcomeScores?.get(it.id),scored=Number.isFinite(score);
       it.outcomeBank=0;
@@ -496,8 +513,6 @@ else {
     // A sleeping field keeps its shores; nothing moved, so nothing needs tracing.
     let contours=null;if(!field.settled&&m.time-field.contourAt>300){
       contours=contourField(field.items,field.width,field.height,field.contourHistory||=new Map());
-      const pigment=new Map(contourField(field.items,field.width,field.height,null,0,true).map(shape=>[shape.id,shape]));
-      for(const shape of contours){const wash=pigment.get(shape.id);shape.washPaths=wash?.paths||[];shape.washKey=wash?.key;}
       field.contourAt=m.time;
     }
     const positions=m.buffer?.byteLength===field.items.length*12?new Float32Array(m.buffer):new Float32Array(field.items.length*3);

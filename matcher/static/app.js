@@ -32,7 +32,8 @@ async function api(path, body) {
     headers: { "Content-Type": "application/json", "X-MatchER": "1" },
     body: JSON.stringify(body),
   };
-  if(path==="/api/settings"&&body&&Object.keys(body).length===1&&typeof body.help==="boolean")opts.keepalive=true;
+  const displaySettings=path==='/api/settings'&&body&&Object.keys(body).length&&Object.keys(body).every(key=>['help','sea_axes'].includes(key));
+  if(displaySettings)opts.keepalive=true;
   const r = await fetch(path, opts);
   let data = null;
   try { data = await r.json(); } catch (_) { /* not JSON */ }
@@ -43,8 +44,11 @@ async function api(path, body) {
     throw e;
   }
   // a change to what's in the cup, its groups, stacks or tags: the sea behind every screen catches up
-  if (body !== undefined && (/^\/api\/(draw|tags|groups|rescue|sweep|cup|settings|frame|undo|people)/.test(path)
+  if (body !== undefined && !displaySettings && (/^\/api\/(draw|tags|groups|rescue|sweep|cup|settings|frame|undo|people)/.test(path)
     || /^\/api\/filter\/(apply|decision)$/.test(path) || path==="/api/stacks/auto" || path==="/api/vote"&&(data?.crowned||data?.swap)) && typeof World !== "undefined") World.dirty();
+  if(body!==undefined&&path==='/api/vote'&&typeof World!=='undefined'&&[World.sea?.axes?.x,World.sea?.axes?.y].includes('ranking')){
+    World.stale=true;World.photosSource=null;if(World.mode==='ambient')World.dirty();
+  }
   if(body!==undefined&&path==="/api/undo")DuelSides.undo(data,source);
   if(body!==undefined&&path==='/api/edit'&&typeof Toolbelt!=='undefined'&&!Toolbelt.jobs.get(body.photo)?.length)
     Toolbelt.know(body.photo,data.edits||{});
@@ -140,6 +144,7 @@ function stopPolling() {
 function route() {
   stopPolling();
   closeHelp();
+  clearTimeout(toastTimer);$('#toast').classList.remove('show');
   S.events?.abort();
   S.events = new AbortController();
   // Pending replies belong to the old screen; its input queue must leave with it.
@@ -1153,6 +1158,9 @@ function defaultHint() {
   if(name==='draw')return p.has('sort')?'→ files it in the starred group. ↑ ↓ pick another, N starts a new one.':p.has('play')?'→ adds it to the group, ← leaves it out.':'Gather photos by tag, then shape your groups.';
   if(name==='duel'||name==='finals')return 'Choose a photo. Space saves this match for later.';
   if(name==='reveal')return 'Enter saves your best shots to a folder.';
+  if(name==='shortlist'||name==='leaderboard')return '← → browse your best. Right-click a photo for its notes and finishing controls.';
+  if(name==='tags')return 'Choose a tag to see its photos. Rename, merge or correct it here.';
+  if(name==='cuts')return 'Nothing was deleted. Click a set-aside photo to bring it back.';
   if(name==='tournament')return 'Pick a group to play, or kick off from the first.';
   return 'Drag photos onto each other to stack. Click to zoom; double-click grabs. Enter starts the next stage.';
 }
@@ -1238,6 +1246,7 @@ function openMenu() {
         <button data-m="trophies">🏆 <span>Trophies</span></button>`,
       view:`<button data-m="sound">${Sound.on?'🔊':'🔇'} <span>Sound ${Sound.on?'on':'off'}</span></button>
         <button data-m="sea">🌊 <span>Colour wash ${Sea.on?'on':'off'}</span></button>
+        ${ready?'<button data-m="axes">↔ <span>Sea axes</span></button>':''}
         ${ready?`<button data-m="filter">🎨 <span>Enhance ${S.filter?'on':'off'}</span><kbd>F</kbd></button>
         <button data-m="crop">🔲 <span>Auto-crop ${CROP_MENU[normCrop(S.crop)]}</span><kbd>C</kbd></button>`:''}`,
       library:`${S.lib||S.recent.length?'<a href="#saves">💾 <span>Switch save</span></a>':''}${ready?'<button data-m="settings">⚙️ <span>Settings</span></button>':''}`
@@ -1259,6 +1268,7 @@ function openMenu() {
       if(b.dataset.m==='history-undo'){closeMenu();if(typeof HistoryHUD!=='undefined')HistoryHUD.act('undo');return;}
       if(b.dataset.m==='trophies'){openTrophies();return;}
       if(b.dataset.m==='settings'){openSettings();return;}
+      if(b.dataset.m==='axes'){closeMenu();openSeaAxes();return;}
       if(b.dataset.m==='sea'){Sea.toggle();b.innerHTML=`🌊 <span>Colour wash ${Sea.on?'on':'off'}</span>`;}
       else if(b.dataset.m==='filter'){toggleFilter();b.querySelector('span').textContent=`Enhance ${S.filter?'on':'off'}`;}
       else if(b.dataset.m==='crop'){toggleCrop();b.querySelector('span').textContent=`Auto-crop ${CROP_MENU[normCrop(S.crop)]}`;}
@@ -1271,6 +1281,62 @@ function openMenu() {
   m.oncancel=e=>{e.preventDefault();if(menuPage)paint();else closeMenu();};
   m.onclose=()=>{if(!m.open&&S.pause===pause)closeMenu();};
   m.showModal();$('#menu-resume',m).focus();
+}
+
+let seaAxisSaving=Promise.resolve();
+function openSeaAxes(){
+  if(!S.lib||!World.sea)return;
+  const modal=$('#modal'),source=S.lib.source,opener=document.activeElement;
+  let axes=SeaAxes.normalize(S.lib.settings?.sea_axes),revision=0;
+  modal.className='sea-axis-dialog';modal.onclick=e=>{if(e.target===modal)modal.close();};
+  modal.innerHTML=`<header class="sea-axis-head"><div><span class="sea-axis-kicker">A different way to look</span><h2 id="sea-axis-title">Arrange the sea</h2></div><button class="icon" data-axis-close aria-label="Close sea axes">✕</button></header>
+    <p class="sea-axis-intro">Choose what draws photos together. Their colours travel with them.</p>
+    <div class="sea-axis-fields">${['x','y'].map(axis=>`<section class="sea-axis-field"><label for="sea-axis-${axis}"><b>${axis.toUpperCase()}</b> ${axis==='x'?'Across the sea':'Up the sea'}</label>
+      <select id="sea-axis-${axis}" data-axis="${axis}">${SeaAxes.options.map(o=>`<option value="${o.key}">${esc(o.label)}</option>`).join('')}</select>
+      <button class="sea-axis-direction" data-axis-reverse="${axis}" aria-pressed="false"></button></section>`).join('')}</div>
+    <p class="sea-axis-hint">Photos without a measurement sit near the middle. Stacks stay together.</p>
+    <form class="sea-axis-date" hidden><label for="sea-axis-day">Find a day</label><div><input type="date" id="sea-axis-day" required><button class="btn" type="submit">Jump →</button></div><small></small></form>
+    <footer class="sea-axis-footer"><button class="btn" data-axis-reset>Reset axes</button><button class="btn primary" data-axis-close>Done</button></footer><p class="sea-axis-status" role="status"></p>`;
+  modal.setAttribute('aria-labelledby','sea-axis-title');
+  const status=$('.sea-axis-status',modal),dateForm=$('.sea-axis-date',modal),dates=[...(World.photos?.values()||[])].filter(p=>Number.isFinite(p.measurements?.date)).sort((a,b)=>a.measurements.date-b.measurements.date),
+    day=p=>p.taken?.slice(0,10)||new Date(p.measurements.date*1000).toISOString().slice(0,10);
+  function paint(){
+    for(const axis of ['x','y']){
+      const option=SeaAxes.options.find(o=>o.key===axes[axis]),reverse=axes[axis==='x'?'reverseX':'reverseY'],button=$(`[data-axis-reverse="${axis}"]`,modal);
+      $(`[data-axis="${axis}"]`,modal).value=axes[axis];button.setAttribute('aria-pressed',String(reverse));
+      button.textContent=`${reverse?option.high:option.low} ${axis==='x'?'→':'↑'} ${reverse?option.low:option.high} ⇄`;
+      button.setAttribute('aria-label',`Reverse ${axis.toUpperCase()} axis`);
+    }
+    dateForm.hidden=!(axes.x==='date'||axes.y==='date')||!dates.length;
+    $('.sea-axis-hint',modal).textContent=[axes.x,axes.y].includes('ranking')?'Your ranking learns from comparisons. Photos without a measurement sit near the middle.':
+      [axes.x,axes.y].includes('quality')?'Photo quality is the analysis estimate. Photos without a measurement sit near the middle.':'Photos without a measurement sit near the middle. Stacks stay together.';
+    if(dates.length){const input=$('#sea-axis-day',modal);input.min=day(dates[0]);input.max=day(dates.at(-1));if(!input.value)input.value=input.min;$('small',dateForm).textContent=`${input.min} — ${input.max}`;}
+  }
+  function apply(){
+    axes=SeaAxes.normalize(axes);S.lib.settings={...S.lib.settings,sea_axes:axes};
+    const sea=World.sea;sea.axes=axes;if(sea.cameraOn){sea.releaseFocus();sea.resetCamera();}sea.sendBodies();
+    window.dispatchEvent(new Event('sea-axes'));paint();
+    const edit=++revision,snapshot={...axes};status.textContent='Saving…';
+    const task=seaAxisSaving.catch(()=>{}).then(()=>S.lib?.source===source?api('/api/settings',{sea_axes:snapshot}):null);seaAxisSaving=task;
+    task.then(reply=>{
+      if(reply&&S.lib?.source===source&&edit===revision&&SeaAxes.equal(S.lib.settings.sea_axes,snapshot)){
+        S.lib.settings={...S.lib.settings,sea_axes:reply.settings.sea_axes};status.textContent='Saved with this library';
+      }
+    }).catch(error=>{if(edit===revision)status.textContent=`Could not save: ${error.message}`;});
+  }
+  $$('[data-axis]',modal).forEach(select=>select.onchange=()=>{axes={...axes,[select.dataset.axis]:select.value};apply();});
+  $$('[data-axis-reverse]',modal).forEach(button=>button.onclick=()=>{const key=button.dataset.axisReverse==='x'?'reverseX':'reverseY';axes={...axes,[key]:!axes[key]};apply();});
+  $('[data-axis-reset]',modal).onclick=()=>{axes={...SeaAxes.defaults};apply();};
+  $$('[data-axis-close]',modal).forEach(button=>button.onclick=()=>modal.close());
+  dateForm.onsubmit=e=>{
+    e.preventDefault();const target=$('#sea-axis-day',modal).value;if(!target)return;
+    const stamp=new Date(`${target}T12:00:00`).getTime()/1000,closest=dates.reduce((best,p)=>Math.abs(p.measurements.date-stamp)<Math.abs(best.measurements.date-stamp)?p:best);
+    const pid=closest.rep||closest.id;modal.close();
+    if(World.sea.cameraOn){const it=World.sea.items.get(pid);if(it)World.sea.zoomToPrint(it);}
+    else{World.jumpPhoto={source,pid};location.hash='#home';}
+  };
+  modal.addEventListener('close',()=>{modal.removeAttribute('aria-labelledby');if(opener?.isConnected)opener.focus({preventScroll:true});},{once:true});
+  paint();modal.showModal();$('#sea-axis-x',modal).focus();
 }
 
 // The map is the sea. Its activities and cup choices live in the pause menu.
@@ -1287,13 +1353,17 @@ async function viewHome(main) {
   const nextStage=STAGES.find(([k])=>k===status.next);
   main.innerHTML=`<div class="screen map journey no-rail"><span hidden data-help="${esc('Explore the sea or choose a stage above. The coral Next button and Enter continue your journey. Activities, cups and trophies are in the menu.')}" aria-hidden="true"></span><div class="screen-body map-body"><div class="map-sea" aria-hidden="true"></div></div></div>`;
   setForward({label:`Next: ${nextStage?.[2]||'Reveal'} →`,name:nextStage?.[2]||'Reveal',href:status[status.next].go});
-  $('.map-body',main).insertAdjacentHTML('beforeend','<div class="map-census stat-chip" data-solid role="status"></div>');
+  $('.map-body',main).insertAdjacentHTML('beforeend','<div class="map-readout" data-solid><div class="map-census stat-chip" role="status"></div><button class="sea-axis-chip" id="sea-layout" aria-label="Change sea axes"></button></div>');
+  const axisChip=()=>{const axes=SeaAxes.normalize(S.lib?.settings?.sea_axes);$('#sea-layout',main).textContent=`↔ ${SeaAxes.label(axes.x)} · ↕ ${SeaAxes.label(axes.y)}`;};
+  $('#sea-layout',main).onclick=openSeaAxes;window.addEventListener('sea-axes',axisChip,{signal});axisChip();
   const census=()=>{
     const target=$('.map-census',main);if(!target)return;
     if(World.photosSource!==S.lib.source){target.textContent=`Loading ${fmt(World.photos?.size)} of ${fmt(World.total)} photos…`;return;}
     const prints=[...World.photos.values()].filter(p=>p.id===p.rep),stacks=prints.filter(p=>p.members.length>1).length;
     target.textContent=`${plural(World.photos.size,'photo')} · ${plural(stacks,'stack')} · ${fmt(prints.length-stacks)} loose`;
     target.title='Every photo is represented. Takes in the same stack overlap as one pile; loose photos have their own print.';
+    const jump=World.jumpPhoto,it=jump?.source===S.lib.source&&World.sea.items.get(jump.pid);
+    if(it){World.jumpPhoto=null;requestAnimationFrame(()=>{if(!left(view))World.sea.zoomToPrint(it);});}
   };
   window.addEventListener('world-ready',census,{signal});census();
   const sea=World.sea,catalog=sea.catalog;sea.catalog=false;sea.el.classList.add('home-world');
@@ -4872,7 +4942,7 @@ async function drawSorter(main, focus) {
     return `
     <h1>🗂️ Groups</h1>
     <span class="stat-chip" title="Shots in a group">${ring(b.total ? b.drawn / b.total : 0)}<b>${fmt(b.drawn)}</b>/ ${fmt(b.total)} grouped · ${plural(b.groups.length, "group")}</span>
-    <a class="btn ghost" href="#tags">Edit tags</a><button class="btn ghost" id="more-circles">${sea?.lassos_on===false?'Show group colours':'Hide group colours'}</button>
+    <a class="btn ghost" href="#tags">Edit tags</a><button class="btn ghost" id="more-circles">${Sea.on?'Hide sea colours':'Show sea colours'}</button>
     <button class="stat-chip chip-btn" id="tag-tray" title="Find a tag to focus">🏷️ <b>${fmt((b.allTags?.tags||T.tags).length)}</b> tags</button>
     <span class="grow"></span>
     ${viewToggle()}
@@ -5164,7 +5234,7 @@ async function drawSorter(main, focus) {
   }
   function bindSea() {
     const more = $("#more-circles", main);
-    if (more) more.onclick = () => { sea.outlines=sea.lassos_on===false;sea.lassos_on=sea.outlines;more.textContent=sea.outlines?'Hide group colours':'Show group colours';sea.geometryAt=0;sea.draw(sea.width,sea.height); };
+    if (more) more.onclick = () => Sea.toggle();
     $$("[data-mode]", main).forEach((x) => (x.onclick = () => setMode(x.dataset.mode)));
     $("#g-undo").onclick = () => drawUndo(() => load(true));
     $$("[data-sel-act]", main).forEach((x) => (x.onclick = () => selAct(x.dataset.selAct, x)));
@@ -6291,6 +6361,8 @@ const Sea = {
     this.on = !this.on;
     try { localStorage.setItem("matcher-sea", this.on ? "on" : "off"); } catch (_) { /* private mode */ }
     document.body.classList.toggle("sea-on", this.on);
+    if(World.sea){World.sea.coloursOn=this.on;World.sea.paintWater();}
+    const button=$('#more-circles');if(button)button.textContent=this.on?'Hide sea colours':'Show sea colours';
     if (this.on) this.scan(); else { this.blobs = []; this.emitters.clear(); this.draw(); }
   },
   scanSoon() {
@@ -6350,8 +6422,14 @@ const Sea = {
   },
   // Which photos are on screen now: new ones bleed blobs out, gone ones let theirs fade, a new photo in the same spot
   // recolours the blobs it finds there.
+  hasWorldSurface(){return World.mode!=='hidden'&&World.sea?.coloursOn!==false&&!!World.sea?.contourRaster?.nonempty;},
   scan() {
     if (!this.on || !this.canvas) return;
+    // The photo sea already fills the viewport. A second, hidden colour animation only consumes battery and
+    // can leak unrelated colours through a dimmed screen; the older wash remains for pages without the world.
+    if(this.hasWorldSurface()){
+      cancelAnimationFrame(this.raf);this.raf=0;this.blobs=[];this.emitters.clear();this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);return;
+    }
     const found = [];
     for (const img of $$("#main img, dialog[open] img")) {
       const r = shownRect(img);
@@ -6380,11 +6458,12 @@ const Sea = {
     if (reduceMotion) this.draw(); else this.kick();
   },
   kick() {
-    if (!this.raf && this.on && !reduceMotion && !document.hidden && this.blobs.length) this.raf = requestAnimationFrame((t) => this.frame(t));
+    if (!this.raf && this.on && !reduceMotion && !document.hidden && this.blobs.length&&!this.hasWorldSurface()) this.raf = requestAnimationFrame((t) => this.frame(t));
   },
   frame(now) {
     this.raf = 0;
     if (!this.on || document.hidden) return;
+    if(this.hasWorldSurface()){this.scan();return;}
     if (this.last && now - this.last < 30) { this.kick(); return; }  // ~30 frames a second is plenty for a slow sea
     const dt = Math.min(3, this.last ? (now - this.last) / 16.67 : 1);
     this.last = now;
@@ -6445,6 +6524,7 @@ const World = {
     if (!this.el) return;
     this.el.removeAttribute("aria-hidden");
     this.sea = new VennSea(this.el, {catalog:true});
+    this.sea.coloursOn=Sea.on;
     this.plain = { clickToZoom:true,onSelect: (it, e) => { if (e?.shiftKey) { it.selected = !it.selected; this.sea.select([...this.sea.items.values()].filter((x) => x.selected).map((x) => x.id)); } else this.inspect(it.id); },
       onDrop:(ids,target)=>this.drop(ids,target),
       onCircle:(key,anchor)=>this.tagMenu(key,anchor),onLasso:(id,anchor)=>{if(id.startsWith("gcup:"))return this.tagMenu(`kind:${id.slice(5)}`,anchor);location.hash=id==="gcut"?"#cuts":`#draw?g=${id.slice(1)}`;} };
@@ -6487,6 +6567,7 @@ const World = {
     document.body.classList.toggle('sea-focus',!!this.sea?.el.classList.contains('has-focus'));
     const body=$('#main .screen-body');if(body)body.inert=mode==='ambient'&&!!this.sea?.el.classList.contains('has-focus');
     if (this.sea) {
+      this.sea.axes=SeaAxes.normalize(S.lib?.settings?.sea_axes);
       // The map and the editors are explorable (pan and zoom); a comparison or a page uses the whole sea at rest.
       this.sea.enableCamera(mode==='ambient'||mode==='live');
       // The tag shelf belongs to the editors (Groups, Filter): reading and comparison screens keep the bottom edge clear.
@@ -6497,7 +6578,7 @@ const World = {
       }
       this.sea.highlight(null);
       for(const l of this.sea.lassos.values())l.docked=false;
-      this.sea.lassos_on=mode!=='hidden'&&this.sea.outlines!==false;this.sea.paused=mode==='hidden'||S.pause?.view===S.view;
+      this.sea.paused=mode==='hidden'||S.pause?.view===S.view;
       if(mode==='hidden'){
         cancelAnimationFrame(this.sea.raf);this.sea.raf=0;
         this.sea.dock?.classList.remove('tag-dock');this.sea.dock=null;this.sea.el.append(this.sea.tray);this.sea.tray.hidden=true;
@@ -6596,12 +6677,12 @@ const World = {
     try { await loading; } finally { if(this.photoLoading===loading)this.photoLoading = null; }
   },
   extras(items) {
-    for(const it of items)it.visual ||= this.photos?.get(it.photo||it.id)?.visual;
+    for(const it of items){const photo=this.photos?.get(it.photo||it.id);it.visual ||= photo?.visual;it.measurements ||= photo?.measurements;}
     const have = new Set(items.map((x) => x.id)), covers=new Map(items.map((x)=>[x.id,x]));
     for (const p of this.photos?.values() || []) if (!have.has(p.id)) {
       const rep=covers.get(p.rep), group=p.cut?"cut":p.theme>=0?p.theme:p.category?`cup:${p.category}`:null;
       const it={id:p.id,photo:p.id,tags:p.tags||[],group:rep?rep.group:group,sugg:rep?.sugg,
-        n:p.members.length,members:p.members,rep:p.rep,category:p.category,cut:!!p.cut,take:p.rep!==p.id,box:p.box,visual:p.visual,dims:p.dims};
+        n:p.members.length,members:p.members,rep:p.rep,category:p.category,cut:!!p.cut,take:p.rep!==p.id,box:p.box,visual:p.visual,measurements:p.measurements,dims:p.dims};
       items.push(it);if(p.rep===p.id)covers.set(p.id,it);
     }
     return items;

@@ -1,0 +1,34 @@
+/* A compact chart key, on the same scrap as the count. Its full controls live on one small ruled sheet. */
+.map-readout { position:fixed;left:max(16px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));z-index:6;display:grid;justify-items:start;gap:5px;max-width:calc(100% - 92px);pointer-events:auto; }
+.map-readout .map-census { position:static;max-width:100%;margin:0;padding:5px 12px;font-size:17px;line-height:1.3; }
+.sea-axis-chip { min-height:32px;max-width:100%;padding:4px 11px;color:var(--ink);background:var(--paper);border:var(--scrap-border);border-radius:var(--scrap-round);box-shadow:var(--scrap-shadow);font:700 16px/1.25 var(--hand);text-align:left;cursor:pointer; }
+.sea-axis-chip:hover,.sea-axis-chip:focus-visible { background:var(--highlight); }
+#modal.sea-axis-dialog { box-sizing:border-box;margin:auto auto 22px 20px;width:min(390px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:20px 22px 14px 34px;border:var(--scrap-border);border-radius:var(--scrap-round);box-shadow:var(--scrap-shadow);background:var(--margin),var(--ruled) 0 7px / 100% 26px,var(--paper);overflow:auto; }
+#modal.sea-axis-dialog::backdrop { background:#100b0714;backdrop-filter:none; }
+.sea-axis-head { display:flex;justify-content:space-between;align-items:center;gap:12px; }
+.sea-axis-head h2 { margin:0;line-height:1.1;font-size:32px; }
+.sea-axis-head .icon { flex:none;min-width:40px;min-height:40px; }
+.sea-axis-kicker { color:var(--pencil);font-size:13px; }
+.sea-axis-intro { margin:14px 0 18px;font-size:17px;line-height:1.5; }
+.sea-axis-fields { display:grid;gap:18px; }
+.sea-axis-field { display:grid;grid-template-columns:1fr auto;gap:3px 8px; }
+.sea-axis-field label { display:flex;align-items:baseline;gap:8px;grid-column:1/-1;margin:0;color:var(--ink);font-size:16px; }
+.sea-axis-field label b { color:var(--accent);font:700 25px/1 var(--hand); }
+.sea-axis-field select { grid-column:1/-1;width:100%;min-width:0;min-height:40px;background:var(--paper);font-size:22px; }
+.sea-axis-direction { grid-column:1/-1;justify-self:start;min-height:32px;padding:3px 0;color:var(--pencil);background:none;border:0;font:17px/1.3 var(--font);cursor:pointer; }
+.sea-axis-direction:hover { color:var(--accent); }
+.sea-axis-hint { margin:16px 0;color:var(--pencil);font-size:14px;line-height:1.5; }
+.sea-axis-date { margin:16px 0;padding-top:10px;border-top:1px dashed var(--line); }
+.sea-axis-date label { margin:0 0 5px;color:var(--ink);font-size:17px; }
+.sea-axis-date > div { display:flex;gap:10px;align-items:center; }
+.sea-axis-date input { min-width:0;min-height:40px;flex:1;padding:4px;border:0;border-bottom:1px solid var(--ink);color:var(--ink);background:var(--paper);font:16px var(--font); }
+.sea-axis-date small { display:block;margin-top:6px;color:var(--pencil);font-size:13px; }
+.sea-axis-footer { display:flex;justify-content:space-between;align-items:center;gap:16px;padding-top:8px; }
+.sea-axis-footer .btn { min-height:40px; }
+.sea-axis-status { min-height:20px;margin:10px 0 0;color:var(--pencil);font-size:13px; }
+@media(max-width:600px){
+  .map-readout { left:10px;bottom:max(10px,env(safe-area-inset-bottom));gap:4px; }
+  .map-readout .map-census { font-size:15px;padding:4px 8px; }
+  .sea-axis-chip { font-size:15px;min-height:36px;padding:4px 8px; }
+  #modal.sea-axis-dialog { margin:auto auto 12px;width:calc(100vw - 24px);max-height:calc(100dvh - 24px); }
+}

@@ -67,6 +67,15 @@
   .screen.sorter #venn-rail { overflow-x:hidden; overflow-y:auto; scroll-padding-block:6px; overscroll-behavior:contain; }
   .screen.sorter #venn-rail > .rail-card { flex:0 0 auto; max-height:none; overflow:visible; padding:8px; }
   .screen.sorter #venn-rail .bins { flex:none; grid-auto-flow:row; grid-template-columns:minmax(0,1fr); grid-auto-columns:auto; overflow:visible; padding:0; }
+  /* The tile editor has the same group roster as the sea editor. Both scroll down on a phone; a second column
+     would hide New group beyond the edge of its paper. */
+  .screen.sorter > .screen-rail.bins-wrap { max-height:180px;overflow:hidden; }
+  .screen.sorter > .screen-rail.bins-wrap .bins { grid-auto-flow:row;grid-template-columns:minmax(0,1fr);grid-auto-columns:auto;overflow-x:hidden;overflow-y:auto; }
+  .screen.sorter > .screen-rail.bins-wrap .bin[role=group] { grid-template-columns:minmax(0,1fr) 44px 44px;gap:3px;padding:5px; }
+  .screen.sorter > .screen-rail.bins-wrap .bin-place { grid-column:1;grid-row:1;min-height:54px;padding:3px; }
+  .screen.sorter > .screen-rail.bins-wrap .bin-emoji { grid-column:2;grid-row:1; }
+  .screen.sorter > .screen-rail.bins-wrap .bin-edit { grid-column:3;grid-row:1; }
+  .screen.sorter > .screen-rail.bins-wrap :is(.bin-emoji,.bin-edit) { min-width:44px;min-height:44px; }
   .screen.sorter #venn-rail .sugg { grid-template-columns:24px minmax(0,1fr) auto; gap:5px; }
   .screen.sorter #venn-rail .sugg-card h3 { margin-bottom:6px; font-size:12px; }
   .screen.sorter #venn-rail .btn, .screen.sorter #venn-rail .bin-place, .screen.sorter #venn-rail .bin-emoji,

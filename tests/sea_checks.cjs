@@ -445,16 +445,6 @@ test('holding all members keeps their group control available',()=>{
   const [group]=seaContours([{label:'dogs',fixed:true,x:50,y:50,size:30}],1200,750);
   assert.equal(group.count,1);assert.deepEqual(group.paths,[]);
 });
-test('group pigment joins nearby prints without the old three-body or purity cutoff',()=>{
-  const {seaContours}=require('../matcher/static/sea-contours.js'),items=[{id:1,label:'g',x:150,y:200,size:12},{id:2,label:'g',x:200,y:200,size:12},{id:3,label:'other',x:150,y:200,size:12}];
-  const regular=seaContours(items,1000,700),wash=seaContours(items,1000,700,null,0,true);
-  assert(regular.every(shape=>!shape.paths.length),'A pair has no compact drop shore');
-  assert(wash.every(shape=>shape.paths.length&&shape.opacity===1),'Even intermingled groups contribute their full pigment');
-  assert.equal(wash.find(shape=>shape.id==='g').paths.length,1,'Nearby pigments meet instead of becoming isolated halos');
-  const distant=seaContours(items.map(it=>({...it,x:it.x+(it.id===2?600:0)})),1000,700,null,0,true);
-  assert.equal(distant.find(shape=>shape.id==='g').paths.length,2,'Distant gatherings leave the intervening water open');
-});
-
 test('steering carries momentum through a sudden reversal and pins still stop immediately',()=>{
   const f=field([{tags:[],x:600,y:375,baseSize:8}]);let direction=1;
   f.avoid=()=>[direction*.12,0];
@@ -600,26 +590,110 @@ test('lasso controls preserve meaning across new descriptors and relayout only w
   assert.equal(layouts,2);assert(!sea.tray.hidden);assert.equal(row.children.size,1);
 });
 
-test('group pigment crossfades cached bitmaps without retracing shores',()=>{
-  const fs=require('node:fs'),vm=require('node:vm'),frames=[],paint=[];let now=0,vertices=0,canvases=0;
+test('the continuous colour surface crossfades cached bitmaps without rebuilding fields or tracing shores',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),frames=[],paint=[];let now=0,vertices=0,canvases=0,fields=0;
   const ctx={globalAlpha:1,setTransform(){},clearRect(){},save(){},restore(){},beginPath(){},rect(){},clip(){},
     moveTo(){},quadraticCurveTo(){vertices++;},closePath(){},fill(){},setLineDash(){},stroke(){},drawImage(){paint.push(this.globalAlpha);}};
   const proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype',{
     window:{devicePixelRatio:1},document:{hidden:false,createElement(){canvases++;return{getContext:()=>({...ctx})};}},
-    reduceMotion:false,performance:{now:()=>now},requestAnimationFrame:fn=>{frames.push(fn);return frames.length;}
+    reduceMotion:false,performance:{now:()=>now},requestAnimationFrame:fn=>{frames.push(fn);return frames.length;},
+    SeaPigments:{field(){fields++;return{w:120,h:75,canvas:{width:120,height:75},pixels:{data:new Uint8ClampedArray(120*75*4)}};}}
   });
   const row={},tag={hidden:false,parentElement:row},l={tag,colour:[100,140,180],kind:'group'},shape=(key,x)=>({key,count:3,opacity:1,paths:[[[x,0],[x+20,0],[x+20,20],[x,20]]]});
   const sea=Object.assign(Object.create(proto),{alive:true,paused:false,ctx,canvas:{style:{}},width:1200,height:750,tagRow:row,lassos:new Map([['g',l]]),
-    contours:new Map([['g',shape('a',100)]]),generation:1,contourCountsGeneration:1,contourCounts:new Map([['g',3]]),catalogTabStop(){}});
-  sea.draw(1200,750);assert.equal(frames.length,1);assert.equal(paint.length,0);assert.equal(vertices,4);
-  now=110;frames.shift()();assert.equal(paint.at(-1),.5);assert.equal(vertices,4,'Fade frames must not tessellate the geometry again');
-  now=220;frames.shift()();assert.equal(paint.at(-1),1);assert.equal(frames.length,0);
-  now=300;sea.contours.set('g',shape('b',110));sea.draw(1200,750);assert.equal(vertices,8);
-  now=410;paint.length=0;frames.shift()();assert.deepEqual(paint,[.5,.5]);assert.equal(vertices,8);
+    contours:new Map([['g',shape('a',100)]]),generation:1,colourGeneration:1,contourCountsGeneration:1,contourCounts:new Map([['g',3]]),catalogTabStop(){},
+    items:new Map([[1,{x:100,y:200}]]),bodyPigments:new Map([[1,[{rgb:l.colour,weight:1}] ]])});
+  sea.draw(1200,750);assert.equal(frames.length,0);assert.equal(paint.at(-1),1);assert.equal(fields,1);
+  now=110;sea.draw(1200,750);assert.equal(fields,1,'An unchanged scene reuses the local colour field');
+  now=300;sea.items.get(1).x=110;sea.draw(1200,750);assert.equal(fields,2);assert.equal(frames.length,1);
+  now=410;sea.items.get(1).x=120;paint.length=0;frames.shift()();assert.deepEqual(paint,[1,.5]);assert.equal(fields,2,'Even moving photos cannot make a fade resample the library');
   now=520;frames.shift()();assert.equal(frames.length,0);assert.equal(sea.contourRaster.previous,null);
-  now=525;sea.contours.set('g',shape('b',110));sea.draw(1200,750);assert.equal(vertices,8,'An unchanged worker shore reuses its raster even with a new message object');
+  now=525;sea.contours.set('g',shape('b',110));sea.draw(1200,750);assert.equal(fields,2,'Group outlines do not cut or recolour the continuous surface');
   l.still=true;now=530;sea.draw(1200,750);assert.equal(paint.at(-1),1,'Hover highlighting is immediate');assert.equal(frames.length,0);
+  assert.equal(vertices,0,'Colours never trace group shores');
+  now=610;sea.draw(1200,750);assert.equal(fields,3,'New positions are sampled at a bounded cadence');
   assert.equal(canvases,2,'Subsequent geometry and hover redraws reuse two viewport-sized buffers');
+});
+
+test('photo palettes retain actual dark colours without inventing a hue or following tiny highlights',()=>{
+  const pigments=require('../matcher/static/sea-pigments.js'),purple=[68,18,112],black=[9,8,12],white=[240,240,240];
+  const sample=colours=>pigments.sample({width:16,height:16,data:new Uint8ClampedArray(colours.flatMap(([rgb,count])=>Array.from({length:count},()=>[...rgb,255]).flat()))},0,0,16,16);
+  const dark=sample([[black,152],[purple,100],[white,4]]);
+  assert.deepEqual(dark.palette[0].rgb,purple,'A pool of purple light survives the dark background and a few bright highlights');
+  for(const p of dark.palette)assert([purple,black,white].some(rgb=>rgb.every((n,i)=>n===p.rgb[i])),'Every palette colour is a sampled pixel');
+  const mono=sample([[[64,64,64],128],[[128,128,128],128]]);
+  assert(mono.palette.every(p=>p.rgb[0]===p.rgb[1]&&p.rgb[1]===p.rgb[2]),'A genuinely neutral photograph remains neutral');
+  const opposite=[{palette:[{bin:pigments.family(240,180,20),rgb:[240,180,20],weight:1}]},{palette:[{bin:pigments.family(...purple),rgb:purple,weight:1}]}];
+  assert.deepEqual(pigments.merge(opposite),pigments.merge([...opposite].reverse()),'Opposing families remain separate and stable in either order');
+  assert.equal(pigments.merge(opposite).length,2);
+});
+
+test('local pigments follow nearby photos and reuse bounded storage across camera and colour changes',()=>{
+  const pigments=require('../matcher/static/sea-pigments.js'),W=960,H=600,w=96,h=60,purple=[68,18,112],gold=[236,172,32],
+    canvas={},ctx={putImageData(){}},field={w,h,canvas,ctx,pixels:{data:new Uint8ClampedArray(w*h*4)},votes:new Float32Array(w*h*pigments.bins*4)},
+    spot=(x,rgb)=>({x,y:300,size:70,palette:[{bin:pigments.family(...rgb),rgb,weight:1}]}),
+    spots=[spot(150,gold),spot(700,purple),spot(1500,gold)],camera={zoom:1,tx:0,ty:0},
+    pixel=(f,x,y)=>Array.from(f.pixels.data.slice((Math.floor(y/H*h)*w+Math.floor(x/W*w))*4,(Math.floor(y/H*h)*w+Math.floor(x/W*w))*4+3));
+  const a=pigments.field(spots,W,H,camera,field),first=Array.from(a.pixels.data);
+  assert.deepEqual(pixel(a,150,300),gold);assert.deepEqual(pixel(a,700,300),purple,'Distant warm photos cannot bleach a local purple patch');
+  assert(first.every((n,i)=>i%4!==3||n===255),'Photo colours extrapolate into every empty cell without a background');
+  pigments.field([...spots].reverse(),W,H,camera,field);assert.deepEqual(Array.from(field.pixels.data),first);
+  const votes=field.votes,pixels=field.pixels;
+  assert.equal(pigments.field(spots,W,H,{zoom:2,tx:-700,ty:-300},field),field);
+  assert.equal(field.canvas,canvas);assert.equal(field.votes,votes);assert.equal(field.pixels,pixels);
+  assert.deepEqual(pixel(field,700,300),purple,'The colour field follows the same camera as the prints');
+  pigments.field([spot(350,gold),spot(610,purple)],W,H,camera,field);
+  const seam=pixel(field,480,300);assert(seam.every((n,i)=>n>Math.min(gold[i],purple[i])&&n<Math.max(gold[i],purple[i])),'The colours blend where their local regions overlap');
+  pigments.field([spot(1500,purple)],W,H,camera,field);
+  assert.deepEqual(pixel(field,0,0),purple,'Panning beyond the photos extrapolates their colour into the whole view');
+  const close=[{...spot(700,purple),size:6},...Array.from({length:20},(_,i)=>({...spot(713+i*.02,gold),size:6}))];
+  pigments.field(close,W,H,{zoom:90,tx:W/2-700*90,ty:H/2-300*90},field);
+  assert.deepEqual(pixel(field,W/2,H/2),purple,'Off-screen neighbours cannot outvote the photo filling a close-up');
+});
+
+test('water has deforming pockets and neighbouring currents instead of a shared vertical bounce',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';PhotoSea.prototype');
+  const sea=Object.assign(Object.create(proto),{tuning:require('../matcher/static/sea-tuning.js').seaTuningDefaults(),waveTime:0});
+  const sample=(x,y)=>sea.waveSample(sea.waveBasis(x,y));
+  const first=[];let right=0,left=0,up=0,down=0,pockets=0;
+  for(let y=20;y<1500;y+=30)for(let x=20;x<1800;x+=30){
+    const [dx,dy,foam]=sample(x,y);right+=dx>.25;left+=dx<-.25;up+=dy<-.25;down+=dy>.25;
+    assert(Math.hypot(dx,dy)<=1,'The visual current stays inside its displacement budget');
+    if(foam<.15&&[sample(x-100,y),sample(x+100,y),sample(x,y-100),sample(x,y+100)].filter(p=>p[2]>.45).length>=3)pockets++;
+    first.push({x,y,dx,dy,foam});
+  }
+  assert(right>100&&left>100&&up>100&&down>100,'The field has local motion in every direction');
+  assert(pockets>0,'Foam surrounds pockets in two dimensions');
+  sea.waveTime=28000;
+  const changed=first.filter(p=>{const next=sample(p.x,p.y);return Math.abs(p.foam-next[2])>.2;});
+  assert(changed.length>first.length*.3,'One nominal period does not return the sea to the same pattern');
+  const near=first.find(p=>p.foam<.2&&sample(p.x,p.y)[2]>.6);assert(near,'Pocket edges drift through world space over time');
+});
+
+test('each sea axis can use a saved measurement, reverse direction and leave current positions intact',()=>{
+  const axes=require('../matcher/static/sea-axes.js'),f=new SeaField(),items=[1,2,3].map((id,i)=>({id,x:200+i*300,y:300,baseSize:30,tags:[],visual:{colorfulness:.1+i*.3,brightness:.3+i*.2,hue:.2+i*.25},measurements:{date:100+i*100,ranking:9-i*3,quality:i}})),
+    set=choice=>f.set({generation:1,width:1200,height:750,calm:true,items,tuning:{...MECHANICS,jitter:0},axes:choice});
+  set(axes.defaults);const geography=f.items.map(it=>[it.x,it.y]),base=f.items.map(it=>({...it.home}));f.settled=true;
+  set({x:'date',y:'ranking'});
+  assert.deepEqual(f.items.map(it=>[it.x,it.y]),geography,'Changing axes gives new soft homes instead of teleporting photos');
+  assert(f.items[0].home.x<f.items[1].home.x&&f.items[1].home.x<f.items[2].home.x,'Dates run from old to new across X');
+  assert(f.items[0].home.y<f.items[1].home.y&&f.items[1].home.y<f.items[2].home.y,'Higher ranking runs up Y');
+  assert.equal(f.settled,false);
+  set({x:'date',y:'ranking',reverseX:true,reverseY:true});
+  assert(f.items[0].home.x>f.items[2].home.x&&f.items[0].home.y>f.items[2].home.y);
+  set({x:'quality',y:'faces'});assert(f.items.every(it=>Number.isFinite(it.home.x)&&Number.isFinite(it.home.y)),'Missing measurements sit in the middle');
+  assert(f.items.every(it=>Math.abs(it.home.y-375)<1e-8));
+  set(axes.defaults);assert.deepEqual(f.items.map(it=>it.home),base,'Reset restores the familiar colourfulness/brightness geography');
+  assert.deepEqual(axes.normalize({x:'made-up',y:null,reverseX:'false'}),axes.defaults);
+});
+
+test('custom sea axes keep Filter admission on X, preserve manual placement until a deliberate rearrange and stay asleep on resend',()=>{
+  const f=field([{visual:{colorfulness:.8,brightness:.7},measurements:{date:30}}]),items=f.items.map(it=>({...it}));
+  const set=axes=>f.set({generation:2,width:1200,height:750,items,calm:true,tuning:MECHANICS,axes});
+  set({x:'date',y:'hue'});f.items[0].placed={x:400,y:250};set({x:'date',y:'hue'});assert.deepEqual(f.items[0].home,{x:400,y:250});
+  set({x:'hue',y:'date'});assert.equal(f.items[0].placed,null,'A new arrangement releases hand-placed overrides from the old axes');
+  f.outcomes({scores:{1:.8},threshold:.5});assert(Math.abs(f.items[0].home.x-902.4)<.01,'Filter still places admission fit along X');
+  f.settled=true;set({x:'hue',y:'date'});assert(f.settled,'Sending the same axes and measurements again cannot restart the sea');
 });
 
 test('contour cache keys change when equal shores move in opposite directions',()=>{
@@ -641,11 +715,12 @@ test('destroying a sea cancels its fade and releases both raster buffers',()=>{
   const proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype',{
     document:{removeEventListener(){}},clearTimeout(){},cancelAnimationFrame:id=>cancelled.push(id)
   });
-  const current={width:2400,height:1500},spare={width:2400,height:1500};
+  const current={width:2400,height:1500},spare={width:2400,height:1500},pigment={width:120,height:75},water={width:96,height:60};
   const sea=Object.assign(Object.create(proto),{alive:true,items:new Map(),paintRaf:18,contourFadeRaf:19,raf:20,contourRaster:{current,spare,previous:spare},
-    worker:{terminate(){}},tray:{remove(){}},events:{abort(){}},ro:{disconnect(){}}});
+    pigmentField:{canvas:pigment},waterField:{canvas:water},worker:{terminate(){}},tray:{remove(){}},events:{abort(){}},ro:{disconnect(){}}});
   sea.destroy();assert.deepEqual(cancelled,[18,19,20]);assert.equal(sea.contourFadeRaf,null);assert.equal(sea.contourRaster,null);
   assert.equal(current.width+current.height+spare.width+spare.height,0);assert.equal(sea.alive,false);
+  assert.equal(pigment.width+pigment.height+water.width+water.height,0);assert.equal(sea.pigmentField,null);assert.equal(sea.waterField,null);
 });
 
 test('assigned group neighbours gather despite unlike tags and continue roaming with a print buffer',()=>{

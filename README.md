@@ -90,11 +90,18 @@ During analysis, scroll over the sea to zoom, drag open water to pan, and double
 again. Refreshing restores the photos and discoveries already shown. Restarting MatchER resumes saved analysis,
 including its completed photo count, without reading those photos again.
 
-The open sea has crossing slow swells, with fine ripples gathering on their crests. Groups tint the water beneath
-their photos with their average hue, saturation and brightness; the same waves pass through the colour and the
-prints. Photos keep their places, the water pauses when you reach for a print, and close-ups become steady for
+The open sea undulates in drifting foam-like pockets, with small folds along their edges and neighbouring currents
+moving in different directions. Palettes sampled from nearby photos extend into the whole sea, blending where
+neighbouring colours overlap. Deep purples stay purple, and distant photos in the same group do not wash them out.
+There is no separate background between patches. The same currents carry the colour and the prints.
+Photos keep their underlying places, the water pauses when you reach for a print, and close-ups become steady for
 reading and editing.
 Reduced-motion preferences still the waves; the developer panel adjusts their height, speed, spacing and ripples.
+
+The small axis key below the photo count changes what X and Y mean: colourfulness, brightness, hue, saturation,
+capture date, photo quality, your ranking, sharpness, aspect ratio or faces in the photo. Either axis can run in
+reverse. Choices stay with the save; Reset axes restores the original layout. A date axis also offers a jump to
+any day in the library. These controls are also under **Menu → Picture & sound → Sea axes**.
 
 ## Help build it
 

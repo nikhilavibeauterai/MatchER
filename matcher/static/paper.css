@@ -118,7 +118,7 @@ body.sea-on .controls .btn.ghost, .filter-review-controls .btn, body.sea-on #vie
 #topbar .save-chip .xpbar { background: #0001; } .xpbar i { background: var(--marker); }
 #topbar .menu-btn, #game-help { border-radius: 50% 48% 52% 50% / 48% 52% 48% 52%; color: var(--ink); }
 #game-help[aria-pressed=true] { background: var(--highlight); border-color: var(--ink); color: var(--ink); }
-#game-help-hint { color: var(--ink); background: transparent; border: 0; box-shadow: none; font-size: 18px; padding: 0 12px; }
+#game-help-hint { color: var(--ink); background: var(--paper); border: 0; border-radius:var(--scrap-round);box-shadow:0 2px 7px #0003;font-size:16px;padding:3px 12px; }
 .reward-note { color: var(--ink); background: var(--highlight); }
 .reward-note:hover { background: var(--highlight); border-color: var(--ink); }
 

@@ -2001,9 +2001,21 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
             if not isinstance(b["help"], bool):
                 abort(400, "help must be true or false.")
             cur["help"] = b["help"]
-            if set(b) == {"help"}:
-                s.store.set_meta("settings", {**(s.store.get_meta("settings", {}) or {}), "help": b["help"]})
-                return jsonify(settings=cur)
+        if "sea_axes" in b:
+            axes = b["sea_axes"]
+            choices = {"colorfulness", "brightness", "hue", "saturation", "date", "quality", "ranking", "sharpness", "aspect", "faces"}
+            if not isinstance(axes, dict) or set(axes) - {"x", "y", "reverseX", "reverseY"}:
+                abort(400, "Choose the sea's horizontal and vertical axes.")
+            if any(not isinstance(axes.get(key), str) or axes[key] not in choices for key in ("x", "y")):
+                abort(400, "Choose a known measurement for each sea axis.")
+            if any(key in axes and not isinstance(axes[key], bool) for key in ("reverseX", "reverseY")):
+                abort(400, "Axis direction must be true or false.")
+            cur["sea_axes"] = {key: axes[key] for key in ("x", "y")}
+            cur["sea_axes"].update({key: axes.get(key, False) for key in ("reverseX", "reverseY")})
+        if b and set(b) <= {"help", "sea_axes"}:
+            # Display preferences never rebuild analysis, stacks, rankings or the user's undo history.
+            s.store.set_meta("settings", {**(s.store.get_meta("settings", {}) or {}), **{key: cur[key] for key in b}})
+            return jsonify(settings=cur)
         for key, lo, hi in (("finalists", 10, 100), ("per_scene", 1, 10), ("max_age_years", 0, 30)):
             if key in b:
                 cur[key] = int(min(hi, max(lo, int(b[key]))))
@@ -3271,19 +3283,26 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         _need(s)
         after = max(0, int(request.args.get("after", 0)))
         per = max(1, min(1000, int(request.args.get("per", 400))))
-        rows = s.store.q("SELECT id, group_id, theme_id, category, cut, override, flags, width, height, luma, chroma, saturation, hue FROM photos "
+        rows = s.store.q("SELECT id, group_id, theme_id, category, cut, override, flags, width, height, luma, chroma, saturation, hue, "
+                         "taken, taken_ts, prior, sharp, n_faces FROM photos "
                          "WHERE id>? AND status IN ('analyzed','error') ORDER BY id LIMIT ?", (after, per + 1))
         more, part = len(rows) > per, rows[:per]
         sets = tags.effective(s.store, [r["id"] for r in part])
         out = []
         for r in part:
             g = s.groups.get(r["group_id"], {})
+            index = s.gidx.get(r["group_id"])
+            appeal = float(s.ranker.post.mu[index]) if index is not None and s.ranker.post is not None else None
             out.append({"id": r["id"], "gid": r["group_id"], "rep": g.get("rep", r["id"]),
                         "members": g.get("members", [r["id"]]) if g.get("rep") == r["id"] else [r["id"]],
                         "theme": r["theme_id"] if r["theme_id"] is not None else -1,
                         "category": r["category"], "cut": r["cut"], "tags": sorted(sets.get(r["id"], [])),
                         "rescued": r["override"] == "keep", "box": s.view.get(r["id"], {}).get("box"),
                         "dims": [r["width"] or 1, r["height"] or 1],
+                        "taken": r["taken"],
+                        "measurements": {"date": r["taken_ts"], "quality": r["prior"], "sharpness": r["sharp"],
+                                         "ranking": appeal, "faces": r["n_faces"],
+                                         "aspect": r["width"] / r["height"] if r["width"] and r["height"] else None},
                         "visual": visual.descriptor(r["luma"], r["chroma"], r["saturation"], r["hue"])})
         total = s.store.one("SELECT COUNT(*) AS n FROM photos WHERE status IN ('analyzed','error')")["n"]
         return jsonify(photos=out, after=part[-1]["id"] if part else after, more=more, total=total,

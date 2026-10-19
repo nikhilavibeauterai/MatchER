@@ -15,8 +15,8 @@ class SpriteLayer {
     layout(location=3) in vec4 look;   // opacity, then the card's three wobble randoms
     layout(location=4) in float aspect;
     layout(location=5) in float depth;
-    layout(location=6) in vec4 swell;   // shared stack spatial pairs for the two broad swells
-    layout(location=7) in vec3 ripple;  // fine wave's spatial pair, then the stack width
+    layout(location=6) in vec4 swell;   // shared stack spatial pairs for the two pocket axes
+    layout(location=7) in vec3 ripple;  // drifting warp's spatial pair, then the stack width
     uniform vec2 view;                 // the sea's size (css px)
     uniform vec3 cam;                  // zoom, tx, ty
     uniform float time;                // ms
@@ -40,11 +40,15 @@ class SpriteLayer {
         float a = swell.x * travel[0].y - swell.y * travel[0].x, ac = swell.y * travel[0].y + swell.x * travel[0].x;
         float b = swell.z * travel[1].y - swell.w * travel[1].x, bc = swell.w * travel[1].y + swell.z * travel[1].x;
         float c = ripple.x * travel[2].y - ripple.y * travel[2].x, cc = ripple.y * travel[2].y + ripple.x * travel[2].x;
-        float h = a * 0.7 + b * 0.3, crest = (h + 0.26 * h * h - 0.13) / 1.13, warp = h * 0.55;
-        float turn = 1.0 / (1.0 + warp * warp), s = 2.0 * warp * turn, co = (1.0 - warp * warp) * turn;
-        float gain = 0.18 + 0.82 * max(0.0, h) * max(0.0, h);
-        lift = vec2(0.18 * (ac * 0.7 - bc * 0.3) + waves.y * 0.16 * gain * (cc * co - c * s),
-                    crest + waves.y * gain * (c * co + cc * s)) * amplitude / (1.0 + waves.y);
+        float wa = b * 0.5 + c * 0.35, wb = a * 0.45 - cc * 0.3;
+        float ta = 1.0 / (1.0 + wa * wa), tb = 1.0 / (1.0 + wb * wb);
+        float A = a * (1.0 - wa * wa) * ta + ac * 2.0 * wa * ta, Ac = ac * (1.0 - wa * wa) * ta - a * 2.0 * wa * ta;
+        float B = b * (1.0 - wb * wb) * tb + bc * 2.0 * wb * tb, Bc = bc * (1.0 - wb * wb) * tb - b * 2.0 * wb * tb;
+        float pocket = A * B + 0.28 * c, ridge = max(0.0, 1.0 - abs(pocket) * 1.4);
+        float fine = A * (3.0 - 4.0 * A * A) * Bc * (4.0 * Bc * Bc - 3.0);
+        float cross = Ac * (4.0 * Ac * Ac - 3.0) * B * (3.0 - 4.0 * B * B), gain = 0.2 + 0.8 * ridge * ridge;
+        lift = vec2(0.68 * Ac * B + 0.22 * c + waves.y * 0.12 * gain * cross,
+                    -0.68 * A * Bc + 0.22 * cc + waves.y * 0.12 * gain * fine) * amplitude / (1.0 + waves.y * 0.15);
       }
       vec2 screen = (pos.xy + lift + r) * cam.x + cam.yz;
       gl_Position = vec4(screen.x / view.x * 2.0 - 1.0, 1.0 - screen.y / view.y * 2.0, depth, 1.0);

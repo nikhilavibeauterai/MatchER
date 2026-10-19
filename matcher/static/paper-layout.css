@@ -1,0 +1,14 @@
+/* Floating tools keep their corners; the page leaves enough room to reach its own actions. */
+body[data-world=ambient] #world { opacity:1; }
+@media(max-width:760px){
+  #main :is(.screen-bar,.controls) { padding-right:62px; }
+  #main #view-duel > #controls { padding-right:62px; }
+  body:has(#main :is(.screen-bar,.controls):not(:empty)) #toolbelt { bottom:calc(150px + env(safe-area-inset-bottom,0px)); }
+  body:has(.map-readout) #toolbelt { bottom:calc(104px + env(safe-area-inset-bottom,0px)); }
+  #main .screen.board .screen-head { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;overflow:visible;padding:4px 6px; }
+  #main .screen.board .screen-head .stat-chip { min-width:0;max-width:100%;padding:4px 8px;font-size:16px;line-height:1.25;white-space:normal; }
+  #main .screen.board .screen-head .stat-chip b { font-size:18px; }
+  #main .screen.board .screen-head .grow { display:none; }
+  #main .screen.board .screen-bar .btn { min-width:0;white-space:normal; }
+}
+#modal .icon,#settings .icon { min-width:40px;min-height:40px; }
