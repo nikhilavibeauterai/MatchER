@@ -66,3 +66,52 @@ test('a late save reply cannot put one library\'s annotations into another libra
   assert.equal(belt.source,'second');assert(!belt.edits.has(7),'Photo ids are local to their save');
   delete global.api;delete global.S;
 });
+
+const freshBelt=(source='')=>Object.assign(Object.create(Toolbelt),{source,edits:new Map(),loading:new Map(),jobs:new Map(),saving:new Map(),listeners:new Set(),render(){}});
+test('a visible batch shares reads, keeps full annotations and bounds its requests',async()=>{
+  const belt=freshBelt(),requests=[];
+  global.api=async path=>{const ids=new URL('http://fixture'+path).searchParams.get('photos').split(',').map(Number);requests.push(ids);
+    return {photos:ids.map(photo=>({photo,edits:{notes:[{x:3,y:120,text:`Photo ${photo}`}],marks:[pen([[1,2],[3,4]])]}}))};};
+  try{
+    const pending=Array.from({length:250},(_,i)=>belt.load(i+1));assert.equal(belt.load(7),pending[6]);
+    await Promise.all(pending);assert(requests.length<=3);assert(requests.every(ids=>ids.length<=200));
+    assert.equal(belt.edits.size,250);assert.equal(belt.loading.size,0);assert.equal(belt.edits.get(250).notes[0].text,'Photo 250');
+    assert.deepEqual(belt.edits.get(7).marks,[pen([[1,2],[3,4]])]);
+  }finally{delete global.api;}
+});
+test('a queued annotation read is cancelled before it can target a different library',async()=>{
+  const belt=freshBelt('first'),requests=[];global.S={lib:{source:'first'}};global.api=async path=>{requests.push(path);return {photos:[]};};
+  try{
+    const pending=belt.load(7);S.lib.source='second';belt.syncSource();await pending;
+    await new Promise(r=>setTimeout(r,25));assert.deepEqual(requests,[]);assert.equal(belt.loading.size,0);
+  }finally{delete global.api;delete global.S;}
+});
+test('an in-flight annotation batch cannot leak across a library switch',async()=>{
+  const belt=freshBelt('first');global.S={lib:{source:'first'}};
+  let release,enter;const gate=new Promise(r=>release=r),entered=new Promise(r=>enter=r);
+  global.api=async()=>{enter();await gate;return {photos:[{photo:7,edits:{title:'First library'}}]};};
+  try{
+    const pending=belt.load(7);await entered;S.lib.source='second';belt.syncSource();release();await pending;
+    assert.equal(belt.source,'second');assert.equal(belt.edits.size,0);assert.equal(belt.loading.size,0);
+  }finally{delete global.api;delete global.S;}
+});
+test('a delayed batch preserves a newer edit already received for the same photo',async()=>{
+  const belt=freshBelt();let release,enter;const gate=new Promise(r=>release=r),entered=new Promise(r=>enter=r);
+  global.api=async()=>{enter();await gate;return {photos:[{photo:7,edits:{marks:[]}}]};};
+  try{
+    const pending=belt.load(7);await entered;const marks=[pen([[8,9],[10,11]])];belt.know(7,{marks});release();await pending;
+    assert.deepEqual(belt.edits.get(7).marks,marks);
+  }finally{delete global.api;}
+});
+test('a pre-batch server still loads valid saved drawings when one photo is missing',async()=>{
+  const belt=freshBelt();global.api=async path=>{
+    const photo=Number(new URL('http://fixture'+path).searchParams.get('photo'));
+    if(path.startsWith('/api/edits?')||photo===3){const error=new Error('Not found');error.status=404;throw error;}
+    return {photo,edits:{marks:[pen([[photo,2],[3,4]])]}};
+  };
+  try{
+    await Promise.all([1,2,3].map(photo=>belt.load(photo)));
+    assert.deepEqual([...belt.edits.keys()],[1,2]);assert.equal(belt.loading.size,0);
+    assert.deepEqual(belt.edits.get(2).marks,[pen([[2,2],[3,4]])]);
+  }finally{delete global.api;}
+});

@@ -22,7 +22,12 @@ let pg;
   await page.evaluate(async () => {
     const h = { "Content-Type": "application/json", "X-MatchER": "1" };
     await fetch("/api/draw/auto", { method: "POST", headers: h, body: "{}" });
-    const b = await (await fetch("/api/draw/board?per=400")).json();
+    let b = await (await fetch("/api/draw/board?per=400")).json();
+    // The public sample can honestly form one "Wildcards" group. This exercise needs two lasting rosters.
+    if(b.groups.filter(g=>g.size>=4).length<2){
+      const largest=b.groups.toSorted((a,b)=>b.size-a.size)[0];
+      if(largest?.shots.length>=8){await api('/api/draw/new',{photos:largest.shots.slice(-4).map(x=>x.rep),name:'Public neighbours',emoji:'🌈'});b=await api('/api/draw/board?per=400');}
+    }
     const pick = b.groups.flatMap((g) => g.shots.slice(0, 2).map((x) => x.rep)).slice(0, 8);
     await fetch("/api/draw/move", { method: "POST", headers: h, body: JSON.stringify({ photos: pick, theme: null }) });
   });

@@ -82,6 +82,7 @@ Everything they create (data dirs, server logs, results, screenshots in `shots/`
 | twin_check | whole public-fixture takes even with auto-crop enabled; steady bounded comparison panels with balanced sea margins at 2048px and phone widths; real merge/undo and no stack-helper popup |
 | stacks_layout | the same sea objects unfold into a fan on desktop and phone; no duplicate catalogue, reachable controls, keep/split/undo preserve paper identity, leaving restores normal handlers |
 | stacks_scale | 720 stacks / 4,320 takes represented by public fixture pixels; actual pointer merge and Undo/Redo, unchanged paper objects, bounded live DOM, atlas coverage and response time |
+| performance | repeatable CDP CPU profiles, script/layout timings, long tasks and DOM/request counts for a synthetic 3,600-photo collection using public fixture pixels; Groups sea/focus, List, a 600-photo expanded group and scrolling; bounded cards, selection and drawings survive returning to a row, expanded fans reserve space, phone layout |
 | stacks_loose | loose photos in the default Stacks overview, persistent Stacks only filter, real singleton-to-stack and singleton-to-singleton drag merges, Undo, desktop and phone layout |
 | stacks_dates | all dates indexed in the ordered sea; immediate camera jumps without catalogue requests, previous/next dates and usable phone controls |
 | sample_e2e | bundled offline demo, all 13 public-domain photos, correct organizing spotlight and its real stack takes, readable caption and a playable small Finals bracket |

@@ -1,0 +1,75 @@
+// Repeatable browser timings with public fixture pixels and a synthetic 3,600-photo catalogue.
+const {chromium}=require('playwright-core'),assert=require('node:assert/strict');
+const {boot,synthetic}=require('./stack-helpers.cjs');
+const {BASE,OUT}=process.env;
+(async()=>{
+  const browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']}),page=await browser.newPage({viewport:{width:1440,height:900}}),problems=[];
+  page.on('pageerror',e=>problems.push(e.message));await boot(page);
+  const template=await page.evaluate(()=>api('/api/draw/board?tags=1&per=24'));
+  const state=await synthetic(page,{count:3600,takes:1}),requests=[];
+  const groups=Array.from({length:6},(_,i)=>({id:i+1,name:`Public photos ${i+1}`,emoji:'🌈',size:600,count:600,cover:state.rows[i*600].rep,seed:state.rows[i*600].rep,sealed:true,adv:1,tagline:'',shots:state.rows.slice(i*600,(i+1)*600)}));
+  await page.route('**/api/draw/board?*',r=>{
+    const q=new URL(r.request().url()).searchParams,per=Number(q.get('per')||24),page=Number(q.get('page')||0),full=new Set((q.get('full')||'').split(',').map(Number));
+    const rows=groups.map(g=>({...g,shots:full.has(g.id)?g.shots:g.shots.slice(page*per,(page+1)*per)}));
+    requests.push({per,page,full:[...full]});
+    return r.fulfill({json:{...template,total:3600,drawn:3600,done:true,groups:rows,bins:groups.map(({shots,...g})=>g),unsorted:{count:0,shots:[]},boxes:{},more:groups.some(g=>!full.has(g.id)&&(page+1)*per<g.count),page,tagging:{...template.tagging,suggestions:[],shot_tags:{}}}});
+  });
+  const edits=new Map();
+  await page.route('**/api/edit',r=>{const {photo,...patch}=r.request().postDataJSON(),value={...edits.get(photo),...patch};edits.set(photo,value);return r.fulfill({json:{photo,edits:value}});});
+  await page.route('**/api/edit?*',r=>{const photo=Number(new URL(r.request().url()).searchParams.get('photo'));return r.fulfill({json:{edits:edits.get(photo)||{}}});});
+  await page.route('**/api/edits?*',r=>r.fulfill({json:{photos:new URL(r.request().url()).searchParams.get('photos').split(',').map(photo=>({photo:Number(photo),edits:edits.get(Number(photo))||{}}))}}));
+  await page.evaluate(({groups})=>{clearInterval(World.watch);for(const g of groups)for(const s of g.shots)World.photos.get(s.rep).theme=g.id;}, {groups});
+  const cdp=await page.context().newCDPSession(page);await cdp.send('Performance.enable');await cdp.send('Profiler.enable');await cdp.send('Profiler.setSamplingInterval',{interval:2000});
+  const counters=async()=>Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]));
+  async function measure(name,action,ready){
+    await page.evaluate(()=>{performance.clearResourceTimings();performance.setResourceTimingBufferSize(30000);window.__long=[];window.__observer=new PerformanceObserver(l=>__long.push(...l.getEntries().map(e=>({start:e.startTime,duration:e.duration}))));__observer.observe({type:'longtask',buffered:false});});
+    const a=await counters(),start=performance.now();await cdp.send('Profiler.start');await action();if(ready)await ready();await page.waitForTimeout(800);
+    const {profile}=await cdp.send('Profiler.stop'),b=await counters();
+    const times=new Map();for(let i=0;i<(profile.samples||[]).length;i++)times.set(profile.samples[i],(times.get(profile.samples[i])||0)+(profile.timeDeltas[i]||0));
+    const hot=profile.nodes.map(n=>({name:n.callFrame.functionName||'(anonymous)',file:n.callFrame.url.split('/').pop(),ms:Math.round((times.get(n.id)||0)/1000)})).filter(n=>n.ms>5).sort((a,b)=>b.ms-a.ms).slice(0,12);
+    const dom=await page.evaluate(()=>{__observer.disconnect();return {nodes:document.querySelectorAll('*').length,cards:document.querySelectorAll('#main .tile').length,live:World.sea.moving.length,heapMB:Math.round((performance.memory?.usedJSHeapSize||0)/1048576),requests:performance.getEntriesByType('resource').filter(e=>/\/api\/edits?\?|\/img\//.test(e.name)).length,longTasks:__long.length,longestMs:Math.round(Math.max(0,...__long.map(e=>e.duration)))};});
+    return {name,wallMs:Math.round(performance.now()-start),scriptMs:Math.round((b.ScriptDuration-a.ScriptDuration)*1000),layoutMs:Math.round((b.LayoutDuration-a.LayoutDuration)*1000),layoutCount:b.LayoutCount-a.LayoutCount,...dom,hot};
+  }
+  const results=[];
+  await page.evaluate(()=>localStorage.setItem('matcher-groups-view','sea'));
+  results.push(await measure('groups-sea',()=>page.goto(BASE+'/#draw'),()=>page.waitForFunction(()=>World.board?.total===3600&&!World.board.more)));
+  results.push(await measure('groups-focus',()=>page.click('#venn-rail [data-bin="1"] [data-focus-bin]'),()=>page.waitForFunction(()=>World.sea.focusCluster==='g1')));
+  results.push(await measure('groups-bulk-selection',async()=>{await page.click('[data-select-matches]');await page.evaluate(()=>World.sea.cull(true));},()=>page.waitForFunction(()=>World.sea.selectedIds?.size===600)));
+  assert(await page.evaluate(()=>World.sea.moving.length<=World.sea.domLimit),'Selecting a whole group keeps small selected photos as sprites');
+  await page.keyboard.press('Escape');
+  await page.screenshot({path:OUT+'/performance-groups-focus.png'});
+  results.push(await measure('groups-list',()=>page.click('[data-mode=list]'),()=>page.waitForSelector('#gsec-1 .tile')));
+  results.push(await measure('groups-expanded',()=>page.click('[data-more="1"]'),()=>page.waitForSelector('[data-less="1"]')));
+  results.push(await measure('groups-scroll',()=>page.evaluate(async()=>{const el=document.querySelector('#sections');for(let i=0;i<16;i++){el.scrollTop+=300;await new Promise(r=>requestAnimationFrame(r));}})));
+  await page.screenshot({path:OUT+'/performance-groups-expanded.png'});
+  assert(results.find(r=>r.name==='groups-expanded').cards<120,'Expanding a 600-photo group mounts nearby rows only');
+  assert(results.find(r=>r.name==='groups-scroll').cards<120,'Live cards stay bounded throughout scrolling');
+  assert(results.find(r=>r.name==='groups-expanded').longestMs<500,'Expanding cannot block the main thread for half a second');
+  const jump=async photo=>{
+    await page.evaluate(photo=>{const grid=document.querySelector('[data-grid-group="1"]').shotWindow,tile=grid.ensure(photo);tile.scrollIntoView({block:'center',behavior:'instant'});grid.update();},photo);
+    await page.waitForFunction(photo=>document.querySelector(`.tile[data-sel="${photo}"] img`)?.complete,photo);await page.waitForTimeout(100);
+  };
+  const chosen=state.rows[200].rep;await jump(chosen);await page.click(`.tile[data-sel="${chosen}"] .shot-select`);
+  await page.evaluate(async photo=>{await Toolbelt.load(photo);await Toolbelt.save(photo,{marks:[{t:'pen',c:'coral',w:1,p:[[8,12],[40,45]]}]});},chosen);
+  await page.evaluate(()=>document.activeElement?.blur());
+  await jump(state.rows[20].rep);assert.equal(await page.locator(`.tile[data-sel="${chosen}"]`).count(),0,'An off-screen selected tile can leave the DOM');
+  await jump(chosen);assert.equal(await page.locator(`.tile[data-sel="${chosen}"].picked`).count(),1,'Its selection survives returning to the row');
+  await page.waitForSelector(`.tile[data-sel="${chosen}"] svg.marks polyline`);
+  state.rows[200].members.push(990000);await page.click('[data-less="1"]');await page.click('[data-more="1"]');
+  await page.waitForFunction(photo=>document.querySelector('[data-grid-group="1"]')?.shotWindow?.byPhoto.has(photo),chosen);await jump(chosen);
+  await page.click(`.tile[data-sel="${chosen}"] [data-expand]`);await page.waitForSelector(`.tile[data-sel="${chosen}"].open .photo-fan .ftile`);
+  await page.waitForTimeout(350);
+  const fan=await page.evaluate(photo=>{const tile=document.querySelector(`.tile[data-sel="${photo}"]`),row=tile.closest('.shot-window-row');return{takes:tile.querySelectorAll('.ftile').length,paper:getComputedStyle(tile).backgroundColor.match(/\d+/g).slice(0,3).every(v=>Number(v)>180),width:tile.getBoundingClientRect().width,rosterWidth:row.getBoundingClientRect().width,height:row.getBoundingClientRect().height,next:row.nextElementSibling?.getBoundingClientRect().top,bottom:row.getBoundingClientRect().bottom};},chosen);
+  assert(fan.paper,'The selected fan keeps readable paper behind its controls');
+  assert(fan.width>fan.rosterWidth*.95,'An expanded stack borrows the full roster width');
+  assert.equal(fan.takes,2);if(fan.next)assert(fan.next>=fan.bottom-1,'An open fan reserves its full height');
+  await page.screenshot({path:OUT+'/performance-groups-fan.png'});await page.click(`.tile[data-sel="${chosen}"] [data-expand]`);
+  await page.setViewportSize({width:390,height:844});await jump(chosen);
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'The same roster fits a phone');
+  await page.screenshot({path:OUT+'/performance-groups-phone.png'});
+  const callbacksReset=await page.evaluate(()=>{const text=document.querySelector('#sel-count').textContent;let calls=0;
+    World.live({clickToZoom:false,onSelect:()=>calls++});World.sea.clickPrint(World.sea.items.values().next().value,{detail:1});
+    return calls===1&&document.querySelector('#sel-count').textContent===text;
+  });assert(callbacksReset,'Changing activities never calls the previous selection handler');
+  assert.deepEqual(problems,[]);console.log(JSON.stringify({results,requests,fan,selectionAndMarksRestored:true,callbacksReset,problems}));await cdp.detach();await browser.close();
+})().catch(e=>{console.error(e.stack);process.exit(1);});

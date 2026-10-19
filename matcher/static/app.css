@@ -1011,6 +1011,11 @@ button.pstat:hover { border-color: #ffd86b; }
 .screen.sorter { --rail: 290px; }
 .screen.sorter .sections { display: grid; gap: 14px; align-content: start; padding-right: 4px; }
 .screen.sorter .gsec-tiles { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.screen.sorter .windowed-shots { display:block;position:relative;overflow-anchor:none; }
+.shot-window-row { position:absolute;inset-inline:0;display:grid;gap:8px;align-items:start; }
+.shot-window-row .tile:not(.open) { aspect-ratio:3 / 4; }
+.shot-window-row .tile:not(.open) > .shot-pile { height:100%; }
+.shot-window-row > .fam-tiles:has(> .tile.open) { display:contents; }
 .screen.sorter .bins-wrap, .screen.draw-play .bins-wrap { display: flex; flex-direction: column; gap: 8px; }
 .screen.sorter .bins-wrap .bins, .screen.draw-play .bins-wrap .bins { flex: 1; min-height: 0; overflow-y: auto; }
 #sel-count b { color: var(--text); }

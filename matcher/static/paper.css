@@ -297,6 +297,7 @@ body.sea-on .side, body.sea-on .twin-arena .side, body.sea-on .swipe-card, .swip
 #journey-dock .twords { background: transparent; border: 0; box-shadow: none; }
 /* A polaroid on a page is a polaroid, not a scrap: tiles on the Stacks and Groups pages lose their own paper. */
 .stacker .tile:not(.open), .sorter .tile:not(.open), .gsec .tile:not(.open) { background: transparent; border-color: transparent; box-shadow: none; }
+.sorter .tile.open, .sorter .tile.open.picked { background:var(--paper-2); }
 /* The Esc menu is a sheet: its entries are written lines, the one under the pointer gone over with the highlighter. */
 #menu .menu-list a, #menu .menu-list button { background: transparent; border-radius: 6px 12px 7px 11px / 11px 6px 12px 7px; }
 #menu .menu-list a:hover, #menu .menu-list button:hover, #menu .menu-list a:focus-visible, #menu .menu-list button:focus-visible { background: var(--highlight); }

@@ -108,6 +108,46 @@ def test_preview_age_boundary_expires_without_a_database_write(large_filter, mon
     assert c.get(url).status_code == 409
 
 
+@pytest.mark.parametrize("other_connection", [False, True])
+def test_current_filter_pages_reuse_assessment_and_notice_every_connection(large_filter, monkeypatch, other_connection):
+    c, s = large_filter, large_filter.session
+    first = c.get('/api/filter?per=4').get_json()
+    original, calls = filtering.catalogue, []
+    def catalogue(*a, **kw):
+        calls.append(1)
+        return original(*a, **kw)
+    monkeypatch.setattr(filtering, 'catalogue', catalogue)
+    assert c.get('/api/filter?page=1&per=4').get_json()['photos'][0]['id'] == 5
+    assert c.get('/api/filter?state=kept&per=4').status_code == 200
+    assert calls == [], 'Paging and changing the displayed reason do not assess 10,000 photos again'
+    if other_connection:
+        conn = sqlite3.connect(s.store.path)
+        try:
+            conn.execute("UPDATE photos SET override='toss' WHERE id=1"); conn.commit()
+        finally:
+            conn.close()
+    else:
+        with s.store.tx() as conn:
+            conn.execute("UPDATE photos SET override='toss' WHERE id=1")
+    changed = c.get('/api/filter?per=4').get_json()
+    assert len(calls) == 1 and changed['photos'][0]['override'] == 'toss'
+    assert changed['counts']['manual_aside'] == first['counts']['manual_aside'] + 1
+
+
+def test_current_filter_cache_refreshes_at_an_age_boundary(large_filter, monkeypatch):
+    c, s = large_filter, large_filter.session
+    now = time.time()
+    with s.store.tx() as conn:
+        conn.execute('UPDATE photos SET taken_ts=? WHERE id=1', (now - 365.25 * 86400 + 10,))
+    s.store.set_meta('filter_policy', {**filtering.policy(s.store, s.settings), 'max_age_years': 1})
+    monkeypatch.setattr(filtering.time, 'time', lambda: now)
+    before = c.get('/api/filter?per=1').get_json()['photos'][0]
+    cached = s.filter_catalogue
+    monkeypatch.setattr(filtering.time, 'time', lambda: now + 11)
+    after = c.get('/api/filter?per=1').get_json()['photos'][0]
+    assert s.filter_catalogue is not cached and 'old' not in before['reasons'] and 'old' in after['reasons']
+
+
 def test_filter_undo_rebuilds_stacks_once_and_restores_admission(client, monkeypatch):
     data = fetch(client)
     pid = data["ids"]["kept"][0]

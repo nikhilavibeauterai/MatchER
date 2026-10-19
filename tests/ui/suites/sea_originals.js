@@ -106,7 +106,8 @@ print(json.dumps([float(np.mean((im > 30) & (im < 225))) for im in images]))
       cases.at(-1).magnified={crisp:magnified[0],smooth:magnified[1]};
       assert(magnified[0]<.03&&magnified[0]<magnified[1]*.25,`Magnification preserves source pixels instead of blending them: ${JSON.stringify(magnified)}`);
       await page.evaluate(()=>{originalImage.style.removeProperty('image-rendering');originalPixels(.5);});
-      await page.waitForFunction(()=>!originalImage.classList.contains('photo-pixels'),{},{timeout:5000});
+      try{await page.waitForFunction(()=>!originalImage.classList.contains('photo-pixels'),{},{timeout:5000});}
+      catch(error){throw new Error(`${label}: ${error.message}; ${JSON.stringify(await page.evaluate(()=>({pixels:originalImage.className,dpr:devicePixelRatio,width:getComputedStyle(originalImage).width,rect:originalImage.getBoundingClientRect().width,natural:originalImage.naturalWidth,zoom:World.sea.camera.zoom,basis:originalItem.el.dataset.imageScale,scale:originalItem.renderScale,shown:originalItem.el.getBoundingClientRect().toJSON()})))}`);}
       const sampling=await page.evaluate(()=>({pixels:originalImage.classList.contains('photo-pixels'),dpr:devicePixelRatio,width:parseFloat(getComputedStyle(originalImage).width),rect:originalImage.getBoundingClientRect().width,natural:originalImage.naturalWidth,zoom:World.sea.camera.zoom,basis:originalItem.el.dataset.imageScale,scale:originalItem.renderScale}));
       assert(!sampling.pixels,`Reduced originals return to smooth sampling, including on high-density screens: ${JSON.stringify(sampling)}`);
     }

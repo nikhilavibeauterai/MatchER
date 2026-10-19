@@ -46,7 +46,7 @@ const SeaPigments = {
     const scale=Math.max(10,W/128,H/80),w=Math.max(1,Math.ceil(W/scale)),h=Math.max(1,Math.ceil(H/scale)),cells=w*h,
       {zoom,tx,ty}=camera;
     if(!field||field.w!==w||field.h!==h){
-      const canvas=field?.canvas||document.createElement('canvas');canvas.width=w;canvas.height=h;
+      const canvas=field?.canvas||(typeof document==='undefined'?new OffscreenCanvas(w,h):document.createElement('canvas'));canvas.width=w;canvas.height=h;
       const ctx=canvas.getContext('2d');field={canvas,ctx,w,h,pixels:ctx.createImageData(w,h),votes:new Float32Array(cells*this.bins*4),nearest:new Int32Array(cells)};
     }else{field.votes.fill(0);field.pixels.data.fill(0);}
     const votes=field.votes,nearest=field.nearest||(field.nearest=new Int32Array(cells)),centres=[];nearest.fill(-1);

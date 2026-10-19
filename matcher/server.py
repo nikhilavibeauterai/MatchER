@@ -505,7 +505,10 @@ class Session:
         r = self.ranker
         if r is None or r.post is None:
             return []
-        left = [int(i) for i in np.flatnonzero(r.active) if self._needs_frame(int(i), include_queued=True)]
+        # Most libraries are loose photos. Only a real stack can still need a crown; visiting every active
+        # photo on each HUD, board and paging request made these reads grow with the whole collection.
+        left = [i for gid in self.distinct if len(self.distinct[gid]) >= 2
+                and (i := self.gidx.get(gid)) is not None and r.active[i] and self._needs_frame(i, include_queued=True)]
         return sorted(left, key=lambda i: -r.post.p_in[i])
 
     def twins_left(self) -> int:
@@ -1140,12 +1143,17 @@ class Session:
             self.priority, self.version = None, None
             self.ensure_ranker()
 
-    def sweep_cards(self) -> list[dict]:
+    def sweep_cards(self, with_views=True) -> list[dict]:
         """Quick keep-or-toss calls where the sorter was least sure: set-aside photos that look like they might be
         fine (highest prior first) and shots in the running that look most like junk (lowest prior first)."""
         r = self.ranker
         if r is None:
             return []
+        connection = self.store.conn()
+        key = (filtering._preview_stamp(self, connection), self.version, self.cup)
+        cached = getattr(self, "_sweep_cache", None)
+        if cached is not None and cached[0] == key:
+            return [{**c, "view": self.photo_view(c["photo"])} for c in cached[1]] if with_views else cached[1]
         seen = {v["a"] for v in self.store.q("SELECT a FROM votes WHERE kind='sweep' AND undone=0")}
         cat = "" if self.cup == "all" else " AND category=?"
         args = [] if self.cup == "all" else [self.cup]
@@ -1173,9 +1181,8 @@ class Session:
             if k < len(low):
                 out.append({"photo": low[k], "kind": "kept", "reason": None,
                             "flags": [f for f in info[low[k]][1] if f in JUNK_FLAGS]})
-        for c in out:
-            c["view"] = self.photo_view(c["photo"])
-        return out
+        self._sweep_cache = (key, out)
+        return [{**c, "view": self.photo_view(c["photo"])} for c in out] if with_views else out
 
     def sweep(self, pid: int, keep: bool) -> dict:
         with self.lock:
@@ -1412,7 +1419,7 @@ class Session:
         return [p for p in order + rest if p]
 
     def _sweep_stage(self) -> dict:
-        left = len(self.sweep_cards())
+        left = len(self.sweep_cards(with_views=False))
         return {"left": left, "done": left == 0 or self.store.get_meta(f"sweep_done:{self.cup}") is not None}
 
     def journey(self) -> dict:
@@ -1427,10 +1434,11 @@ class Session:
             ko = self.knockouts_state() or {}
             biggest = max((g for g in self.groups.values() if len(g["members"]) > 1),
                           key=lambda g: len(g["members"]), default={})
+            first_group = next((g for g in self.draw.stage()["groups"].values() if len(g["order"])), None)
             thumbs = {"stacks": biggest.get("rep"),
                       "draw": next((g["cover"] for g in self.draw.bins() if g.get("cover")), None),
                       "crown": next((v["winner"] for v in reversed(self.store.votes()) if v["kind"] == "frame"), None),
-                      "groups": next((g["rows"][0]["photo"] for g in self.draw.tables() if g["rows"]), None),
+                      "groups": self.reps[int(first_group["order"][0])] if first_group else None,
                       "duels": ko.get("qualified", [None])[0] if ko.get("qualified") else self.reps[int(np.argmax(np.where(r.active, r.post.mu, -np.inf)))] if r.n_active else None}
             return {"mode": self.mode, "cup": self.cup, "cups": self.cups(), "progress": p,
                     "order": ["filter", "stacks", "crown", "draw", "groups", "duels", "finals", "reveal"], "side": ["sweep"],
@@ -2298,6 +2306,17 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
 
     MARK_COLOURS = ("ink", "coral", "green", "gold")  # the pens and markers in the toolbelt
 
+    @flask_app.get("/api/edits")
+    @locked
+    def read_edits():
+        """The marks and finishing carried by a visible batch of cards, without one request per photo."""
+        ids = request.args.get("photos", "").split(",")
+        if len(ids) > 200 or any(not p.isascii() or not p.isdigit() or len(p) > 13 or not 0 < int(p) <= 10**12 for p in ids):
+            abort(400, "Choose between one and 200 photos.")
+        ids = list(dict.fromkeys(map(int, ids)))
+        rows = sess().store.q(f"SELECT id,edits FROM photos WHERE id IN ({','.join('?' for _ in ids)})", ids)
+        return jsonify(photos=[{"photo": r["id"], "edits": json.loads(r["edits"]) if r["edits"] else {}} for r in rows])
+
     @flask_app.route("/api/edit", methods=["GET", "POST"])
     @locked
     def edit_photo():
@@ -2649,8 +2668,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         with _filter_lock(s):
             if "photo" in request.args:
                 return jsonify(filtering.photo_page(s, request.args))
-            photos, sets, policy, _ = filtering.snapshot(s)
-            return jsonify(filtering.page(s, filtering.catalogue(s, photos, sets, policy), policy, request.args))
+            return jsonify(filtering.current_page(s, request.args))
 
     @flask_app.route("/api/filter/preview", methods=["GET", "POST"])
     def filter_preview():
@@ -3290,7 +3308,13 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         s, b = sess(), body()
         with s.lock:
             _need(s)
-            return jsonify(_draw_reply(s, {"theme": s.draw.create([int(x) for x in b.get("photos", [])][:500])}))
+            return jsonify(_draw_reply(s, {"theme": s.draw.create(_draw_photos(b))}))
+
+    def _draw_photos(b):
+        photos = b.get("photos", [])
+        if not isinstance(photos, list) or len(photos) > 50000:
+            abort(400, "Choose at most 50,000 photos for one group edit.")
+        return [int(x) for x in photos]
 
     @flask_app.get("/api/draw/board")
     def draw_board():
@@ -3299,15 +3323,20 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         with s.lock:
             _need(s)
             per = max(4, min(2000, int(request.args.get("per", 24))))
-            shots = _ordered_shots(s, "all", "look" if len(s.groups) <= 3000 else "time")  # look-alikes side by side
-            tm, pool = s.draw.theme_of(), s.draw.pool_mask()
-            by: dict[int, list] = {}
-            for x in shots:
-                i = s.gidx.get(x["gid"])
-                if i is not None and pool[i]:
-                    by.setdefault(int(tm[i]), []).append(x)
-            st = s.draw.state()
-            bins = {b["id"]: b for b in s.draw.bins()}
+            key = (s.version, s.store.get_meta("state_version"), s.draw.ver, s.cup, s.store.vote_revision)
+            cached = getattr(s.draw, "_board_cache", None)
+            if cached is None or cached[0] != key:
+                shots = _ordered_shots(s, "all", "look" if len(s.groups) <= 3000 else "time")
+                tm, pool = s.draw.theme_of(), s.draw.pool_mask()
+                by: dict[int, list] = {}
+                for x in shots:
+                    i = s.gidx.get(x["gid"])
+                    if i is not None and pool[i]:
+                        by.setdefault(int(tm[i]), []).append(x)
+                st = s.draw.state()
+                bins = {b["id"]: b for b in s.draw.bins()}
+                s.draw._board_cache = (key, by, st, bins)
+            _, by, st, bins = s.draw._board_cache
             full = {int(x) for x in request.args.get("full", "").split(",") if x.strip().lstrip("-").isdigit()}
             uper = max(4, min(5000, int(request.args.get("uper", per))))  # the unsorted pile can have its own cap
 
@@ -3319,6 +3348,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                        "count": len(by.get(g["id"], []))} for g in st["groups"]]
             part = [x for g in groups for x in g["shots"]] + cap(-1)
             out = {**st, "cup": s.cup, "groups": groups, "bins": list(bins.values()),
+                   "version": [s.version, s.draw.ver, s.store.get_meta("tag_version", 0)],
                    "unsorted": {"shots": cap(-1), "count": len(by.get(-1, []))},
                    "page": page, "more": any((page + 1) * (uper if t == -1 else per) < len(xs)
                                                for t, xs in by.items() if t not in full),
@@ -3460,7 +3490,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         s, b = sess(), body()
         with s.lock:
             _need(s)
-            return jsonify(_draw_reply(s, {"theme": s.draw.tag_group([int(x) for x in b.get("photos", [])][:5000],
+            return jsonify(_draw_reply(s, {"theme": s.draw.tag_group(_draw_photos(b),
                                                                      b.get("name"), b.get("emoji"))}))
 
     @flask_app.post("/api/draw/order")
@@ -3550,7 +3580,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
         with s.lock:
             _need(s)
             t = b.get("theme")
-            return jsonify(_draw_reply(s, s.draw.move([int(x) for x in b.get("photos", [])][:500],
+            return jsonify(_draw_reply(s, s.draw.move(_draw_photos(b),
                                                       int(t) if t is not None else None)))
 
     @flask_app.post("/api/draw/merge")

@@ -3,14 +3,15 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 const {LINK,OUT}=process.env;
 (async()=>{
   const browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']}),runs=[],problems=[];
-  for(const gpu of [1,0]){
+  for(const {gpu,worker} of [{gpu:1,worker:false},{gpu:0,worker:false},{gpu:1,worker:true}]){
     const page=await browser.newPage({viewport:{width:1100,height:760}});page.on('pageerror',e=>problems.push(e.message));
     await page.goto(LINK);await page.waitForFunction(()=>typeof VennSea==='function');
-    const proof=await page.evaluate(gpu=>{
+    const proof=await page.evaluate(async({gpu,worker})=>{
       const host=document.createElement('section');host.style.cssText='position:fixed;left:40px;top:80px;width:960px;height:600px;z-index:100000';document.body.append(host);
       host.insertAdjacentHTML('beforeend','<p style="position:absolute;left:20px;top:12px;color:#fff5e8;z-index:20">Photo colours fill the sea · drifting pockets, no separate background</p>');
       const sea=new VennSea(host,{calm:true,catalog:false});window.pigmentSea=sea;sea.ro.disconnect();sea.layout=()=>{};sea.worker.terminate();cancelAnimationFrame(sea.raf);sea.raf=0;sea.kick=()=>{};sea.scheduleCull=()=>{};
-      Object.assign(sea,{width:960,height:600,s:60,settled:true,ready:true,paused:true,cameraOn:true,generation:1});Object.assign(sea.tuning,{gpu,wobbleDeg:0});sea.canvas.width=960;sea.canvas.height=600;
+      Object.assign(sea,{width:960,height:600,s:60,settled:true,ready:true,paused:true,cameraOn:true,generation:1,pigmentWorkerFailed:!worker});Object.assign(sea.tuning,{gpu,wobbleDeg:0});sea.canvas.width=960;sea.canvas.height=600;
+      const ready=async()=>{const until=performance.now()+5000;while(worker&&sea.pigmentResult?.key!==sea.pigmentWanted){if(performance.now()>until)throw new Error('Colour worker did not return');await new Promise(r=>setTimeout(r,10));}};
       const warm=[236,142,70],blue=[30,150,205],purple=[68,18,112],green=[26,150,62],sheet=(colour,dark=false)=>{
         const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');x.fillStyle=`rgb(${colour})`;x.fillRect(0,0,16,16);
         if(dark){x.fillStyle='#09080c';x.fillRect(0,0,6,16);x.fillStyle='#f0f0f0';x.fillRect(14,0,2,2);}return c;
@@ -24,6 +25,7 @@ const {LINK,OUT}=process.env;
       sea.bodies=bodies.filter(it=>!it.take);const tag=document.createElement('button');tag.textContent='One group, local colours';sea.tagRow.append(tag);sea.lassos.set('g1',{tag,kind:'group'});
       sea.contours=new Map([['g1',{key:'occupied',count:10,opacity:1,paths:[[[50,160],[885,160],[885,465],[50,465]],[[155,280],[355,280],[355,440],[155,440]]]}]]);
       sea.draw(960,600);sea.densityDirty=sea.spritesDirty=true;sea.drawDensity(960,600);
+      await ready();
       const pixel=(x,y)=>[...sea.ctx.getImageData(x,y,1,1).data],colour=(x,y)=>{const f=sea.pigmentField,i=(Math.floor(y/600*f.h)*f.w+Math.floor(x/960*f.w))*4;return [...f.pixels.data.slice(i,i+4)];},
         a=pixel(100,350),b=pixel(575,350),raw=[colour(100,350),colour(575,350)],empty=pixel(255,400),corners=[[0,0],[959,0],[0,599],[959,599]].map(p=>pixel(...p)),
         raster=sea.contourRaster.current,field=sea.waterField.basis,votes=sea.pigmentField.votes,first=sea.lassos.get('g1').colour,
@@ -35,14 +37,21 @@ const {LINK,OUT}=process.env;
       Object.assign(sea.camera,{zoom:.5,tx:250,ty:150});sea.followCamera();const panCorners=[[0,0],[959,0],[0,599],[959,599]].map(p=>pixel(...p));
       clearTimeout(sea.contourTimer);sea.contourTimer=0;Object.assign(sea.camera,{zoom:1,tx:0,ty:0});const cameraRebuilds=rebuilds;
       // Recolour a visible photo without changing the group's leading colour. It must still update locally.
-      sea.sprites.set(8,{img:sources[3],x:0,y:0,aspect:1});sea.refreshColours();sea.contourRaster.since=performance.now()-500;sea.paintWater();const changed=colour(575,350),leading=sea.lassos.get('g1').colour;
-      sea.sprites.set(8,{img:sources[2],x:0,y:0,aspect:1});sea.refreshColours();
-      sea.sprites.set(7,{img:sources[0],x:0,y:0,aspect:1});sea.refreshColours();const distant=colour(575,350);
+      sea.sprites.set(8,{img:sources[3],x:0,y:0,aspect:1});sea.refreshColours();await ready();sea.contourRaster.since=performance.now()-500;sea.paintWater();const changed=colour(575,350),leading=sea.lassos.get('g1').colour;
+      sea.sprites.set(8,{img:sources[2],x:0,y:0,aspect:1});sea.refreshColours();await ready();
+      sea.sprites.set(7,{img:sources[0],x:0,y:0,aspect:1});sea.refreshColours();await ready();const distant=colour(575,350);
       // A colour surface does not depend on groups having been assigned yet.
-      sea.lassos.clear();for(const it of sea.items.values())it.group=null;sea.refreshColours();sea.contourRaster.since=performance.now()-500;sea.paintWater();const ungrouped=colour(575,350),fillsWithoutGroups=pixel(0,599);
+      sea.lassos.clear();for(const it of sea.items.values())it.group=null;sea.refreshColours();await ready();sea.contourRaster.since=performance.now()-500;sea.paintWater();const ungrouped=colour(575,350),fillsWithoutGroups=pixel(0,599);
+      let recovered=true;
+      if(worker){
+        sea.sprites.set(8,{img:sources[3],x:0,y:0,aspect:1});sea.refreshColours();
+        sea.sprites.set(8,{img:sources[2],x:0,y:0,aspect:1});sea.refreshColours();await ready();
+        if(colour(575,350).some((v,i)=>v!==ungrouped[i]))throw new Error('An old colour job replaced the latest palette');
+        sea.pigmentWorker.onerror();sea.refreshColours();recovered=colour(575,350).every((v,i)=>v===ungrouped[i]);
+      }
       SeaPigments.field=build;
-      return {first,leading,warm,blue,purple,green,palette,cover,a,b,raw,empty,corners,panCorners,phases,reused,waveRebuilds,cameraRebuilds,uploads,z,changed,distant,ungrouped,fillsWithoutGroups,gpu:!!sea.gpu};
-    },gpu);
+      return {first,leading,warm,blue,purple,green,palette,cover,a,b,raw,empty,corners,panCorners,phases,reused,waveRebuilds,cameraRebuilds,uploads,z,changed,distant,ungrouped,fillsWithoutGroups,recovered,gpu:!!sea.gpu,worker:!!sea.pigmentWorker};
+    },{gpu,worker});
     assert.equal(proof.gpu,!!gpu);assert.deepEqual(proof.first,proof.blue);assert.deepEqual(proof.leading,proof.blue,'Updating a minority photo does not need to change group identity');
     assert.deepEqual(proof.palette[0].rgb,proof.purple,'Dark purple light survives surrounding shadows and tiny white highlights');
     assert.deepEqual(proof.cover[0].rgb,proof.warm);assert(proof.cover[0].weight>.79,'The visible cover outweighs tucked takes');
@@ -53,7 +62,8 @@ const {LINK,OUT}=process.env;
     assert(proof.z[0]<proof.z[1]&&proof.z[1]<proof.z[2],'Colour stays below sprites and live paper');
     assert(proof.phases.some(p=>p.slice(0,3).some((n,i)=>n!==proof.b[i])),'Drifting foam undulates the actual colour surface');assert(proof.phases.every(p=>p[3]===255),'Foam never exposes a separate background');
     assert(proof.reused);assert.equal(proof.waveRebuilds,0);assert.equal(proof.cameraRebuilds,0,'Camera movement reprojects cached colour');assert.equal(proof.uploads,0,'Animating pigment and prints never uploads textures or instance buffers');
-    await page.screenshot({path:`${OUT}/sea-splotches-${gpu?'gpu':'canvas'}.png`});runs.push(proof);await page.evaluate(()=>pigmentSea.destroy());await page.close();
+    assert(proof.recovered,'A failed colour worker falls back without changing the colours');assert.equal(proof.worker,worker);await page.screenshot({path:`${OUT}/sea-splotches-${worker?'worker':gpu?'gpu':'canvas'}.png`});runs.push(proof);await page.evaluate(()=>pigmentSea.destroy());await page.close();
   }
+  assert.deepEqual(runs[0].raw,runs[2].raw,'Worker colours match the synchronous fallback pixel for pixel');
   assert.deepEqual(problems,[]);console.log(JSON.stringify({runs,problems}));await browser.close();
 })().catch(e=>{console.error('FAILED:',e.stack);process.exit(1);});

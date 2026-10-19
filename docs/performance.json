@@ -1,0 +1,410 @@
+{
+  "date": "2026-10-19",
+  "baselineRevision": "b619c35",
+  "method": {
+    "server": "Flask test client with synthetic saved metadata, a seeded ranker and 600-photo groups. No source image files or vision inference. One cold request, median of three warm requests; the separate fifth request collects cProfile samples and is not timed.",
+    "browser": "Headless Chromium with SwiftShader at 1440 x 900. Synthetic 3,600-photo catalogue, six groups of 600; image and atlas cells reuse only the public test library. Synthetic IDs exercise the legacy enhancement fallback. CDP CPU samples and Performance metrics; each window includes an 800 ms settling allowance.",
+    "reproduceServer": "python -m tests.benchmark_performance",
+    "reproduceBrowser": "tests/ui/run.sh performance",
+    "limits": "Representative local runs, not cross-machine guarantees. API timings exclude HTTP transport; browser timing includes rendering and fixture routing. Startup, discovery, RAW decode, model inference, embedding-based clustering and richly tagged API catalogues are not benchmarked here. Original-pixel and colour parity have separate browser checks."
+  },
+  "bottlenecksAndChanges": [
+    {
+      "cause": "Expanding one group created every card, image, annotation host and animation at once. Scrolling also triggered catalogue flights.",
+      "change": "Keep stable row heights and nearby live rows, preserve look-alike families, selection, drawing and keyboard focus, and exclude scroll-window mounts from flights. Fans occupy the full row and retain readable paper."
+    },
+    {
+      "cause": "Group loading downloaded a second photo catalogue and rebuilt the sea page by page.",
+      "change": "Reuse the world catalogue only when its version and group counts match the board; otherwise load the authoritative board. Publish one complete roster."
+    },
+    {
+      "cause": "Every board page repartitioned the whole library and rebuilt group summaries.",
+      "change": "Cache a board snapshot by library, cup, group and vote revisions; edits and undo invalidate it."
+    },
+    {
+      "cause": "Every Filter page reassessed all photos.",
+      "change": "Reuse admission calculations until a SQLite write from any connection, mode change or age-limit boundary. Preview, Apply and Undo retain their validation."
+    },
+    {
+      "cause": "Colour-field voting blocked the camera thread during motion and group focus.",
+      "change": "Run exactly the same colour calculation in an OffscreenCanvas worker, retain the previous surface while it works, discard stale jobs and retain a synchronous fallback."
+    },
+    {
+      "cause": "Every mounted photo fetched its annotations in a separate request.",
+      "change": "Batch visible annotation reads, share pending reads and cached edits, and retain the single-photo fallback for a server that predates reloaded scripts."
+    },
+    {
+      "cause": "The journey HUD built every standing and repeatedly scanned Sweep candidates to choose a thumbnail and display a count.",
+      "change": "Read the first standing directly; cache Sweep candidates with database revision checks and defer photo views until the Sweep actually needs them. Crown checks visit real stacks."
+    },
+    {
+      "cause": "Selecting a whole group could force tiny or off-screen selected photos into live DOM.",
+      "change": "Keep selected thumbnails as sprites with visible selection marks; only readable or actively handled cards come up live."
+    },
+    {
+      "cause": "Bulk group edits copied a whole-library admission mask per photo, and silently truncated at 500 photos.",
+      "change": "Validate against one cup mask and handle the whole selection, up to an explicit 50,000-photo bound. A 1,200-photo move/create and undo test also uses the older 999-variable SQLite limit."
+    },
+    {
+      "cause": "Repeated animation enumeration and element-height reads forced unnecessary style/layout work.",
+      "change": "Reuse a card’s frozen pose and viewport height; query animation phase only when a bare image becomes paper. Clear activity callbacks when handing the shared sea to another screen."
+    }
+  ],
+  "server": [
+    {
+      "photos": 3600,
+      "routes": [
+        {
+          "name": "board",
+          "beforeColdMs": 51.6,
+          "afterColdMs": 51.5,
+          "beforeWarmMedianMs": 7.6,
+          "afterWarmMedianMs": 1.2
+        },
+        {
+          "name": "expanded",
+          "beforeColdMs": 8.6,
+          "afterColdMs": 3.2,
+          "beforeWarmMedianMs": 9.2,
+          "afterWarmMedianMs": 2.3
+        },
+        {
+          "name": "world",
+          "beforeColdMs": 39.2,
+          "afterColdMs": 40.2,
+          "beforeWarmMedianMs": 37.9,
+          "afterWarmMedianMs": 37.7
+        },
+        {
+          "name": "tags",
+          "beforeColdMs": 0.7,
+          "afterColdMs": 0.7,
+          "beforeWarmMedianMs": 0.3,
+          "afterWarmMedianMs": 0.3
+        },
+        {
+          "name": "journey",
+          "beforeColdMs": 24.2,
+          "afterColdMs": 17.7,
+          "beforeWarmMedianMs": 22.0,
+          "afterWarmMedianMs": 7.4
+        },
+        {
+          "name": "shortlist",
+          "beforeColdMs": 3.6,
+          "afterColdMs": 2.8,
+          "beforeWarmMedianMs": 3.2,
+          "afterWarmMedianMs": 2.4
+        },
+        {
+          "name": "filter",
+          "beforeColdMs": 88.3,
+          "afterColdMs": 83.6,
+          "beforeWarmMedianMs": 87.0,
+          "afterWarmMedianMs": 4.4
+        },
+        {
+          "name": "notes",
+          "beforeColdMs": 1.6,
+          "afterColdMs": 2.3,
+          "beforeWarmMedianMs": 1.0,
+          "afterWarmMedianMs": 1.2
+        },
+        {
+          "name": "state",
+          "beforeColdMs": 1.6,
+          "afterColdMs": 1.7,
+          "beforeWarmMedianMs": 1.1,
+          "afterWarmMedianMs": 1.2
+        }
+      ]
+    },
+    {
+      "photos": 20000,
+      "routes": [
+        {
+          "name": "board",
+          "beforeColdMs": 236.7,
+          "afterColdMs": 257.7,
+          "beforeWarmMedianMs": 36.4,
+          "afterWarmMedianMs": 2.8
+        },
+        {
+          "name": "expanded",
+          "beforeColdMs": 37.9,
+          "afterColdMs": 4.3,
+          "beforeWarmMedianMs": 37.7,
+          "afterWarmMedianMs": 3.8
+        },
+        {
+          "name": "world",
+          "beforeColdMs": 39.1,
+          "afterColdMs": 39.1,
+          "beforeWarmMedianMs": 37.9,
+          "afterWarmMedianMs": 38.7
+        },
+        {
+          "name": "tags",
+          "beforeColdMs": 0.6,
+          "afterColdMs": 0.9,
+          "beforeWarmMedianMs": 0.3,
+          "afterWarmMedianMs": 0.3
+        },
+        {
+          "name": "journey",
+          "beforeColdMs": 148.5,
+          "afterColdMs": 76.1,
+          "beforeWarmMedianMs": 113.0,
+          "afterWarmMedianMs": 30.4
+        },
+        {
+          "name": "shortlist",
+          "beforeColdMs": 13.7,
+          "afterColdMs": 10.5,
+          "beforeWarmMedianMs": 13.7,
+          "afterWarmMedianMs": 10.1
+        },
+        {
+          "name": "filter",
+          "beforeColdMs": 509.5,
+          "afterColdMs": 474.0,
+          "beforeWarmMedianMs": 510.9,
+          "afterWarmMedianMs": 24.9
+        },
+        {
+          "name": "notes",
+          "beforeColdMs": 4.3,
+          "afterColdMs": 4.0,
+          "beforeWarmMedianMs": 3.6,
+          "afterWarmMedianMs": 3.6
+        },
+        {
+          "name": "state",
+          "beforeColdMs": 3.9,
+          "afterColdMs": 3.6,
+          "beforeWarmMedianMs": 3.6,
+          "afterWarmMedianMs": 3.4
+        }
+      ]
+    }
+  ],
+  "browser": {
+    "photos": 3600,
+    "expandedGroupPhotos": 600,
+    "measurements": [
+      {
+        "name": "groups-sea",
+        "before": {
+          "wallMs": 1120,
+          "scriptMs": 217,
+          "layoutMs": 16,
+          "layoutCount": 17,
+          "nodes": 1045,
+          "cards": 0,
+          "live": 0,
+          "requests": 13,
+          "longTasks": 9,
+          "longestMs": 95
+        },
+        "after": {
+          "wallMs": 1129,
+          "scriptMs": 167,
+          "layoutMs": 13,
+          "layoutCount": 11,
+          "nodes": 1046,
+          "cards": 0,
+          "live": 0,
+          "requests": 8,
+          "longTasks": 7,
+          "longestMs": 94
+        }
+      },
+      {
+        "name": "groups-focus",
+        "before": {
+          "wallMs": 1370,
+          "scriptMs": 273,
+          "layoutMs": 5,
+          "layoutCount": 31,
+          "nodes": 1241,
+          "cards": 0,
+          "live": 12,
+          "requests": 35,
+          "longTasks": 12,
+          "longestMs": 82
+        },
+        "after": {
+          "wallMs": 1358,
+          "scriptMs": 218,
+          "layoutMs": 5,
+          "layoutCount": 31,
+          "nodes": 1242,
+          "cards": 0,
+          "live": 12,
+          "requests": 25,
+          "longTasks": 8,
+          "longestMs": 66
+        }
+      },
+      {
+        "name": "groups-bulk-selection",
+        "before": null,
+        "after": {
+          "wallMs": 1599,
+          "scriptMs": 209,
+          "layoutMs": 1,
+          "layoutCount": 3,
+          "nodes": 1244,
+          "cards": 0,
+          "live": 12,
+          "requests": 0,
+          "longTasks": 10,
+          "longestMs": 60
+        }
+      },
+      {
+        "name": "groups-list",
+        "before": {
+          "wallMs": 2437,
+          "scriptMs": 474,
+          "layoutMs": 34,
+          "layoutCount": 92,
+          "nodes": 3949,
+          "cards": 144,
+          "live": 18,
+          "requests": 231,
+          "longTasks": 20,
+          "longestMs": 165
+        },
+        "after": {
+          "wallMs": 1716,
+          "scriptMs": 259,
+          "layoutMs": 19,
+          "layoutCount": 58,
+          "nodes": 1893,
+          "cards": 24,
+          "live": 12,
+          "requests": 36,
+          "longTasks": 10,
+          "longestMs": 108
+        }
+      },
+      {
+        "name": "groups-expanded",
+        "before": {
+          "wallMs": 4322,
+          "scriptMs": 657,
+          "layoutMs": 75,
+          "layoutCount": 78,
+          "nodes": 10562,
+          "cards": 720,
+          "live": 36,
+          "requests": 725,
+          "longTasks": 24,
+          "longestMs": 601
+        },
+        "after": {
+          "wallMs": 1721,
+          "scriptMs": 275,
+          "layoutMs": 11,
+          "layoutCount": 25,
+          "nodes": 2876,
+          "cards": 48,
+          "live": 12,
+          "requests": 49,
+          "longTasks": 15,
+          "longestMs": 84
+        }
+      },
+      {
+        "name": "groups-scroll",
+        "before": {
+          "wallMs": 3687,
+          "scriptMs": 541,
+          "layoutMs": 135,
+          "layoutCount": 33,
+          "nodes": 12908,
+          "cards": 720,
+          "live": 36,
+          "requests": 138,
+          "longTasks": 23,
+          "longestMs": 216
+        },
+        "after": {
+          "wallMs": 2583,
+          "scriptMs": 448,
+          "layoutMs": 28,
+          "layoutCount": 61,
+          "nodes": 5370,
+          "cards": 54,
+          "live": 12,
+          "requests": 158,
+          "longTasks": 19,
+          "longestMs": 97
+        }
+      }
+    ],
+    "fan": {
+      "takes": 2,
+      "paper": true,
+      "width": 938,
+      "rosterWidth": 938,
+      "height": 535.71875,
+      "next": 829.4375,
+      "bottom": 821.15625
+    },
+    "selectionAndMarksRestored": true,
+    "activityCallbacksReset": true
+  },
+  "qualityAndInteractionChecks": [
+    "GPU and Canvas fallback colour fields match the worker pixel for pixel; late colour jobs and worker failure preserve the final colour.",
+    "6,000 GPU prints remain rendered with bounded live cards and image requests, including original pixels at deep zoom.",
+    "DPR 1/2 original checkerboards retain measured fine detail against a screen-space reference; fine pixels, temporary failures, zoom-out sampling and late originals are checked.",
+    "Expanded group selection and saved strokes survive unmounting and returning; stack fans reserve height, families stay together and phone layouts fit.",
+    "Group move/create and undo cover every one of 1,200 selected photos; Filter caches notice writes from either SQLite connection and age boundaries.",
+    "Filter, Crown propagation, Stacks merging, tag editing, notes and the full journey browser suites remain functional.",
+    "Batched annotation reads deduplicate requests, preserve newer edits, cancel queued reads and reject late replies across libraries; an older server and an individually missing photo preserve the remaining drawings."
+  ],
+  "remainingCosts": [
+    "The first admission assessment still evaluates the library. The cache speeds repeated reads without bypassing evidence.",
+    "Legacy enhancement sampling and layout/painting of newly visible cards remain visible in browser profiles. They now operate on nearby cards instead of every expanded photo.",
+    "Photo discovery, original decoding and model inference need their own image-format and storage-device benchmarks; this pass does not trade their output quality for speed."
+  ],
+  "validation": {
+    "python": {
+      "general": 570,
+      "scale": 7,
+      "total": 577
+    },
+    "nodeCheckFiles": [
+      "tests/sea_checks.cjs",
+      "tests/toolbelt_checks.cjs",
+      "tests/duel_checks.cjs",
+      "tests/photo_notes_checks.cjs",
+      "desktop/test/backend.test.cjs"
+    ],
+    "browserSuites": [
+      "performance",
+      "sea2_peek",
+      "flow2_e2e",
+      "tags_e2e",
+      "game_flow",
+      "filter_stage",
+      "filter_teaching",
+      "crown_sync",
+      "lifecycle_peek",
+      "stacks_scale",
+      "sea_gl",
+      "sea_lod",
+      "sea_motion",
+      "sea_waves",
+      "sea_splotches",
+      "sea_originals",
+      "sea_axes",
+      "photo_notes_context",
+      "photo_notes_stacks",
+      "toolbelt_peek"
+    ],
+    "screenshotsReviewed": true
+  }
+}

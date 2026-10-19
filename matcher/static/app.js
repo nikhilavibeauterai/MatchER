@@ -4683,12 +4683,18 @@ function expandStack(root, x, btn, boxes, reveal = true) {
 // and press a group's number. Quick sort (the minigame) deals the unsorted ones one at a time.
 async function drawSorter(main, focus) {
   const view = S.view;
-  const selected = new Set(), full = new Set();
+  const selected = new Set(), full = new Set(), windows = new Map();
   let b = null, busy = false, sea = null;
   // 🌊 sea: every photo floating, groups as islands (the default on a big screen); ▦ list: sections of tiles
   let mode = (() => { try { return localStorage.getItem("matcher-groups-view"); } catch (_) { return null; } })() || (innerWidth >= 900 ? "sea" : "list");
   const byRep = new Map();
   let loadEpoch = 0, listPages = 1, openedStack = null;
+  const tileFor=rep=>$(`.tile[data-sel="${rep}"]`,main)||[...windows.values()].map(grid=>grid.ensure(rep)).find(Boolean);
+  const updateWindows=()=>{for(const grid of windows.values())grid.update();};
+  let windowFrame=0;
+  const queueWindows=()=>{if(!windowFrame)windowFrame=requestAnimationFrame(()=>{windowFrame=0;if(!left(view))updateWindows();});};
+  const clearWindows=()=>{cancelAnimationFrame(windowFrame);windowFrame=0;for(const grid of windows.values())grid.destroy();windows.clear();};
+  S.events.signal.addEventListener('abort',clearWindows,{once:true});
   const matchingShot = (rows, members, rep) => {
     const ids=new Set(members);
     return rows.map(shot=>({shot,n:shot.members.filter(m=>ids.has(m)).length})).filter(x=>x.n)
@@ -4704,7 +4710,7 @@ async function drawSorter(main, focus) {
       .sort((a,b)=>Number(b.shot===expanded)-Number(a.shot===expanded)||Math.abs(a.box.top-edge.top)-Math.abs(b.box.top-edge.top))[0]:null;
     const anchor=visible&&{members:visible.shot===expanded?members:visible.shot.members,rep:visible.shot.rep,offset:visible.box.top-edge.top};
     const circles = Number(localStorage.getItem("matcher-circles") || 6);
-    const q = mode === "sea" ? `per=400&uper=600&tags=1&circles=${circles}` : `per=24${full.size ? `&full=${[...full].join(",")}` : ""}`;
+    const q = mode === "sea" ? `per=4&uper=4&tags=1&circles=${circles}` : `per=24${full.size ? `&full=${[...full].join(",")}` : ""}`;
     try {
       const [board, allTags] = await Promise.all([api(`/api/draw/board?${q}`), mode==="sea"?api("/api/tags?all=1"):Promise.resolve(null)]);
       if (left(view) || epoch !== loadEpoch) return;
@@ -4723,6 +4729,33 @@ async function drawSorter(main, focus) {
           Object.assign(b.boxes,next.boxes);b.more=next.more;
         }
         listPages=page+1;
+      }else{
+        // The world already owns every shot and its tags. Opening Groups only needs group summaries, rather
+        // than downloading the same catalogue again and rebuilding the sea after each board page.
+        if(b.version&&JSON.stringify(b.version)!==JSON.stringify(World.photosVersion))World.photosSource=null;
+        await World.allPhotos();if(left(view)||epoch!==loadEpoch)return;
+        const rosters=new Map(b.groups.map(g=>[g.id,[]])),unsorted=[];
+        for(const p of World.photos.values()){
+          if(p.rep!==p.id||p.cut||b.cup!=='all'&&p.category!==b.cup)continue;
+          const theme=p.theme>=0?p.theme:p.members.map(id=>World.photos.get(id)?.theme).find(id=>id>=0),
+            list=rosters.get(theme)||unsorted;
+          list.push({rep:p.id,members:p.members,taken:p.taken,box:p.box});
+        }
+        if(b.version&&JSON.stringify(b.version)===JSON.stringify(World.photosVersion)&&unsorted.length===b.unsorted.count&&b.groups.every(g=>rosters.get(g.id).length===g.count)){
+          b.unsorted.shots=unsorted;for(const g of b.groups)g.shots=rosters.get(g.id);b.more=false;
+        }else{
+          // A partially analysed library may not yet have a complete world catalogue. Keep the authoritative
+          // board roster in that case, publishing it once instead of reflowing the world page by page.
+          const first=await api('/api/draw/board?per=400&uper=600');
+          if(left(view)||epoch!==loadEpoch)return;
+          for(const g of b.groups)g.shots=first.groups.find(x=>x.id===g.id)?.shots||[];
+          b.unsorted.shots=first.unsorted.shots;b.more=first.more;let page=0;
+          while(b.more){const next=await api(`/api/draw/board?per=400&uper=600&page=${++page}`);
+            if(left(view)||epoch!==loadEpoch)return;
+            for(const g of next.groups)b.groups.find(x=>x.id===g.id)?.shots.push(...g.shots);
+            b.unsorted.shots.push(...next.unsorted.shots);b.more=next.more;
+          }
+        }
       }
       if (b.game) { Ach.check(b.game); S.game = b.game; paintSaveChip(); }
       const paint = () => {
@@ -4730,27 +4763,17 @@ async function drawSorter(main, focus) {
         if (mode === "sea") renderSea(); else { if (sea) { sea = null; World.setMode("dim"); } render(); }
       };
       paint();
-      if (mode === "sea") {
-        let page = 0;
-        while (b.more && !left(view) && epoch === loadEpoch) {
-          const next = await api(`/api/draw/board?per=400&uper=600&page=${++page}`);
-          if (left(view) || epoch !== loadEpoch) return;
-          for (const g of next.groups) b.groups.find((x) => x.id === g.id)?.shots.push(...g.shots);
-          b.unsorted.shots.push(...next.unsorted.shots); b.more = next.more;
-          paint(); await sleep(0);
-        }
-        await World.allPhotos(() => { if (!left(view) && epoch === loadEpoch) renderSea(); });
-      }
       if (left(view) || epoch !== loadEpoch) return;
       for (const r of [...selected]) if (!byRep.has(r) && !World.photos?.has(r)) selected.delete(r);
       if (keep && $("#sections", main)) {
         if(expanded){
-          const match=matchingShot([...byRep.values()],members,expanded.rep),button=match&&$(`[data-expand="${match.rep}"]`,main);
-          if(button&&match.members.length>1){expandStack(main,match,button,b.boxes,false);openedStack=match;}
+          const match=matchingShot([...byRep.values()],members,expanded.rep),button=match&&tileFor(match.rep)?.querySelector('[data-expand]');
+          if(button&&match.members.length>1){expandStack(main,match,button,b.boxes,false);openedStack=match;for(const grid of windows.values())grid.measure();}
         }
         World.sea?.layout();
-        const body=$("#sections",main),match=anchor&&matchingShot([...byRep.values()],anchor.members,anchor.rep),tile=match&&$(`[data-sel="${match.rep}"]`,body);
+        const body=$("#sections",main),match=anchor&&matchingShot([...byRep.values()],anchor.members,anchor.rep),tile=match&&tileFor(match.rep);
         body.scrollTop=tile?tile.getBoundingClientRect().top-body.getBoundingClientRect().top+body.scrollTop-anchor.offset:y;
+        updateWindows();
       }
       else if (focus) $(`#gsec-${focus}`)?.scrollIntoView({ block: "start" });
     } catch (e) { if (!left(view)) { if (!b) main.innerHTML = FAILED(e.message); else toast(e.message); } }
@@ -4761,6 +4784,7 @@ async function drawSorter(main, focus) {
   function setMode(m) {
     if (m === mode) return;
     mode = m;
+    clearWindows();
     openedStack=null;
     try { localStorage.setItem("matcher-groups-view", m); } catch (_) { /* private mode */ }
     if (sea) { sea = null; World.setMode("dim"); }
@@ -4810,11 +4834,12 @@ async function drawSorter(main, focus) {
           <aside class="screen-rail" id="venn-rail"></aside>
           <div class="screen-bar action-bar" id="mergebar"></div>
         </div>`;
+      const select=(it, e) => { if(left(view))return;if (World.stackWith) return World.stackPick(it.id);
+          if (e?.altKey || e?.detail > 1) return World.inspect(it.id, null, () => load(true));
+          selected.has(it.id) ? selected.delete(it.id) : selected.add(it.id); updateSelection(); };
       sea = World.live({
         onSelectMatches: ids=>{if(left(view))return;selected.clear();for(const id of World.groupSelection(ids))selected.add(id);updateSelection();},
-        onSelect: (it, e) => { if (World.stackWith) return World.stackPick(it.id);
-          if (e?.altKey || e?.detail > 1) return World.inspect(it.id, null, () => load(true));
-          selected.has(it.id) ? selected.delete(it.id) : selected.add(it.id); updateSelection(); },
+        onSelect:select,onFocus:select,
         onStack: (it,source)=>World.inspect(it.id,[it.id],()=>load(true),{stackOpen:true,source}),
         onDrop: (ids, t) => {
           if (t.kind === "photo") return act("/api/groups/merge", { photos: [...ids, t.id] }, "Stacked: same shot, one stack.", true);
@@ -5089,10 +5114,11 @@ async function drawSorter(main, focus) {
       await act("/api/draw/auto", {}, "Grouped.", true);
     };
   }
-  const tiles = (list) => shotTiles(list, selected);
+  const tiles = (list) => byRep.size>80?'':shotTiles(list, selected,b.boxes);
   const more = (key, g) => (g.count > g.shots.length ? `<button class="btn ghost more" data-more="${key}">Show all ${fmt(g.count)}</button>`
     : full.has(key) && g.count > 24 ? `<button class="btn ghost more" data-less="${key}">Show fewer</button>` : "");
   function render() {
+    clearWindows();
     const left_ = b.unsorted.count;
     const opts = (id) => b.groups.filter((g) => g.id !== id).map((g) => `<option value="${g.id}">${esc(g.emoji)} ${esc(g.name)}</option>`).join("");
     main.innerHTML = `
@@ -5113,7 +5139,7 @@ async function drawSorter(main, focus) {
             <section class="gsec unsorted" id="gsec--1" data-drop-group="none">
               <header class="gsec-head"><span class="gsec-title">🗃️ <b>Unsorted</b></span><span class="muted small">${plural(left_, "shot")}</span>
                 ${left_ ? `<span class="gsec-actions"><a class="btn" href="#draw?sort=1">🎮 Quick sort these</a></span>` : ""}</header>
-              ${left_ ? `<div class="lookgrid gsec-tiles">${tiles(b.unsorted.shots)}</div>${more(-1, b.unsorted)}`
+              ${left_ ? `<div class="lookgrid gsec-tiles" data-grid-group="-1">${tiles(b.unsorted.shots)}</div>${more(-1, b.unsorted)}`
                 : `<p class="muted small gsec-empty">Nothing left unsorted. 🎉</p>`}
             </section>
             ${b.groups.map((g, i) => `
@@ -5131,7 +5157,7 @@ async function drawSorter(main, focus) {
                   ${b.groups.length > 1 ? `<select data-merge="${g.id}" aria-label="Merge this group into another"><option value="">Merge into…</option>${opts(g.id)}</select>` : ""}
                   <button class="btn ghost danger" data-dissolve="${g.id}" title="Put its shots back in the unsorted pile">Dissolve</button></span>
               </header>
-              ${g.count ? `<div class="lookgrid gsec-tiles">${tiles(g.shots)}</div>${more(g.id, g)}` : `<p class="muted small gsec-empty">Empty: drag photos here.</p>`}
+              ${g.count ? `<div class="lookgrid gsec-tiles" data-grid-group="${g.id}">${tiles(g.shots)}</div>${more(g.id, g)}` : `<p class="muted small gsec-empty">Empty: drag photos here.</p>`}
             </section>`).join("")}
         </div>
         <aside class="screen-rail bins-wrap" aria-label="Groups"><div class="bins-head"><b>Groups</b>
@@ -5152,22 +5178,27 @@ async function drawSorter(main, focus) {
     forwardState();
     $("#bins").innerHTML = binsHtml(b.bins, null, null);
     bind();
+    if(byRep.size>80)for(const group of [{...b.unsorted,id:-1},...b.groups]){
+      const root=$(`[data-grid-group="${group.id}"]`,main);if(root)windows.set(group.id,new ShotWindow(root,group.shots,selected,b.boxes,$('#sections',main)));
+    }
+    $('#sections',main).onscroll=queueWindows;
     updateSelection();
     sizeFamilies();
   }
   function sizeFamilies() {  // a look-alike box spans as many grid columns as it has shots (up to a full row)
     $$(".gsec-tiles", main).forEach((grid) => {
       const cols = Math.max(1, Math.floor((grid.clientWidth + 12) / 162));
-      $$(".fam-tiles", grid).forEach((f) => {
+      $$(".fam-tiles", grid).filter(f=>!f.closest('.windowed-shots')).forEach((f) => {
         const k = Math.min(f.querySelectorAll(":scope > .tile").length, cols);
         f.style.gridColumn = `span ${k}`;
         f.style.gridTemplateColumns = `repeat(${k}, minmax(0, 1fr))`;
       });
     });
   }
-  const onResize = () => (left(view) ? window.removeEventListener("resize", onResize) : sizeFamilies());
+  const onResize = () => {if(left(view))return;sizeFamilies();for(const grid of windows.values())grid.layout();};
   window.addEventListener("resize", onResize, { signal: S.events.signal });
   function updateSelection(anchor = null) {
+    queueWindows();
     const lab=$("#groups-tag-lab",main);if(lab)lab.hidden=selected.size>0;
     $$("[data-sel]", main).forEach((el) => {
       const on = selected.has(Number(el.dataset.sel));el.classList.toggle("picked", on);
@@ -5209,6 +5240,7 @@ async function drawSorter(main, focus) {
   const expand = (rep, btn) => {
     openedStack=btn.closest(".tile").classList.contains("open")?null:byRep.get(rep);
     expandStack(main,byRep.get(rep),btn,b.boxes);
+    for(const grid of windows.values())grid.measure();queueWindows();
   };
   function bind() {
     $$("[data-mode]", main).forEach((x) => (x.onclick = () => setMode(x.dataset.mode)));
@@ -6440,7 +6472,7 @@ const World = {
     this.draftCamera?.close();
     if (this.handlers && mode !== "live") {  // the Groups page let go of the sea: back to the plain world
       this.handlers = null;
-      Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null, onSelectMatches:null,onFocus:null }, this.plain);
+      Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null, onSelectMatches:null,onFocus:null,onStack:null }, this.plain);
       this.sea.select([]);
       this.sea.highlight(null);
       this.stale = true;
@@ -6475,7 +6507,7 @@ const World = {
   // The Groups page works the sea itself: it feeds it (tags as circles, groups and suggestions) and handles its drops.
   live(handlers) {
     this.handlers = handlers;
-    Object.assign(this.sea, {clickToZoom:true}, handlers);
+    Object.assign(this.sea, {clickToZoom:true,onSelect:null,onDrop:null,onCircle:null,onLasso:null,onSelectMatches:null,onFocus:null,onStack:null}, handlers);
     this.setMode("live");
     return this.sea;
   },
@@ -6532,7 +6564,7 @@ const World = {
     if (this.photosSource === source && this.photos?.size === this.total) { onPage?.(); return; }
     const retain=this.photoSource===source;this.photoSource = source;
     const loading = (async () => {
-      let after = 0, more = true;
+      let after = 0, more = true, version=null, changedVersion=false;
       AutoLook.sync();AutoLook.pages.clear();
       const fromAnalysis=this.sea.source===source;
       const seed=fromAnalysis?[...this.sea.items.values()].map(it=>[it.id,{id:it.id,rep:it.stack,members:it.take?[it.id]:it.members,tags:it.tags,theme:typeof it.group==='number'?it.group:-1,category:it.category,cut:it.cut,visual:it.visual,dims:it.dims}]):[];
@@ -6544,6 +6576,7 @@ const World = {
         const before = after;
         const page = await api(`/api/world?per=1000&after=${after}`);
         if (source !== S.lib?.source) return;
+        if(version&&JSON.stringify(version)!==JSON.stringify(page.version))changedVersion=true;version=page.version;
         const sheet = new Image(),key=imageKey();
         sheet.onload = () => { if(source!==S.lib?.source||key!==imageKey())return;AutoLook.sheet(sheet,page.photos);this.sea.refreshColours();this.sea.kick(); };
         // A sheet that fails to arrive is asked for again (a few times): without it a thousand prints would stay blank.
@@ -6556,6 +6589,7 @@ const World = {
       if(source!==S.lib?.source)return;
       for(const id of photos.keys())if(!seen.has(id)){photos.delete(id);this.sprites.delete(id);}
       this.photosSource = source;
+      this.photosVersion=changedVersion?null:version;
       if(this.looksPolled!==source&&[...photos.values()].some(p=>(p.auto_look?.version||0)<AutoLook.version))this.pollLooks(source);
       onPage?.();
     })();
@@ -6726,7 +6760,7 @@ const World = {
       const match=img.getAttribute("src").match(/\/img\/[pt]\/(\d+)\.jpg/);
       // Scrolling an overview changes which cards are mounted, not where the photos belong. Treating that as a
       // scene change launches ghost copies to and from the sea and hides the freshly mounted thumbnails.
-      if(!match||img.closest(".under, .screen-rail, .board-card, .stacker .lookgrid"))continue;
+      if(!match||img.closest(".under, .screen-rail, .board-card, .stacker .lookgrid, .windowed-shots"))continue;
       const pid=Number(match[1]),rect=img.getBoundingClientRect();
       if(!rect.width||!rect.height||rect.bottom<=0||rect.top>=innerHeight||rect.right<=0||rect.left>=innerWidth)continue;
       // A long overview can contain thousands of pictures. Only prints visible through its scrollports fly.

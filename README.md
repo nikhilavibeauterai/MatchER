@@ -139,6 +139,8 @@ panel remembers these values in your browser and includes them in Export.
 
 MatchER is young, and real Windows/Linux feedback will make it better. Try the sample, file a clear bug report,
 or improve a rough edge. The app is Python/Flask with plain JavaScript and an Electron desktop window.
+Large group lists render nearby rows while keeping every photo reachable; small sea prints and bulk selections
+stay on the atlas. See the [performance measurements](docs/performance.json) and [contributor benchmark commands](CONTRIBUTING.md).
 
 [Contributing](CONTRIBUTING.md) · [Build desktop packages](docs/building.md) · [Browser tests](tests/ui/README.md) · [Security](SECURITY.md) · [Third-party credits](THIRD_PARTY_NOTICES.md)
 

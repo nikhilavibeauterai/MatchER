@@ -135,6 +135,16 @@ class Draw:
             abort(400, "That photo isn't in the running.")
         return i
 
+    def items(self, photos) -> list[int]:
+        """A bulk edit checks one cup mask, rather than copying the entire library's mask for each take."""
+        pool, out = self.pool_mask(), {}
+        for photo in photos:
+            i = self.s._item(int(photo))
+            if i is None or not pool[i]:
+                abort(400, "That photo isn't in the running.")
+            out[i] = None
+        return list(out)
+
     def theme(self, tid) -> dict:
         row = self.s.store.one("SELECT * FROM themes WHERE id=?", (int(tid),))
         if row is None:
@@ -333,7 +343,7 @@ class Draw:
         one is its seed). One undo step."""
         s = self.s
         tm = self.theme_of()
-        items = list(dict.fromkeys(self.item(p) for p in photos))
+        items = self.items(photos)
         if not items:
             abort(400, "Pick at least one photo.")
         _, F, namer, has, _, _ = self.space()
@@ -803,7 +813,7 @@ class Draw:
     def tag_group(self, photos, name: str | None, emoji: str | None) -> dict:
         """A group from a tag suggestion: the shots of that intersection that aren't in a group yet."""
         tm = self.theme_of()
-        items = [i for i in dict.fromkeys(self.item(p) for p in photos) if tm[i] < 0]
+        items = [i for i in self.items(photos) if tm[i] < 0]
         if not items:
             abort(400, "Those shots are all in groups already.")
         return self.create([self.s.reps[i] for i in items], name=name, emoji=emoji)
@@ -820,7 +830,7 @@ class Draw:
     def toss_many(self, photos) -> dict:
         """Set aside a selection with one undo step, including the original rescue overrides."""
         s = self.s
-        reps = [s.reps[i] for i in sorted({self.item(p) for p in photos})]
+        reps = [s.reps[i] for i in sorted(self.items(photos))]
         if not reps:
             abort(400, "Pick some shots first.")
         pids = self._tag_photos(reps)
@@ -839,7 +849,7 @@ class Draw:
 
     def move(self, photos, tid=None) -> dict:
         """Move shots to another group (or back to the unsorted pile, tid None)."""
-        items = sorted({self.item(p) for p in photos})
+        items = sorted(self.items(photos))
         if not items:
             abort(400, "Pick some shots first.")
         target = self.theme(tid)["id"] if tid is not None else None

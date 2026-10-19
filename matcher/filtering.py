@@ -770,6 +770,22 @@ def _preview_stamp(s, connection):
         return connection.total_changes, connection.execute("PRAGMA data_version").fetchone()[0]
 
 
+def current_page(s, params):
+    """Paging and changing the displayed reason reuse the same admission calculations until evidence changes."""
+    connection = s.store.conn()
+    stamp, now = _preview_stamp(s, connection), time.time()
+    cached = getattr(s, "filter_catalogue", None)
+    if (cached is None or cached["connection"] is not connection or cached["stamp"] != stamp
+            or cached["mode"] != s.mode or cached["deadline"] is not None and now > cached["deadline"]):
+        photos, sets, p, _ = snapshot(s)
+        rows = catalogue(s, photos, sets, p, now=now)
+        deadlines = [r["taken_ts"] + p["max_age_years"] * 365.25 * 86400 for r in photos
+                     if p["max_age_years"] and r["taken_ts"] and r["taken_ts"] + p["max_age_years"] * 365.25 * 86400 >= now]
+        cached = s.filter_catalogue = {"connection": connection, "stamp": stamp if stamp == _preview_stamp(s, connection) else None,
+                                       "mode": s.mode, "deadline": min(deadlines, default=None), "rows": rows, "policy": p}
+    return page(s, cached["rows"], cached["policy"], params)
+
+
 def get_preview(s, token, snapshot_data=None):
     stored = getattr(s, "filter_preview", None)
     if not isinstance(token, str) or not stored or not secrets.compare_digest(stored["token"], token) or time.time() - stored["at"] > 1800:

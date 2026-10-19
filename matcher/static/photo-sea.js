@@ -122,7 +122,8 @@ class PhotoSea {
     if(this.el.id!=='world')return;
     const img=it.el.querySelector('.pile-cover');if(!img?.naturalWidth)return;
     if(this.imageBasis(it))this.paintItem?.(it,true);
-    const old=img.getAnimations().find(a=>a.animationName==='cardwobble'),pose=this.stillCards?.get(img),time=old?.currentTime??pose?.time;
+    const bare=!img.closest('.paper'),old=bare?img.getAnimations().find(a=>a.animationName==='cardwobble'):null,
+      pose=this.stillCards?.get(img),time=old?.currentTime??pose?.time;
     if(pose)this.stillCards.delete(img);  // its saved phase passes to the paper when the bare image is wrapped
     it.el.dataset.photo=it.photo;Cards.focus(it.el);
     const paper=it.el.querySelector(':scope > .paper');
@@ -144,6 +145,8 @@ class PhotoSea {
   // A paused transform animation can retain a thumbnail-sized compositor surface while the original decodes.
   // Keep its exact angle as ordinary styling during deep zoom, then resume the wobble at the same instant.
   stillCard(it){
+    const paper=it.el.querySelector(':scope > .paper')||it.el.querySelector('.pile-cover');
+    if(paper&&this.stillCards?.has(paper))return;
     for(const card of this.stillCards?.keys()||[])if(!card.isConnected)this.stillCards.delete(card);
     for(const motion of it.el.getAnimations({subtree:true})){
       if(motion.animationName!=='cardwobble')continue;
@@ -265,7 +268,7 @@ class PhotoSea {
   // A print whose card fills four fifths of the screen's height or more shows the original file (the owner's rule);
   // at most a couple of prints can at once, so the originals stay bounded.
   imageSize(it){return (it.size||this.s)*this.camera.zoom*(it.renderScale||1);}
-  fullSize(it){return this.imageSize(it)*4/3>=.8*this.el.clientHeight-.5;}  // tolerate subpixel rounding at the click's exact 80% destination
+  fullSize(it){return this.imageSize(it)*4/3>=.8*(this.height||this.el.clientHeight)-.5;}  // tolerate subpixel rounding at the click's exact 80% destination
   // Deep in one print the physics tick (which refreshes a live print's picture) stops, so that print, promoted if
   // it was a sprite, is given its original here.
   deepSource(){
@@ -340,7 +343,7 @@ class PhotoSea {
     const c=this.camera,W=this.el.clientWidth,H=this.el.clientHeight;
     if(!force&&c.zoom===1&&!this.culled)return;this.culled=c.zoom!==1;
     const x0=-c.tx/c.zoom,y0=-c.ty/c.zoom,x1=x0+W/c.zoom,y1=y0+H/c.zoom,pad=0;
-    const keep=it=>it.focused||it.selected||!it.density&&(it.id===this.held||!!this.drag?.members.has(it)||it.el.classList.contains('lifted'));
+    const keep=it=>it.focused||!it.density&&(it.id===this.held||!!this.drag?.members.has(it)||it.el.classList.contains('lifted'));
     const liveMin=this.tuning.liveMin??22;
     const visible=[...this.items.values()].filter(it=>!it.take&&!it.hidden&&this.inView(it,x0,y0,x1,y1,pad)&&(keep(it)||(it.size||this.s)*c.zoom>=liveMin*(it.density?1:.85))).sort((a,b)=>Number(keep(b))-Number(keep(a))||Number(this.inView(b,x0,y0,x1,y1,0))-Number(this.inView(a,x0,y0,x1,y1,0))||Number(a.density)-Number(b.density)||(b.size||0)-(a.size||0));
     const wanted=new Set(visible.slice(0,this.domLimit).map(it=>it.id));for(const it of this.items.values())if(!it.hidden&&keep(it))wanted.add(it.id);
@@ -555,7 +558,7 @@ class PhotoSea {
   select(ids) {
     const on = new Set(ids);
     for (const it of this.items.values()) { it.selected = on.has(it.id); it.el.classList.toggle("selected", it.selected); }
-    this.kick();
+    this.selectedIds=on;this.densityDirty=true;this.kick();
   }
   kick() { if (!this.raf && this.alive) this.raf = requestAnimationFrame((t) => this.tick(t)); }
 }
@@ -813,6 +816,7 @@ class VennSea extends PhotoSea {
       ctx.fillStyle=d.source?this.cellColour(d.source):'#c9c2b4';ctx.fillRect(d.sx+d.shown*.055,d.sy+d.shown*.055,d.shown*.89,Math.min(d.shown*.89,d.tall-d.shown*.225));
     }
     ctx.globalAlpha=1;
+    this.drawSelectionMarks(ctx,zoom,tx,ty);
     // Projected Filter changes mark the real tiny prints too, without promoting thousands of DOM nodes.
     if(this.outcomeChanges?.size){
       ctx.beginPath();ctx.strokeStyle='#ffe099';ctx.lineWidth=1;
@@ -874,14 +878,25 @@ class VennSea extends PhotoSea {
   }
   // Projected Filter changes mark the sprites on the 2D canvas, which lies over the sprite layer.
   drawOutcomeMarks(W,H,dpr,zoom,tx,ty){
-    const canvas=this.densityCanvas,ctx=this.densityCtx||(this.densityCtx=canvas.getContext('2d')),marks=this.outcomeChanges?.size||0;
+    const canvas=this.densityCanvas,ctx=this.densityCtx||(this.densityCtx=canvas.getContext('2d')),marks=(this.outcomeChanges?.size||0)+(this.selectedIds?.size||0);
     if(!marks&&!this.marksDrawn)return;this.marksDrawn=marks;
     const cw=Math.round(W*dpr),ch=Math.round(H*dpr);
     if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;canvas.style.width=`${W}px`;canvas.style.height=`${H}px`;}
     canvas.style.transform='';ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
     if(!marks)return;
     ctx.beginPath();ctx.strokeStyle='#ffe099';ctx.lineWidth=1;
-    for(const id of this.outcomeChanges){const it=this.items.get(id);if(!it?.density||it.lifted||it.pileLifted)continue;const size=((it.size||this.densitySize||4)+4)*zoom,[wx,wy]=this.waveOffset(it);ctx.rect((it.x+wx)*zoom+tx-size/2,(it.y+wy)*zoom+ty-size*2/3,size,size*4/3);}
+    for(const id of this.outcomeChanges||[]){const it=this.items.get(id);if(!it?.density||it.lifted||it.pileLifted)continue;const size=((it.size||this.densitySize||4)+4)*zoom,[wx,wy]=this.waveOffset(it);ctx.rect((it.x+wx)*zoom+tx-size/2,(it.y+wy)*zoom+ty-size*2/3,size,size*4/3);}
+    ctx.stroke();this.drawSelectionMarks(ctx,zoom,tx,ty);
+  }
+  drawSelectionMarks(ctx,zoom,tx,ty){
+    if(!this.selectedIds?.size)return;
+    ctx.beginPath();ctx.strokeStyle='#ffd86b';ctx.lineWidth=2;
+    for(const id of this.selectedIds){
+      const it=this.items.get(id);if(!it||!it.density&&!it.imagePending||it.hidden||it.lifted||it.pileLifted)continue;
+      const size=(it.size||this.s)*zoom*(it.density?1:it.renderScale||1),[wx,wy]=this.waveOffset(it),x=(it.x+wx)*zoom+tx-size/2,y=(it.y+wy)*zoom+ty-size*2/3;
+      if(x>this.width||y>this.height||x+size<0||y+size*4/3<0)continue;
+      ctx.rect(x-1,y-1,size+2,size*4/3+2);
+    }
     ctx.stroke();
   }
   // A sprite repaint on the next frame, outside the physics tick: a camera move at rest must not wait for one.
@@ -1244,7 +1259,7 @@ class VennSea extends PhotoSea {
     let promoted=false;for(const id of wanted){const it=this.items.get(id);if(it.density){this.promote(id,false);promoted=true;}}
     if(promoted)this.layout();
     const cap=this.bigCap();
-    if(this.items.size>400){for(const it of this.moving)if(this.moving.length>cap&&!it.focused&&!it.selected&&it.id!==this.held&&!this.drag?.members.has(it)&&!it.el.classList.contains('lifted')){it.density=true;this.cancelImage(it);this.smallPreview(it);it.el.replaceChildren();it.el.remove();this.moving=this.moving.filter(x=>x!==it);this.densityDirty=this.spritesDirty=true;if(this.presentation?.item===it)this.presentation.follow();}}
+    if(this.items.size>400){for(const it of this.moving)if(this.moving.length>cap&&!it.focused&&it.id!==this.held&&!this.drag?.members.has(it)&&!it.el.classList.contains('lifted')){it.density=true;this.cancelImage(it);this.smallPreview(it);it.el.replaceChildren();it.el.remove();this.moving=this.moving.filter(x=>x!==it);this.densityDirty=this.spritesDirty=true;if(this.presentation?.item===it)this.presentation.follow();}}
     for(const it of this.moving){const lifted=it.el.classList.contains('lifted');if(it.imagePending&&it.lifted!==lifted)this.densityDirty=this.spritesDirty=true;it.lifted=lifted;}
     for(const it of this.takes||[]){
       // A metadata update can separate a take before the debounced body list catches up.
@@ -1307,8 +1322,9 @@ class VennSea extends PhotoSea {
     if(this.contourRaster){for(const canvas of new Set([this.contourRaster.current,this.contourRaster.spare]))if(canvas)canvas.width=canvas.height=0;this.contourRaster=null;}
     if(this.waterField){this.waterField.canvas.width=this.waterField.canvas.height=0;this.waterField=null;}
     if(this.pigmentField){this.pigmentField.canvas.width=this.pigmentField.canvas.height=0;this.pigmentField=null;}
+    this.pigmentResult=null;this.pigmentQueued=null;
     this.bodyPigments=null;this.pigmentSpots=null;this.dotColours=null;
-    this.worker?.terminate();document.removeEventListener('visibilitychange',this.wake);for(const type of ['pointermove','pointerdown','pointerup','pointercancel'])document.removeEventListener(type,this.proxyPointer);
+    this.worker?.terminate();this.pigmentWorker?.terminate();document.removeEventListener('visibilitychange',this.wake);for(const type of ['pointermove','pointerdown','pointerup','pointercancel'])document.removeEventListener(type,this.proxyPointer);
     document.removeEventListener('wheel',this.wheelZoom);document.removeEventListener('dblclick',this.doubleReset);clearTimeout(this.cullTimer);this.dock?.classList.remove('tag-dock');this.tray.remove();super.destroy();
   }
   refreshColours(){this.groupColoursDirty=true;if(this.width&&this.height)this.draw(this.width,this.height);}
@@ -1392,6 +1408,34 @@ class VennSea extends PhotoSea {
     }
     x.restore();if(progress===1){raster.previous=null;raster.previousColours=null;}
   }
+  pigmentRaster(spots,W,H,camera,key){
+    if(this.pigmentWorkerFailed||typeof OffscreenCanvas==='undefined'){
+      this.pigmentField=SeaPigments.field(spots,W,H,camera,this.pigmentField);return this.pigmentField;
+    }
+    if(this.pigmentResult?.key===key)return this.pigmentResult;
+    if(!this.pigmentWorker){
+      try{
+        this.pigmentWorker=new Worker('/static/sea-pigments-worker.js');
+        this.pigmentWorker.onmessage=({data})=>{
+          this.pigmentBusy=false;if(!this.alive)return;
+          const queued=this.pigmentQueued;this.pigmentQueued=null;
+          if(data.key===this.pigmentWanted){
+            const canvas=this.pigmentResult?.canvas||document.createElement('canvas');canvas.width=data.w;canvas.height=data.h;
+            const pixels=new ImageData(data.pixels,data.w,data.h);canvas.getContext('2d').putImageData(pixels,0,0);
+            this.pigmentField=this.pigmentResult={key:data.key,canvas,w:data.w,h:data.h,pixels};this.pigmentWorkerMs=data.ms;
+            this.draw(this.width,this.height);
+          }
+          if(!this.pigmentBusy&&queued&&queued.key===this.pigmentWanted&&queued.key!==data.key){this.pigmentBusy=true;this.pigmentWorker.postMessage(queued);}
+        };
+        this.pigmentWorker.onerror=()=>{this.pigmentWorkerFailed=true;this.pigmentWorker.terminate();this.pigmentField=null;this.pigmentQueued=null;if(this.alive)this.draw(this.width,this.height);};
+      }catch(_){this.pigmentWorkerFailed=true;return this.pigmentRaster(spots,W,H,camera,key);}
+    }
+    if(this.pigmentWanted!==key){
+      this.pigmentWanted=key;const job={spots,W,H,camera,key};
+      if(this.pigmentBusy)this.pigmentQueued=job;else{this.pigmentBusy=true;this.pigmentWorker.postMessage(job);}
+    }
+    return null;
+  }
   draw(W, H) {
     const dpr=window.devicePixelRatio||1,now=performance.now();let catalogDirty=false;
     this.colourGroups();
@@ -1422,6 +1466,8 @@ class VennSea extends PhotoSea {
     const {spots,signature}=positions,{zoom,tx,ty}=this.camera||{zoom:1,tx:0,ty:0},size=`${W}:${H}:${dpr}:${zoom.toFixed(3)}:${Math.round(tx)}:${Math.round(ty)}`,appearance=String(this.colourRevision||0);
     let raster=this.contourRaster;
     if(!raster||raster.signature!==signature||raster.appearance!==appearance||raster.size!==size){
+      const field=spots.length?this.pigmentRaster(spots,W,H,{zoom,tx,ty},`${signature}/${appearance}/${size}`):null;
+      if(spots.length&&!field){this.paintWater(W,H,now);return;}
       const sameSize=raster?.size===size;
       const canvas=raster?.spare||document.createElement('canvas'),ctx=canvas.getContext('2d');
       const scale=.35,width=Math.max(1,Math.round(W*scale)),height=Math.max(1,Math.round(H*scale));
@@ -1431,9 +1477,8 @@ class VennSea extends PhotoSea {
       // Two cached bitmaps make changes gentle; movement reuses them and never retraces shores.
       let colours=null;
       if(spots.length){
-        this.pigmentField=SeaPigments.field(spots,W,H,{zoom,tx,ty},this.pigmentField);
-        ctx.drawImage(this.pigmentField.canvas,0,0,W,H);
-        colours={width:this.pigmentField.w,height:this.pigmentField.h,data:this.pigmentField.pixels.data.slice()};
+        ctx.drawImage(field.canvas,0,0,W,H);
+        colours={width:field.w,height:field.h,data:field.pixels.data.slice()};
       }
       const animate=!reduceMotion&&sameSize&&raster.nonempty&&spots.length;
       raster=this.contourRaster={signature,appearance,size,cam:{zoom,tx,ty},current:canvas,spare:raster?.current,

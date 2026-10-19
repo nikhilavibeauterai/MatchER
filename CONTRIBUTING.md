@@ -22,6 +22,13 @@ Use the bundled public-domain sample or the libraries fetched by `tests/ui/setup
 throwaway directory; never test decisions against personal saves or attach private photos, previews or databases
 to a report. Stop only servers you started.
 
+For performance work, run `python -m tests.benchmark_performance` for synthetic 3,600/20,000-photo API timings
+and CPU profiles, and `tests/ui/run.sh performance` for browser profiles of large group expansion and scrolling.
+Both print JSON; the browser suite also records layouts, long tasks, live cards, requests and screenshots.
+Run timings with other tests stopped for a useful comparison. The [recorded performance pass](docs/performance.json)
+includes the fixtures, baseline revision and limits of the measurements. Keep the same photos, colours, edits
+and interactions when reducing work; the colour-worker suite compares its pixels with the canvas fallback.
+
 Use the app's words: **take**, **stack**, **group**, **leaderboard**, **set aside**. Keep all photo cards in the
 shared polaroid frame. Edits need an undo step and a test that restores the previous state. Match surrounding
 code and explain why a change is needed in the pull request, with relevant validation.

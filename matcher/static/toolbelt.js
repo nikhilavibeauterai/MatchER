@@ -148,6 +148,8 @@ const Toolbelt = {
   syncSource() {
     const source=typeof S==='undefined'?'':S.lib?.source||'';
     if(this.source===source)return;
+    clearTimeout(this.loadTimer);this.loadTimer=0;
+    for(const job of this.loadQueue?.values()||[])job.resolve();this.loadQueue=new Map();
     this.cancel();this.source=source;this.edits.clear();this.loading.clear();this.jobs.clear();this.saving.clear();this.draft=null;
     if(source&&typeof HistoryHUD!=='undefined'){
       HistoryHUD.photoEdit=null;const generation=HistoryHUD.generation;
@@ -161,9 +163,26 @@ const Toolbelt = {
   },
   load(pid) {
     this.syncSource();
-    if (this.edits.has(pid) || this.loading.has(pid)) return;
-    const source=this.source;
-    this.loading.set(pid, api(`/api/edit?photo=${pid}`).then((r) => { this.syncSource();if(source!==this.source)return;this.loading.delete(pid); this.know(pid, r.edits || {}); }).catch(() => {if(source===this.source)this.loading.delete(pid);}));
+    if(this.edits.has(pid))return Promise.resolve();if(this.loading.has(pid))return this.loading.get(pid);
+    let resolve;const promise=new Promise(done=>resolve=done);this.loading.set(pid,promise);
+    this.loadQueue||=new Map();this.loadQueue.set(pid,{resolve,promise});
+    if(!this.loadTimer)this.loadTimer=setTimeout(()=>this.loadBatch(),16);
+    return promise;
+  },
+  async loadBatch() {
+    this.loadTimer=0;const source=this.source,batch=[...this.loadQueue].slice(0,120);
+    for(const [pid]of batch)this.loadQueue.delete(pid);
+    if(this.loadQueue.size)this.loadTimer=setTimeout(()=>this.loadBatch(),16);
+    try{
+      const data=await api(`/api/edits?photos=${batch.map(([pid])=>pid).join(',')}`).catch(async error=>{
+        // A running server can predate freshly reloaded static files. Its saved drawings must still load.
+        if(error.status!==404)throw error;
+        const reads=await Promise.allSettled(batch.map(([pid])=>api(`/api/edit?photo=${pid}`)));
+        return {photos:reads.filter(read=>read.status==='fulfilled').map(read=>read.value)};
+      });this.syncSource();
+      if(source===this.source)for(const {photo,edits}of data.photos)if(!this.edits.has(photo))this.know(photo,edits||{});
+    }catch(_){/* A missing or unplugged library tries again when its cards return. */}
+    finally{for(const [pid,job]of batch){if(this.loading.get(pid)===job.promise)this.loading.delete(pid);job.resolve();}}
   },
   save(pid, change) {
     this.syncSource();
