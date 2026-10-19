@@ -10,6 +10,11 @@ server on its own data dir. They only ever use the public-domain test libraries 
 Everything they create (data dirs, server logs, results, screenshots in `shots/`) lives in `$MATCHER_UI_TMP`
 (default `/tmp/matcher-ui`). A suite fails if it exits non-zero or its result lists `problems` (page or console errors).
 
+Documentation captures use a separate collection of 320 distinct public-domain photographs. Prepare it with
+`tests/ui/setup.sh --showcase`, then run `tests/ui/run.sh docs_screenshots`.
+See the [credits and capture instructions](../../docs/images/README.md). `MATCHER_UI_REUSE=1` preserves this suite's
+analysis during capture iterations; every other suite still gets a fresh save.
+
 | suite | covers |
 |---|---|
 | experience_flow | visible forward actions from first launch through Filter, Stacks, Crown, Groups, group stage, Knockouts (or straight to a bracket the advancers already fill, with the rail marking the skip), Finals, Reveal and a real export on public fixtures; qualification preview/commit/undo; desktop and phone screenshots at every stage |
@@ -65,7 +70,7 @@ Everything they create (data dirs, server logs, results, screenshots in `shots/`
 | auto_align | structural-reference angle follows atlas and live paper, A toggles without votes, manual zero overrides it, notes restore automatic alignment |
 | auto_tone | visible correction of a dim photo, measured SVG/export pixel agreement, unchanged source at zero amount and matching atlas colours, and progressive recipe upgrades without rebuilding the sea or changing its camera |
 | auto_look | saved automatic baselines, real amount/component controls and Undo, zero-amount unadjusted pixels, preservation of manual edits on Auto, original comparison, phone layout and styled atlas cells without vote passthrough |
-| docs_screenshots | reproducible desktop and phone captures for the README, using only the public test library; output is `shots/docs-*.png`, reviewed before copying into `docs/images/` |
+| docs_screenshots | real 320-photo public-domain travel collection, complete atlas coverage and decoded images; sea, Filter, Groups, Stacks, a real stack fan and Crown, Leaderboard, notes and phone captures; output is `shots/docs-*.png`, reviewed and exported losslessly into `docs/images/` |
 | paper_layout | desktop/phone map, Groups, Stacks, Leaderboard and duels; floating tools do not cover actions or the chart key, group rosters and stats stay on their paper, and help matches its screen |
 | stack_clip | the shared metal paperclip and handwritten count slip stay above the picture window, survive camera gestures, pull up every take with one click or Enter from the sea and focused notes layer without selecting, panning or editing, return the pile on Escape, open stack tiles on desktop and mobile, fit four-digit counts and never appear on singles |
 | sea_originals | actual decoded and displayed original pixels, including two-pixel fine detail, against a visible screen-space reference at DPR 1/2, with and without an initial hover; fractional sizes at the exact 80% threshold, recovery after repeated failures without another gesture, one pending upgrade through camera changes, retained visible preview during loading, detailed partial-photo zoom and stale-response rejection after zooming out |

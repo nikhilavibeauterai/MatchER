@@ -1,0 +1,3208 @@
+{
+  "collection": "https://www.loc.gov/collections/carol-m-highsmith/",
+  "photographer": "Carol M. Highsmith",
+  "license": "Public domain",
+  "rights": "https://www.loc.gov/rr/print/res/482_high.html",
+  "photos": [
+    {
+      "file": "mountains/2013633694.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633694/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23237/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "70df1199febb4668c46d3068c07d769928271926edd11c26ca4f4d7fd40aafa4",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013630445.jpg",
+      "title": "Salvation Mountain, Calipatria, California",
+      "source": "https://www.loc.gov/item/2013630445/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21000:21017/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "bf7fdb97b39ef9926f98d63ddc806d871a11dc4859c4eb3eb02e2d624eb1583e",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013630579.jpg",
+      "title": "Google Headquarters, Mountain View, California",
+      "source": "https://www.loc.gov/item/2013630579/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21100:21151/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "72936163726294c2eabcd7aa6cb83fba31223a3b249ac4f3480f5574754ed115",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2015632362.jpg",
+      "title": "[San Juan Mountains? Colorado]",
+      "source": "https://www.loc.gov/item/2015632362/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:32300:32347/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "668791a4620f6b6b34c151e8b413380e3dc01f1574bb5659e0f2a66915809d69",
+      "catalogue_date": "2015-06-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633681.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633681/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23224/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "cc4e0a13ace82e1d7d61191a0bb60aab6738f5af243c2d56dd26c35c9c532802",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013630441.jpg",
+      "title": "Salvation Mountain, Calipatria, California",
+      "source": "https://www.loc.gov/item/2013630441/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21000:21013/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "f065d030e56d7581bd7179649daa46e1a0d87bdf0b49a33f28b4376e7fc7e29a",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633683.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633683/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23226/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "820741806fa097705f8a51a26f9b799b6836db63cd1864ff5ed83593fda93bd0",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633692.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633692/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23235/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "454126536dfd7efd50e7c02a70b97b6a35abeb6290cb39ddb58a61cf2e59a7cb",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633702.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633702/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23245/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b3e98c2931e4d85840f3661849414c08595c866e2c73e8555650eb69dd88e7fd",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633693.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633693/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23236/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "fb58efe4f15f9eb3801d2b7861b92cdaa5a284466840539a730c62624edd85db",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2015632419.jpg",
+      "title": "[View of Mountain, Ridgway, Colorado]",
+      "source": "https://www.loc.gov/item/2015632419/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:32400:32404/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "465eb4de03babe37f8bf1756d7843b4d2cbc92fe662f82752bad3d2938b83b6c",
+      "catalogue_date": "2015-06-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633690.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633690/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23233/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "6b5558b9cc7bed0344033eb9d79fefd4ca2e3a39d3ca22f51da89506d4a34fc9",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013630580.jpg",
+      "title": "Google Headquarters, Mountain View, California",
+      "source": "https://www.loc.gov/item/2013630580/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21100:21152/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "298d85f1b13d890fb59caef733e554e033bbd075326a42fca71bebf998747d68",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633664.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633664/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23207/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "cda60a1107e45df78f343c9f0771e9e1eed1a79399608815e0e67995513bb830",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2014631687.jpg",
+      "title": "View of the Guadalupe Mountains in Guadalupe Mountains National Park in Hudspeth County, Texas",
+      "source": "https://www.loc.gov/item/2014631687/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:27400:27487/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "e272b11df761d11bda6a2a6416956a6272602f95a5eb868e9d7d324069e203d0",
+      "catalogue_date": "2014-03-23.",
+      "date_precision": "year"
+    },
+    {
+      "file": "mountains/2013633684.jpg",
+      "title": "View of mountains, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633684/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23227/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "1c21768395a76ead1edadf8cc7a487ef91c654c325ea779d617e6991b7644f2b",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633075.jpg",
+      "title": "Shasta Lake, California",
+      "source": "https://www.loc.gov/item/2013633075/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22618/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "c3fa7f30fc1a996411c0ed567f046a10c5e3334707fdab113923e0e9ce30a4c6",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633729.jpg",
+      "title": "Ski lift and lake at Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633729/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23272/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "18a80ed9dcc301967910642a0f3e9cdf1ed55eeb357750c50f8058c03b78d656",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013632907.jpg",
+      "title": "Mono Lake, a large, shallow saline soda lake in Mono County, California",
+      "source": "https://www.loc.gov/item/2013632907/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22400:22450/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b336b6f9f5eafe816f8ec9233eaa3b67a8880400735065fa188922a815f7bf6a",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633824.jpg",
+      "title": "Lake Tahoe, California",
+      "source": "https://www.loc.gov/item/2013633824/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23300:23367/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "e7d731dd17a7109255695db2f55976bbfd56974b5883127f92c19e131ac35129",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633186.jpg",
+      "title": "Mono Lake, a large, shallow saline soda lake in Mono County, California",
+      "source": "https://www.loc.gov/item/2013633186/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22729/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "d63ac344a9b5c4ee165e2b9b6a8356de359d0526693950ded3348063195977af",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2012631654.jpg",
+      "title": "Lake Candlewood, Connecticut",
+      "source": "https://www.loc.gov/item/2012631654/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20245/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "70973c47c5ea11bbcf915131314c5e963cd90773b20bf8666922dd37edf86f2a",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2012631655.jpg",
+      "title": "Lake Candlewood, Connecticut",
+      "source": "https://www.loc.gov/item/2012631655/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20246/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "094b0c14c8234d02e696c3362151c4596a026e2f389265456e4b9c9916b4abf3",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633088.jpg",
+      "title": "Mono Lake, a large, shallow saline soda lake in Mono County, California",
+      "source": "https://www.loc.gov/item/2013633088/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22631/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "c6f129682150be717fbcd3c64bd02f995064de44051d225f6f415caff899de6c",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633183.jpg",
+      "title": "Lake Mary in the Inyo National Forest near Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633183/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22726/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b06746219acf034fd98324d9200bb081e680baa856a5d12b6cbc16065abf1e57",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633825.jpg",
+      "title": "Lake Tahoe, California",
+      "source": "https://www.loc.gov/item/2013633825/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23300:23368/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "2b2b1efe29245dbd6fbc67b341ccb7c91cdae25bf23808e5a1d8598e45840370",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2012631652.jpg",
+      "title": "Lake Candlewood, Connecticut",
+      "source": "https://www.loc.gov/item/2012631652/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20243/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "ef01a419baa2568153ea15d42648870ba7cef1393d07c566f28248c2b03a48fd",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013632905.jpg",
+      "title": "Mono Lake, a large, shallow saline soda lake in Mono County, California",
+      "source": "https://www.loc.gov/item/2013632905/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22400:22448/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "5e177f28d16f55bb3e289e065cf6da822d62ca0ab7525847f59096f723c65ff7",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633823.jpg",
+      "title": "Lake Tahoe, California",
+      "source": "https://www.loc.gov/item/2013633823/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23300:23366/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "4203d338b04a768d6469ec3bb05a4fc08a4d9599fa2639a176f8a61a025288e2",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2012631651.jpg",
+      "title": "Lake Candlewood, Connecticut",
+      "source": "https://www.loc.gov/item/2012631651/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20242/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "a7e5bc47d63616dc8c1bff14313fbe780051b478b437d0dcd39de5db1b04d751",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633181.jpg",
+      "title": "Lake Mary in the Inyo National Forest near Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633181/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22724/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "40bce1e43a4595210f4da11319bd733951f3ef965c4a61875659ad77531fc0fa",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "lakes/2013633185.jpg",
+      "title": "Mono Lake, a large, shallow saline soda lake in Mono County, California",
+      "source": "https://www.loc.gov/item/2013633185/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22728/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "dbbd7ed60c03afad6d9030eb95fd03a4689f41a51830ada5b28a211aeab91043",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633192.jpg",
+      "title": "Aerial of Pacific Coast Beach, Los Angeles, California",
+      "source": "https://www.loc.gov/item/2013633192/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22735/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "3a553f8ccb630b4e93ab6c4840111765805a71c781a389b81df840552ed3241d",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633438.jpg",
+      "title": "Pacific Coast sunset at Monterey, California",
+      "source": "https://www.loc.gov/item/2013633438/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22981/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "f87694d4619c070bdb6b600bd28a236c25599ea6f98eac4a9a57faf12c048efb",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633197.jpg",
+      "title": "Aerial of Pacific Coast Beach, Los Angeles, California",
+      "source": "https://www.loc.gov/item/2013633197/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22740/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "75bdea105a9ab54f91d8b4c7c4db6bb1e8dc41f1918ceb2d36e3d7a03f3f386b",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633198.jpg",
+      "title": "Aerial of Pacific Coast Beach, Los Angeles, California",
+      "source": "https://www.loc.gov/item/2013633198/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22741/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "74a3b83c29f12ba61411b659d8369b96f9992f1ebd27ad88795cdcd2ed79838e",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633196.jpg",
+      "title": "Aerial of Pacific Coast Beach, Los Angeles, California",
+      "source": "https://www.loc.gov/item/2013633196/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22739/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "6e8c88263ae7cd951a53504a8269a74f98bc4fcea201a9784ff58308300e05fb",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633439.jpg",
+      "title": "Pacific coast sunset at Monterey, California",
+      "source": "https://www.loc.gov/item/2013633439/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22982/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "8fb977c6c90f7a01d8a7ff79520c96a301789308be71be0bd31143df01eac370",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013634961.jpg",
+      "title": "View of coast Santa Catalina Island, a rocky island off the coast of California",
+      "source": "https://www.loc.gov/item/2013634961/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25500:25516/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "79de69c815e9872357f141fd24d1a947d1a78ce1e25c40f19a14c0ebaf719a51",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013634958.jpg",
+      "title": "View of coast Santa Catalina Island, a rocky island off the coast of California",
+      "source": "https://www.loc.gov/item/2013634958/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25500:25513/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "d089cbbeadf2451293c3e72571dfe72239b9e4f3127ca84b7c599166bf20d4ab",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633322.jpg",
+      "title": "Pacific Coast Highway in Santa Monica, Caifornia",
+      "source": "https://www.loc.gov/item/2013633322/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22800:22865/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "2917815edd7a9cdc2ef85e5f25f4015b9503c87b40537f5102080e91d1a0b238",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633441.jpg",
+      "title": "Pacific Coast sunset at Monterey, California",
+      "source": "https://www.loc.gov/item/2013633441/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22984/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "ec8682b630ffaa24c5fdc2fbc9064fd865ba1895ba212f197936468306851925",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013634743.jpg",
+      "title": "Pacific Coast view in Santa Cruz, California",
+      "source": "https://www.loc.gov/item/2013634743/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25200:25297/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "96eb59dfcc1ff82eb4e8e39b4845587f942b2a8eac1ad23514777c45af73645c",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013634748.jpg",
+      "title": "Pacific Coast view in Santa Cruz, California",
+      "source": "https://www.loc.gov/item/2013634748/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25300:25302/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "16e879c0ebb86b6fe70ec32670a29ee6922ae867d7e4090355fa7ae7871ee1ed",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013634747.jpg",
+      "title": "Pacific Coast view in Santa Cruz, California",
+      "source": "https://www.loc.gov/item/2013634747/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25300:25301/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "c06e28be2ef62e2fc2db91dd741ccab20ff8d4de9323c8ef60d3851adec1c32a",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013634738.jpg",
+      "title": "Pacific Coast view in Santa Cruz, California",
+      "source": "https://www.loc.gov/item/2013634738/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25200:25292/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "e5899736025b62b026ffb89b22bb59329ec9aa9bf33179f05dfef8aa88b4a370",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633436.jpg",
+      "title": "Pacific Coast sunset at Monterey, California",
+      "source": "https://www.loc.gov/item/2013633436/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22979/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "6014658df80b2dcedc7ddad59d206c42c9eb31b67a241d9576ad77994078443b",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "coast/2013633437.jpg",
+      "title": "Pacific Coast sunset at Monterey, California",
+      "source": "https://www.loc.gov/item/2013633437/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22980/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "49477e4e30df7493258379da66650bb8f4e08a64fe58b91a7473bad2ae50c84e",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013630448.jpg",
+      "title": "Abandoned house in the Mojave Desert, California",
+      "source": "https://www.loc.gov/item/2013630448/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21000:21020/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "e57a9ff0121444dd421bd2879951d0d327dffa3c9cf6dd6629d7c7877c08fc65",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633381.jpg",
+      "title": "Desert vegetation in Southern California",
+      "source": "https://www.loc.gov/item/2013633381/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22924/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "105a3088e8851deda5996c35a5fa084dabc301927ea74bde461b6727733c6df5",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013630402.jpg",
+      "title": "Highway leading to the Mojave Desert, California",
+      "source": "https://www.loc.gov/item/2013630402/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20900:20974/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "f5506f8987fcc6cfac83a8447017495dad2c0f66adcb870a0215799c01b87269",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013630404.jpg",
+      "title": "Long train rides through Mojave Desert, California",
+      "source": "https://www.loc.gov/item/2013630404/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20900:20976/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "affd2e56df0f1b93cdee7b00c0a45f385fe18384dde155841927e8904e5950bc",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013630403.jpg",
+      "title": "Long train rides through Mojave Desert, California",
+      "source": "https://www.loc.gov/item/2013630403/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20900:20975/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b0df0d7dd7c4be646b5b7f55cc7025b927306f3605cdadaba7e8dec288fed51b",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633386.jpg",
+      "title": "Wind turbines in the California desert",
+      "source": "https://www.loc.gov/item/2013633386/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22929/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "bb202ff8838359a6836063f06a0b8ccf24502e8b27b134f31dc0a1f3e9807816",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013630401.jpg",
+      "title": "Photographer Carol M. Highsmith and Welcome sign in Mojave Desert, California",
+      "source": "https://www.loc.gov/item/2013630401/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20900:20973/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "0b66cf7aab3bdf3be59d5b068eb8e1cddbb190fa353e8d1775a491ccbea64279",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633378.jpg",
+      "title": "Scenic image of the desert in California",
+      "source": "https://www.loc.gov/item/2013633378/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22921/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "d9594fa046f1673951cb26cab9698acaea0bf0a0b63e8c8c72614eba96cb22bb",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633383.jpg",
+      "title": "Palm trees in the Southern California desert",
+      "source": "https://www.loc.gov/item/2013633383/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22926/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "90f80a6735d1ecc2970cd9fbb049a7a6dd6d8d5f1845eaef73b6be922f67c109",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2014630599.jpg",
+      "title": "Desert flowers in Big Bend National Park in Brewster County, Texas",
+      "source": "https://www.loc.gov/item/2014630599/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26300:26399/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "b39ce81fe1d12e06fb9de16f9db879b5a46f12a08a719a39823655f8d9e2815f",
+      "catalogue_date": "2014-03-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013630405.jpg",
+      "title": "Building in Needles, Mojave Desert, California",
+      "source": "https://www.loc.gov/item/2013630405/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20900:20977/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "aac67a47b6955facb684122d351ab895f821c612cb284f6a331e9dab5c99db22",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2017687968.jpg",
+      "title": "The Killpecker Sand Dunes in the Red Desert of southwest Wyoming",
+      "source": "https://www.loc.gov/item/2017687968/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:38000:38076/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "be528200633a70a3bd605843a7526a6c4c83b1ff0b7151e8f3a39a8d25adf623",
+      "catalogue_date": "2016-05-23.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633222.jpg",
+      "title": "Sunset in the desert near Barstow, California",
+      "source": "https://www.loc.gov/item/2013633222/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22765/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "ed3256fce4094a690813678996d860a344e5a303657f9642bb6079fc5316af7b",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633143.jpg",
+      "title": "Train across the desert near Barstow, California",
+      "source": "https://www.loc.gov/item/2013633143/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22686/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "d839259553919762b847f195d89d5ba424908a9cdaa642f38422370c86cf4ec7",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633385.jpg",
+      "title": "Palm trees in the Southern California desert",
+      "source": "https://www.loc.gov/item/2013633385/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22928/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "17b77b17b4a751b9dfb4b237c5d285730dc96d396cee37beeafaca13bb1014e3",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "desert/2013633144.jpg",
+      "title": "Sunset in the desert near Barstow, California",
+      "source": "https://www.loc.gov/item/2013633144/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22687/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "e8020fe4e538b4dceba36bc8604891a8ee7cc93423f68dab579aaf65c1ca12d2",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013633094.jpg",
+      "title": "Inyo National Forest near Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633094/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22637/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "ecedd70a89d94aff186a1aa72b5ab083bb91f666a67608c485797159364b2c88",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2017650118.jpg",
+      "title": "U.S. Forest Service Building in Elkins, West Virginia",
+      "source": "https://www.loc.gov/item/2017650118/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47200:47242/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "dd9d055bf19c3e56ce8cd0aa726ee036c92002f61a4b1156a714c2f6cbffb2ce",
+      "catalogue_date": "2017-11-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013633093.jpg",
+      "title": "Inyo National Forest near Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633093/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22636/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "4c4a0a65b0f7e39fb934614e638a985ed31b7b34a36c5e2444bcbcd68de34315",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013632737.jpg",
+      "title": "View of the Trinity National Forest in Northern California",
+      "source": "https://www.loc.gov/item/2013632737/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22200:22280/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "8d7182be7772c0b5984a26e41550d8602712ef5e7515c8d1107a979362c5cd81",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013633092.jpg",
+      "title": "Inyo National Forest near Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633092/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22635/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "384c07f67d6976abd287eb3750e3f88cd3e655dfe2de0635e523420e572f4112",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2017650104.jpg",
+      "title": "U.S. Forest Service Building in Elkins, West Virginia",
+      "source": "https://www.loc.gov/item/2017650104/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47200:47228/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "c006e899d582a9c1d31bec3bae4cc5067ff28a3759991b3ab7296c6578c47624",
+      "catalogue_date": "2017-11-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013632268.jpg",
+      "title": "View of the Trinity National Forest in Northern California",
+      "source": "https://www.loc.gov/item/2013632268/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21800:21808/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "3fb4bb713df1f539004cbe59751ebff61280def57af4b9304c33364ee0fb44c7",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013631085.jpg",
+      "title": "A rushing stream in the Tahoe National Forest in California's Tahoe National Forest",
+      "source": "https://www.loc.gov/item/2013631085/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23900:23907/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "3bd2f0affce40ae59f91b8fe89e3d6af40e1258e91c26d3fca4c1980a6b95544",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013633172.jpg",
+      "title": "Lake Forest Park in Orange County, California",
+      "source": "https://www.loc.gov/item/2013633172/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22700:22715/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b8e8786f9a0d985d1386e1e32487bbdf2f9c4d509f849eba97e7c55051c79259",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2017650113.jpg",
+      "title": "U.S. Forest Service Building in Elkins, West Virginia",
+      "source": "https://www.loc.gov/item/2017650113/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47200:47237/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "1784dceda8654df7acf35ec0fbaa53bf35632e677cac33b62a8d1341e4a67cc9",
+      "catalogue_date": "2017-11-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013632736.jpg",
+      "title": "View of the Trinity National Forest in Northern California",
+      "source": "https://www.loc.gov/item/2013632736/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22200:22279/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "23de4f3eeb847db20b021984057580e00d494a1b9a154cb4da30652c15be6fa3",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2017650117.jpg",
+      "title": "U.S. Forest Service Building in Elkins, West Virginia",
+      "source": "https://www.loc.gov/item/2017650117/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47200:47241/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "2f19f5ae2e594d48d02b0981be5b4160723462e77501e4779e529f9c964113c5",
+      "catalogue_date": "2017-11-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2017650115.jpg",
+      "title": "U.S. Forest Service Building in Elkins, West Virginia",
+      "source": "https://www.loc.gov/item/2017650115/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47200:47239/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "8961274fe0cdd59294a45b3d5118c3e880ad07824b9bcb57c154233655a79a3b",
+      "catalogue_date": "2017-11-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013633091.jpg",
+      "title": "Inyo National Forest near Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633091/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22634/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "30061c38089f1d5cbcbd372a4bb142737dcd68e630b6c69122be43f176b04d44",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2013631150.jpg",
+      "title": "Shasta National Forest view south of Dunsmuir in Siskiyou County, California",
+      "source": "https://www.loc.gov/item/2013631150/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23900:23972/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "8bfa054fabd16b0b6f4a763fc16ed63473defe3c559a60f29ed0c9b0822d37ca",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "forest/2017650116.jpg",
+      "title": "U.S. Forest Service Building in Elkins, West Virginia",
+      "source": "https://www.loc.gov/item/2017650116/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47200:47240/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "bc2d1c64f296034e02d422d664a59b3418b69beefb4f19d08b56f2bb03ca3116",
+      "catalogue_date": "2017-11-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017883018.jpg",
+      "title": "Autumn scene near Wiscasset, Maine",
+      "source": "https://www.loc.gov/item/2017883018/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:46200:46270/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "b04780cde0224214cfb96d9bf6f16cf15ba5fa9da0e3e7734300dce50702d377",
+      "catalogue_date": "2017-10-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017880507.jpg",
+      "title": "Autumn scene near Millen in northern Georgia",
+      "source": "https://www.loc.gov/item/2017880507/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:43600:43603/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "7a12f23e48a7377e6ace8a925e25622d7a7f463ce32aaea8810ffb8844c86765",
+      "catalogue_date": "2013-11-21.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017685564.jpg",
+      "title": "Clump of cottonwoods in autumn near Hot Sulphur Springs, in Grand County, Colorado",
+      "source": "https://www.loc.gov/item/2017685564/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35000:35081/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "13077be1b6e017d4b9bf78140a083e5b3fd2103aa564ba8d1a66977c4cf6704d",
+      "catalogue_date": "2015-10-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017686402.jpg",
+      "title": "Autumn in the San Juan Mountains of Conejos County, Colorado, near the New Mexico border",
+      "source": "https://www.loc.gov/item/2017686402/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35900:35919/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "1e3be26ed59f8fec15c6f1f7088f59a65415977a4633766718b0d3960ec8e294",
+      "catalogue_date": "2015-09-30.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2016632377.jpg",
+      "title": "Autumn is upon you in rural Knox County, Ohio, near Danville",
+      "source": "https://www.loc.gov/item/2016632377/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:41500:41559/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "8e59b9ccbad7d7e42bbd958b6914d111235fce8c8c321afaef5f1678b1224e05",
+      "catalogue_date": "2016-10-08.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017685498.jpg",
+      "title": "A pond lined with cottonwoods, aflame with autumn colors, near Parshall, Colorado",
+      "source": "https://www.loc.gov/item/2017685498/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35000:35015/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "16b119b90209f955ad1b696f8f644a641bd51b6595275d1d5e9644ae1a296c31",
+      "catalogue_date": "2015-10-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017882644.jpg",
+      "title": "Scene a few days before the autumn equinox along Ingalls Pond, near Hiram, Maine",
+      "source": "https://www.loc.gov/item/2017882644/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45896/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "38e89682c6c566b7ff819c5edf71ccf3352ed6d6073ff67a672192bee1f5af55",
+      "catalogue_date": "2017-09-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017685313.jpg",
+      "title": "Autumn view of Molas Pass, near Silverton in San Juan County, Colorado",
+      "source": "https://www.loc.gov/item/2017685313/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34800:34830/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "a8cd5e81735a83ccbc4e601e42278511af5929fe0b52e469b9a3ef533a6f291e",
+      "catalogue_date": "2015-09-26.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017686400.jpg",
+      "title": "Autumn in the San Juan Mountains of Conejos County, Colorado, near the New Mexico border",
+      "source": "https://www.loc.gov/item/2017686400/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35900:35917/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "509c8f9f4a03547f64bcef2ac701f32bb68aa98476c3561ae1ce0513de7b1639",
+      "catalogue_date": "2015-09-30.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017686396.jpg",
+      "title": "Autumn in the San Juan Mountains of Conejos County, Colorado, near the New Mexico border",
+      "source": "https://www.loc.gov/item/2017686396/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35900:35913/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "ef041ba51ffb6f810a031d06b4952aebc4659c922d9c74a7fe9e41b76782a35e",
+      "catalogue_date": "2015-09-30.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017883837.jpg",
+      "title": "Trees in autumn transition near the hamlet of Bahama, North Carolina",
+      "source": "https://www.loc.gov/item/2017883837/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47100:47163/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "24ca040d83519d60f6f7f53cdc43dd3486363bb3c500356a0f38a7632ab098ea",
+      "catalogue_date": "2017-11-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017884428.jpg",
+      "title": "Autumn day at the A Bar A guest ranch, near the Colorado border in Carbon County, Wyoming",
+      "source": "https://www.loc.gov/item/2017884428/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47700:47797/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "593fd300fddbf000231f3e4b8e0c7ad022ac029d488073662bdde1cabd6e4fbd",
+      "catalogue_date": "2015-10-06.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017685931.jpg",
+      "title": "Autumn scene near Jackson Lake in northwest Wyoming's Grand Teton National Park",
+      "source": "https://www.loc.gov/item/2017685931/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35400:35448/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "efe7636824d66b22927382ee07c4fe5e38dfb33592c716587701a72d8f773fb7",
+      "catalogue_date": "2015-09-18.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017685561.jpg",
+      "title": "Autumn along the Colorado River in Grand County, Colorado",
+      "source": "https://www.loc.gov/item/2017685561/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35000:35078/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "c82317613f40158cc437ddb510ed9381999ee6a18fc807280a78e351756a354f",
+      "catalogue_date": "2015-10-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2017884897.jpg",
+      "title": "Cottage decorated for autumn in Milford, New Hampshire",
+      "source": "https://www.loc.gov/item/2017884897/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:48200:48267/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "53de175a12c19ad42d82948589f27c41d1fa544a55cda1b0578dd94eee6a272a",
+      "catalogue_date": "2017-09-21.",
+      "date_precision": "year"
+    },
+    {
+      "file": "autumn/2016632425.jpg",
+      "title": "Autumn soybean-harvesting time in Crawford County, Ohio, near Bucyrus",
+      "source": "https://www.loc.gov/item/2016632425/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:41600:41607/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "65225354a9c34e8edcddc64869adf218646c3687122b2993ac74be141b103da7",
+      "catalogue_date": "2016-10-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017879449.jpg",
+      "title": "Panther Swamp National Wildlife Refuge on the outskirts of Yazoo City, Mississippi",
+      "source": "https://www.loc.gov/item/2017879449/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42500:42503/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "d6e028ebd01cbed42ba8b730ec710913d7c9bf526af351e776e15e8966a9625a",
+      "catalogue_date": "2017-04-22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017879446.jpg",
+      "title": "Panther Swamp National Wildlife Refuge on the outskirts of Yazoo City, Mississippi",
+      "source": "https://www.loc.gov/item/2017879446/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42500:42500/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "9e536e06c6b4a3ece140b35754f3dcda0181fbeab3fce7410ed0ff9b02ffea78",
+      "catalogue_date": "2017-04-22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2015630264.jpg",
+      "title": "Lone tree silhouetted at sunset in the Texas Point National Wildlife Refuge in Jefferson County, Texas",
+      "source": "https://www.loc.gov/item/2015630264/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:30000:30027/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "3fe9d4f1351c5dc40b2eae2aa5b92d361683e5d1e9eaee659ffc5a6584ed8581",
+      "catalogue_date": "2014-02-27.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017879450.jpg",
+      "title": "Panther Swamp National Wildlife Refuge on the outskirts of Yazoo City, Mississippi",
+      "source": "https://www.loc.gov/item/2017879450/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42500:42504/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "307016bd7ba18f85929546bc4e2c0341861f702dfbc4e04b0fc5cdd6f1c653d8",
+      "catalogue_date": "2017-04-22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017882565.jpg",
+      "title": "Woodland trail to estuarian marshes in the Rachel Carson National Wildlife Reserve in Wells, Maine",
+      "source": "https://www.loc.gov/item/2017882565/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45817/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "cf1809bf67538c0ce918c10707f494773d70a8b67ef19a499f4ee11784a0cc4b",
+      "catalogue_date": "2017-09-12.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017879448.jpg",
+      "title": "Panther Swamp National Wildlife Refuge on the outskirts of Yazoo City, Mississippi",
+      "source": "https://www.loc.gov/item/2017879448/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42500:42502/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "27f71dabee8d6b6f02570fc016cc926bfc92c7616970f1efeb1f8e3fa8a71daf",
+      "catalogue_date": "2017-04-22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017879447.jpg",
+      "title": "Panther Swamp National Wildlife Refuge on the outskirts of Yazoo City, Mississippi",
+      "source": "https://www.loc.gov/item/2017879447/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42500:42501/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "408d9586fdd74ba1680f8eba659fef20d9c921035609dbc06b58ebde5382f239",
+      "catalogue_date": "2017-04-22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017879451.jpg",
+      "title": "Panther Swamp National Wildlife Refuge on the outskirts of Yazoo City, Mississippi",
+      "source": "https://www.loc.gov/item/2017879451/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42500:42505/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "601ab7689c6cae8ad7fe82a6f4e77248e07abc7740dc32f849f7de0d09ffa867",
+      "catalogue_date": "2017-04-22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017882563.jpg",
+      "title": "Woodland trail to estuarian marshes in the Rachel Carson National Wildlife Reserve in Wells, Maine",
+      "source": "https://www.loc.gov/item/2017882563/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45815/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "fba2b58ac70956e8d6b6c92c14f5e366b3a86acf997ce6b5e949e8dcf411d463",
+      "catalogue_date": "2017-09-12.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017881738.jpg",
+      "title": "Great Bay Boulevard Wildlife Management Area in Little Egg Harbor, New Jersey",
+      "source": "https://www.loc.gov/item/2017881738/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:44900:44924/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "a7fde6b01a3d45006982e87efc7396a9860a8fa3318ad72b31671ad790679710",
+      "catalogue_date": "2017-08-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017882567.jpg",
+      "title": "Woodland trail to estuarian marshes in the Rachel Carson National Wildlife Reserve in Wells, Maine",
+      "source": "https://www.loc.gov/item/2017882567/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45819/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "570bb490f75ecf4251944646bd05062abe960e9877777b97f7f9941db3994a6b",
+      "catalogue_date": "2017-09-12.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017881737.jpg",
+      "title": "Great Bay Boulevard Wildlife Management Area in Little Egg Harbor, New Jersey",
+      "source": "https://www.loc.gov/item/2017881737/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:44900:44923/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "6b547aec963ada591b59861e6df4e2b984e43bced54e76a357c2e80616bd448a",
+      "catalogue_date": "2017-08-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017686145.jpg",
+      "title": "A handsome specimen at the U.S. Fish & Wildlife Service's elk refuge in Jackson Hole, Wyoming, a valley on the edge of Grand Teton National Park",
+      "source": "https://www.loc.gov/item/2017686145/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35600:35662/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "699761ac0018b2011f5f729b62cb703f65df9961370cc7435a03d27c2648d850",
+      "catalogue_date": "2016-02-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017882564.jpg",
+      "title": "View from woodland trail alongside estuarine marshes in the Rachel Carson National Wildlife Reserve in Wells, Maine",
+      "source": "https://www.loc.gov/item/2017882564/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45816/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "7ea4a36264238797c2d8942a278946456d0db4c60d1a23bab3f5530e13b43308",
+      "catalogue_date": "2017-09-12.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017686224.jpg",
+      "title": "Young bull elk joust at the U.S. Fish & Wildlife Service's elk refuge in Jackson Hole, Wyoming, a valley on the edge of Grand Teton National Park",
+      "source": "https://www.loc.gov/item/2017686224/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35700:35741/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "324be92b2a1ec2e68491f94d9826d3e9eb8c9ab2487b68feade224cd22b79284",
+      "catalogue_date": "2016-02-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "wildlife/2017686137.jpg",
+      "title": "Handsome specimens at the U.S. Fish & Wildlife Service's elk refuge in Jackson Hole, Wyoming, a valley on the edge of Grand Teton National Park",
+      "source": "https://www.loc.gov/item/2017686137/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:35600:35654/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "9e883c523018075c365507e54f74ae2897b8062547e8441872d4dd359510d500",
+      "catalogue_date": "2016-02-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2014630401.jpg",
+      "title": "Quinta Mazatlan, a historical adobe mansion within a nature and birding center in McAllen, Texas",
+      "source": "https://www.loc.gov/item/2014630401/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26200:26201/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "f26636514dd53d9e2fcf0e2ce6f3e1919fb33735e2ac96ec5c1c97461215d034",
+      "catalogue_date": "2014-03-13.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2016632338.jpg",
+      "title": "Bright bird figure outside the Cleveland Public Library's main building in Cleveland, Ohio",
+      "source": "https://www.loc.gov/item/2016632338/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:41500:41520/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "2ab66f73c7b31977a6edbd1686b697a741dfa0c090a0ecf916c4c85bff5fbf9b",
+      "catalogue_date": "2016-10- 04.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2010640145.jpg",
+      "title": "Purple Martin bird gourd houses, Hamilton, Alabama",
+      "source": "https://www.loc.gov/item/2010640145/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08300:08332/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "ec77fe63dfa88aa1fdca939acbe97ed440211e8202be98aded79d7a215e277f3",
+      "catalogue_date": "2010 May 9.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2014630456.jpg",
+      "title": "Birds at an oasis in the Gladys Porter Zoo in Brownsville, Texas",
+      "source": "https://www.loc.gov/item/2014630456/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26200:26256/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "fdfc986af544059b353f439dc9f8072dee6e34c0b0c81fbe85c4294d2c9f31ad",
+      "catalogue_date": "2014-03-14.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2013634912.jpg",
+      "title": "Bird Park Apartments on Santa Catalina Island, a rocky island off the coast of California",
+      "source": "https://www.loc.gov/item/2013634912/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25400:25467/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "13b7195e29a78002bdcf1e7a78f2472f3d147ec21dd851dd6d5d6d47dbecb48a",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2013632714.jpg",
+      "title": "Lady Bird Johnson Grove in Northern California",
+      "source": "https://www.loc.gov/item/2013632714/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22200:22257/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "78ab13f1e1aac766e0f7d734027f199caf415e8143edf2bbd479b60ef9b31193",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2010639929.jpg",
+      "title": "Bird houses art in Monroeville, Alabama",
+      "source": "https://www.loc.gov/item/2010639929/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08100:08115/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "bfa0a89073b27e954e26d3bed57fece204886d9f5afe42bb5f6929dfa27e7337",
+      "catalogue_date": "2010 May 2.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2010639932.jpg",
+      "title": "Bird houses art in Monroeville, Alabama",
+      "source": "https://www.loc.gov/item/2010639932/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08100:08118/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "093f4571bc15aef3f99676f8bbd4cd34ac7f45fdf3d0fb68ce520cc35738e889",
+      "catalogue_date": "2010 May 2.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2013634911.jpg",
+      "title": "Bird Park Apartments on Santa Catalina Island, a rocky island off the coast of California",
+      "source": "https://www.loc.gov/item/2013634911/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25400:25466/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "8d15b672c1044c40071b08ecc1ce2a497f877adb7ed46d614750db93d7515198",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2014630406.jpg",
+      "title": "Quinta Mazatlan, a historical adobe mansion within a nature and birding center in McAllen, Texas",
+      "source": "https://www.loc.gov/item/2014630406/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26200:26206/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "d5ff3a5f81252b8b8c51940bcae19974138ef36c26525ce09e52ec81e16f5234",
+      "catalogue_date": "2014-03-13.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2010640141.jpg",
+      "title": "Purple Martin bird gourd houses, Hamilton, Alabama",
+      "source": "https://www.loc.gov/item/2010640141/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08300:08328/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "095d31e3b9e0f425d6832a61d72ce7e0fe51ca0a050eaae7a8291fee3b576f54",
+      "catalogue_date": "2010 May 9.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2010639924.jpg",
+      "title": "Bird houses art in Monroeville, Alabama",
+      "source": "https://www.loc.gov/item/2010639924/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08100:08110/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "4a4f1c771272c6fcba3b053c1a1c985c5dead5167dd674c35e692410bb7cc6a3",
+      "catalogue_date": "2010 May 2.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2013634910.jpg",
+      "title": "Bird Park Apartments on Santa Catalina Island, a rocky island off the coast of California",
+      "source": "https://www.loc.gov/item/2013634910/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25400:25465/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "d5436004651785620a59eeaf5a5c200ba94a8b26847a9303f49746ec6e029b44",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2014632138.jpg",
+      "title": "Scene from the Lady Bird Johnson Wildflower Center, part of the University of Texas at Austin but located 10 miles south of the Texas capital",
+      "source": "https://www.loc.gov/item/2014632138/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:27900:27938/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "8a53b887577446d2c0353509af8fc9475c0df75e83526a333e1fa5adab2c9515",
+      "catalogue_date": "2014-04-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2014630417.jpg",
+      "title": "Quinta Mazatlan, a historical adobe mansion within a nature and birding center in McAllen, Texas",
+      "source": "https://www.loc.gov/item/2014630417/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26200:26217/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "94f459658559038fb092972eb47e3015ef0b4beb57d0469ed22b518b4bf2b55f",
+      "catalogue_date": "2014-03-13.",
+      "date_precision": "year"
+    },
+    {
+      "file": "birds/2013632251.jpg",
+      "title": "Lady Bird Johnson Grove in Northern California",
+      "source": "https://www.loc.gov/item/2013632251/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21700:21791/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "f71904ae7102e7ae46bd8870a66a334b3890b4e6d4c52cf88862dbf59ffb9067",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2013630074.jpg",
+      "title": "The Conservatory of Flowers, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013630074/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20600:20646/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b90255f99a8e3c72622739f289347ff419baffa051941bd6ab5acc5c85c1ce90",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2012631008.jpg",
+      "title": "Flower farm in West Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631008/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19600:19600/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "7bde7416577f648e1809cb8ff998c35b105e5614771ad006a441c18839d44208",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2017882610.jpg",
+      "title": "Flower beds and greenhouse at a farm near Brunswick, Maine",
+      "source": "https://www.loc.gov/item/2017882610/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45862/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "f88da8e237919459d8d7fc565406e964afc1cafd5f3f82b318bfce91f3cbabcd",
+      "catalogue_date": "2017-09-13.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2010640137.jpg",
+      "title": "Flowers placed on Mother's Day in cemeteries across Alabama",
+      "source": "https://www.loc.gov/item/2010640137/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08300:08324/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "06c02417d334748cc67312bd7c6e13410a4b33d1bedf6e166f2f456dc07eccb1",
+      "catalogue_date": "2010 May 9.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2012631006.jpg",
+      "title": "Flower farm in West Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631006/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19500:19598/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "1b1bf6df577c9b71cef8e22c34c1f7d4ba0c242ebc06ac51a05de56aaf14be3f",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2013630016.jpg",
+      "title": "[Flower bed with flowers arranged as \"GGB\" at The Golden Gate Bridge, San Francisco, California]",
+      "source": "https://www.loc.gov/item/2013630016/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20500:20588/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "ee0b03856038a7d46d2a8b092abd57007ec6ae346027968ea8b5d414a0b7400a",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2017687764.jpg",
+      "title": "Arrowroot balsamroot flowers, bunched on a trail above Ridgway, Colorado",
+      "source": "https://www.loc.gov/item/2017687764/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:37800:37872/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "de5d193f2066140c37caca59e7fcc4253684db4fa9bfd438ee2a6f4a95225664",
+      "catalogue_date": "2016-06-05.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2012630773.jpg",
+      "title": "Flower farm in West Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012630773/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19300:19365/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "d61a74427d0904dd655ec02844eafa44e1dea49c590c010cdb57604d1cd617db",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2012631005.jpg",
+      "title": "Flower farm in West Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631005/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19500:19597/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "d0452f2bc5be0fe93a60f3a7706393743f76447648605be502c2d9e6b422c268",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2010640135.jpg",
+      "title": "Flowers placed on Mother's Day in cemeteries across Alabama",
+      "source": "https://www.loc.gov/item/2010640135/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08300:08322/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "4b5a0d951e25906d005eb8e157a07feeb653b4ba7628c32ff2c7b3dd6d42e2b8",
+      "catalogue_date": "2010 May 9.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2013630075.jpg",
+      "title": "The Conservatory of Flowers, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013630075/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20600:20647/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "110b80225f4bd20100097a8d9b814fd85ed6586ca7edc44e40bc4b84613da6b1",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2013630071.jpg",
+      "title": "The Conservatory of Flowers, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013630071/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20600:20643/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b6bcc084697d8ce6f695a987e8f196bc6439016a7803a9a13045898a20773ed5",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2012631007.jpg",
+      "title": "Flower farm in West Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631007/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19500:19599/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "a7ebd33fc5de954f3a1da624a4d60ba67b0e847f07b5680dafe41986f92beeab",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2010640136.jpg",
+      "title": "Flowers placed on Mother's Day in cemeteries across Alabama",
+      "source": "https://www.loc.gov/item/2010640136/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08300:08323/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "c411684804e8687259bd2fca516cbad1ec1e415a404a76eabfbca888c14a6567",
+      "catalogue_date": "2010 May 9.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2010640140.jpg",
+      "title": "Flowers placed on Mother's Day in cemeteries across Alabama",
+      "source": "https://www.loc.gov/item/2010640140/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08300:08327/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "6a0149cf3a600598166275d16fe8d2bc60cf0fc259baba4bfa01bd3ba7c56994",
+      "catalogue_date": "2010 May 9.",
+      "date_precision": "year"
+    },
+    {
+      "file": "flowers/2013630073.jpg",
+      "title": "The Conservatory of Flowers, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013630073/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20600:20645/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "db3be649608b6c01d01e5d19850779dd164f8a8ade49713a029445e0f1dea5a9",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2010640887.jpg",
+      "title": "Farm equipment at catfish farm near Oakville, Alabama",
+      "source": "https://www.loc.gov/item/2010640887/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:09000:09074/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "af6f1d99a1c5a80d20acd05b16a23f5ce53e25276eb3eee302f239cd86c919b1",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2014633182.jpg",
+      "title": "Part the Wildseed Farms wildflower farm complex in Fredericksburg, Texas",
+      "source": "https://www.loc.gov/item/2014633182/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:28900:28982/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "e573b610e4feb59f2a27c0f468a3afcaabe5547b2660f177816b43ec8f64ce11",
+      "catalogue_date": "2014-04-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2012649300.jpg",
+      "title": "Idaho farm and field",
+      "source": "https://www.loc.gov/item/2012649300/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:18300:18361/full/!1280,1280/0/default.jpg",
+      "date": "2005-01-01",
+      "sha256": "d285962b7451a809e501f9f3518d8ef9e3f8f582e618ec5c841cb88120a58f18",
+      "catalogue_date": "2005 June 19.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2012631019.jpg",
+      "title": "Christmas tree farm, Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631019/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19600:19611/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "49b9aa62fb6c574323d0144843ef0e67b89de1f844deaf47249e35c07e9d5dd1",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2013634718.jpg",
+      "title": "Farm scene near Watsonville, California",
+      "source": "https://www.loc.gov/item/2013634718/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25200:25272/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "5e5c9875c4b24bba35540d25c185062f9ecbc9e8096e7d57260d3e2366f37bb8",
+      "catalogue_date": "2013 May.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2012631017.jpg",
+      "title": "Christmas tree farm, Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631017/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19600:19609/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "44319652159cce698c829496e8ff362414f91240bcf88b76e4bd355396a52f6f",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2012630774.jpg",
+      "title": "Christmas tree farm, Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012630774/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19300:19366/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "99b1b8d8a244dd32f2847deb9f50ae48cc471d2cfc2928b8ea33e14703f83ad1",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2013633358.jpg",
+      "title": "Farm scene in Buellton, California",
+      "source": "https://www.loc.gov/item/2013633358/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22900:22901/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "9a34e95234312edfd8fdfd00c0b5ffbe98301dccb4afcc3c8bd0e06fc8167d3f",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2012631018.jpg",
+      "title": "Christmas tree farm, Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631018/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19600:19610/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "e65efead8422d4cef7430f553d51ac91f8290d433cc7ea5eb546d256cf25e196",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2012631020.jpg",
+      "title": "Christmas tree farm, Suffield, Connecticut",
+      "source": "https://www.loc.gov/item/2012631020/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19600:19612/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "8475c32164ae7f8acc80b905e799988c8dd145eb94b62c5957a33516507cfaeb",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2014633633.jpg",
+      "title": "Modern farm buildings at the Porter Farm, also known as Walter C. Porter Farm, near Terrell in Kaufman County, Texas",
+      "source": "https://www.loc.gov/item/2014633633/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:29400:29433/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "6fa7f8d770045066709918e458a19f00ea0550af5a40777481b10175a1850777",
+      "catalogue_date": "2014-05-30.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2016630664.jpg",
+      "title": "Old farm truck at the Hardin County Farm Museum, a farm site in Eldora, Iowa, depicting the diversified family farm from the time of the settlement of Iowa in the 1800s through 1950",
+      "source": "https://www.loc.gov/item/2016630664/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:39800:39846/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "685ccd4748f08360ba40adf4a39ff602d9cbc94081af5f810a8ee5bd6ea802c3",
+      "catalogue_date": "2016-08-18.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2017881937.jpg",
+      "title": "Farm animals at The Howell Living History Farm in Lambertville, New Jersey",
+      "source": "https://www.loc.gov/item/2017881937/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45100:45188/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "f2667f5b2766b6bc4d46ed7bc6650d62accf80000591cd4b5a1ffe649fac6798",
+      "catalogue_date": "2017-08-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2017881938.jpg",
+      "title": "Horse drawn farm wagon at The Howell Living History Farm in Lambertville, New Jersey",
+      "source": "https://www.loc.gov/item/2017881938/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45100:45189/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "ea9b9ce0ddcecdc82a89f371dc5dcb24f9f8717ddc9cd2b40e3b35c29b56c9c5",
+      "catalogue_date": "2017-08-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2010638289.jpg",
+      "title": "Farm scene in Scottsboro, Alabama",
+      "source": "https://www.loc.gov/item/2010638289/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:06800:06875/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "2af27d7209b315e6dd327d70581242ef53244b8d8968eaec9af8043a9692ef2a",
+      "catalogue_date": "2010 March 28.",
+      "date_precision": "year"
+    },
+    {
+      "file": "country/2017882784.jpg",
+      "title": "Farm near Fairfax, Vermont",
+      "source": "https://www.loc.gov/item/2017882784/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:46000:46036/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "b275debedad5582736f42b2acf29028a672e7bd6efdd50c26c94cff943fb2586",
+      "catalogue_date": "2017-09-28.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2016630572.jpg",
+      "title": "Country road in Franklin County, Iowa",
+      "source": "https://www.loc.gov/item/2016630572/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:39700:39754/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "6f18d2c7af5f526e58f79297655bd4ad16ce7b29c596f13ccbcc27630d98ba05",
+      "catalogue_date": "2016-08-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017882742.jpg",
+      "title": "Gravel road near Shelburne, Vermont",
+      "source": "https://www.loc.gov/item/2017882742/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45900:45994/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "f8be6406b0b10db1da00c3d387cfecce3a4f91b4e9bfd0512656231896e1099c",
+      "catalogue_date": "2017-09-27.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017884853.jpg",
+      "title": "Barn on Shaker Road Farm, down the road from, but not affiliated with Canterbury Shaker Village, in Canterbury, New Hampshire",
+      "source": "https://www.loc.gov/item/2017884853/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:48200:48222/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "a90cdf1e70c621eb0349cab127e2fef324b22611c459dadd036152e692841259",
+      "catalogue_date": "2017-09-21.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017885607.jpg",
+      "title": "Country road in fall near Etna, Maine",
+      "source": "https://www.loc.gov/item/2017885607/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:48900:48977/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "ca79aa9f5b17172b5873c43d9688ecf9d6f14141eaaf752b3ae99e29ed71f7b0",
+      "catalogue_date": "2017-10-06.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017687478.jpg",
+      "title": "Road to distant mountains in Jackson County, Colorado",
+      "source": "https://www.loc.gov/item/2017687478/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:37500:37555/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "96df5489a0755c0a557a5452778f3837657c26a31c040342782da958e2917c7b",
+      "catalogue_date": "2016-05-14.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2012631658.jpg",
+      "title": "15 Belgo Road, Lakeville, Connecticut",
+      "source": "https://www.loc.gov/item/2012631658/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20249/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "1bb8525d9f4b2cf7bb9893114274dac1020e84f0a77bd1d1a7d6eff6f1e7fc4a",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2012631648.jpg",
+      "title": "15 Belgo Road, Lakeville, Connecticut",
+      "source": "https://www.loc.gov/item/2012631648/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20239/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "4b6c688873543550ff07a658090d4ea2d8e9b8c1c119404dd678064893d7a269",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017879557.jpg",
+      "title": "Dirt road near Avalon in Carroll County, Mississippi",
+      "source": "https://www.loc.gov/item/2017879557/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42600:42611/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "66080f08197be7154a54c31d12a5ad3b45cb6c584afb7535a9e0b253185f388b",
+      "catalogue_date": "2016-11-06.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2016630457.jpg",
+      "title": "Country road in Grundy County, Iowa",
+      "source": "https://www.loc.gov/item/2016630457/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:39600:39639/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "f5b7ad08a486a4ab5396923ce18f98b444568a446fdce85d0c5521ba1312ee31",
+      "catalogue_date": "2016-08-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2012631657.jpg",
+      "title": "15 Belgo Road, Lakeville, Connecticut",
+      "source": "https://www.loc.gov/item/2012631657/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20248/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "753f2370cc784ef46be605875f0e88f749e0606ea69d2d47494f489b1913d745",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017687472.jpg",
+      "title": "Road to distant mountains in Jackson County, Colorado",
+      "source": "https://www.loc.gov/item/2017687472/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:37500:37549/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "de76542df46839877ca2f7d044e6a3231694ccbaaa041204fcff6e58e9d34742",
+      "catalogue_date": "2016-05-14.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017883682.jpg",
+      "title": "Empty dirt road near Tutweiler, Mississippi",
+      "source": "https://www.loc.gov/item/2017883682/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47000:47008/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "4d81b62f989c67c5f5098914cc7bf67674e457a93f27e961ae988118a75788c2",
+      "catalogue_date": "2017-11-10.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2012631646.jpg",
+      "title": "15 Belgo Road, Lakeville, Connecticut",
+      "source": "https://www.loc.gov/item/2012631646/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20237/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "a7b9e131a3fd389384cc67e1861f49c84bc689d783ef50cce51e290050135396",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017884286.jpg",
+      "title": "Lonely road in Sweetwater County, Wyoming",
+      "source": "https://www.loc.gov/item/2017884286/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47600:47655/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "82b3ed3a06e1f76e8f6caf4cb3d5813a50807262959ad37ef97eb6c8cd622d0c",
+      "catalogue_date": "2015-06-06.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017687471.jpg",
+      "title": "Road to distant mountains in Jackson County, Colorado",
+      "source": "https://www.loc.gov/item/2017687471/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:37500:37548/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "47b5b81e32add59c7428a3c004117a1ae7ed7832cb65ee2144f77efe4c3379f8",
+      "catalogue_date": "2016-05-14.",
+      "date_precision": "year"
+    },
+    {
+      "file": "roads/2017884720.jpg",
+      "title": "Desolate Sheridan County road in north-central Wyoming",
+      "source": "https://www.loc.gov/item/2017884720/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:48000:48089/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "cb7133dbffb6a64528dba642b28741364bd155b2f281b5814379cc31b93dd1b7",
+      "catalogue_date": "2015-09-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015633515.jpg",
+      "title": "Elk Avenue, the main street of Crested Butte, a town heavily populated during ski season located high in the Rocky Mountains in Gunnison County, Colorado",
+      "source": "https://www.loc.gov/item/2015633515/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:33500:33500/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "a40b60dc708e1d222ee8f2bc437721609755df84d01efafcb1562ac1cf67e0fc",
+      "catalogue_date": "2015-08-10.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2016630499.jpg",
+      "title": "The Town Clock on Main Street in downtown Dubuque, Iowa",
+      "source": "https://www.loc.gov/item/2016630499/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:39600:39681/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "11e53fb89383c08c9353c79e7f4e48a7bf1ada152012ec4992e33f82045998a0",
+      "catalogue_date": "2016-08-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015632175.jpg",
+      "title": "Looking north on Main Street in the town of Holly, near the Kansas line in Prowers County, Colorado",
+      "source": "https://www.loc.gov/item/2015632175/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:32100:32160/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "63e3f94e475a1b1c1ba26720f9e4cbf2c2a4bdb1b0b2e410c381f54469cb1b4c",
+      "catalogue_date": "2015-05-20.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2013635000.jpg",
+      "title": "[Cressler and Bonner Building, Main Street, Cedarville,California]",
+      "source": "https://www.loc.gov/item/2013635000/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:25500:25555/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "81f8fdebeb834f1dddbf8f3b4aabf81e3e6843de7fdd11e33ad5ba089a106c81",
+      "catalogue_date": "2013 June.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2013634004.jpg",
+      "title": "Main Street building in historic Mokelumne Hill, California",
+      "source": "https://www.loc.gov/item/2013634004/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23500:23547/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "036a076eaac378a3ea952cee7c547eece4f0978a0d4700840c07cdaae4c51186",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2010646334.jpg",
+      "title": "Main Street, Greensboro, Alabama",
+      "source": "https://www.loc.gov/item/2010646334/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05200:05210/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "9529b6a98951b335f1e679075bf6dd0284e019b29fc282d316cd585696cc0242",
+      "catalogue_date": "2010 March 6.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015631972.jpg",
+      "title": "Buildings in the 800 block of Main Street in Wellsburg, West Virginia",
+      "source": "https://www.loc.gov/item/2015631972/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:31800:31897/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "3e45c1bceae0e2645f28ec2f303b8f5c2407ecac67f2a6fdc239bedde00af465",
+      "catalogue_date": "2015-05-10.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015632226.jpg",
+      "title": "A block of South Main Street in Lamar, the county seat of Prowers County, Colorado",
+      "source": "https://www.loc.gov/item/2015632226/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:32200:32211/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "2d1f77ffd537cebc76cbb5f1001a0d627c081ded2d2ff0bd12917a2e96f9c556",
+      "catalogue_date": "2015-05-20.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015632337.jpg",
+      "title": "The end of Main Street in Ouray, Colorado, an old mining community high in the San Juan Mountains of southwestern Colorado",
+      "source": "https://www.loc.gov/item/2015632337/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:32300:32322/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "e5f2730ef250c07f5f86181d659281dd4ec54001311504aa64d525c36d13fe09",
+      "catalogue_date": "2015-06-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015630551.jpg",
+      "title": "The main street in Crawford, Texas",
+      "source": "https://www.loc.gov/item/2015630551/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:30300:30315/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "4f8cc3d6a9a6c028183c22cfbd1d37aa8ad2dea92627d4b0b1edf89ee60d2757",
+      "catalogue_date": "2014-09-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015630547.jpg",
+      "title": "The main street in Crawford, Texas",
+      "source": "https://www.loc.gov/item/2015630547/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:30300:30311/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "4a643e5f8a16c3244dbc9be1f97cb1604c69bd7e2f56704654898df10f8232c4",
+      "catalogue_date": "2014-09-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2016632285.jpg",
+      "title": "Dusk shot of Columbus, Ohio's, Main Street Bridge",
+      "source": "https://www.loc.gov/item/2016632285/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:41400:41467/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "912ea4ac5853a43c7798a0f5c351074dd560366ca04ce0cd02379ed54b842140",
+      "catalogue_date": "2016-10-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015634497.jpg",
+      "title": "\"Main Street Gas\" in rural Pocahontas County, West Virginia, has all the accountrements of an old gasoline station. But the closest Main Street of any size is miles away",
+      "source": "https://www.loc.gov/item/2015634497/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34400:34481/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "c301864b26d1c7f623a99dbffa4aed228acad24b27f26d50e865962c5908fe22",
+      "catalogue_date": "2015-10-18.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015632222.jpg",
+      "title": "A block of South Main Street in Lamar, the county seat of Prowers County, Colorado",
+      "source": "https://www.loc.gov/item/2015632222/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:32200:32207/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "83adb2649edc91048117d30319be6aa4608eed19108e1a968289343ad6295799",
+      "catalogue_date": "2015-05-20.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2016631251.jpg",
+      "title": "Main Street Station, a public market (mostly for antiques and collectibles) in Viroqua, a town in Vernon County, Wisconsin",
+      "source": "https://www.loc.gov/item/2016631251/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:40400:40433/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "cc3bb923958b29a58fd4bf2241cc960c5b92192bd8a9b7022edd596382639512",
+      "catalogue_date": "2016-09-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "towns/2015631001.jpg",
+      "title": "Main Street in Italy, Texas. Gabriel J. Penn, postmaster in Waxahachie, 15 miles away, named the town in 1880 because, he said, its climate was much like that found in \"sunny Italy\"",
+      "source": "https://www.loc.gov/item/2015631001/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:30700:30765/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "bf3c2a189a27cbe55ce87f72f00b04d601c387833761d202aaff2d9cf8800b6a",
+      "catalogue_date": "2014-09-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2010636886.jpg",
+      "title": "Skyline of Birmingham, Alabama",
+      "source": "https://www.loc.gov/item/2010636886/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05000:05007/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "d73415b6785003e902a68c135584a0980a1bc274c95b86136f583d65b77522ce",
+      "catalogue_date": "2010 February 25.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2010646314.jpg",
+      "title": "Skyline at dusk, Birmingham, Alabama",
+      "source": "https://www.loc.gov/item/2010646314/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05000:05084/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "66017f3e18bbfb52134032f060e9afcbdee8f8b9e864743d853faad08205fe56",
+      "catalogue_date": "2010 February 25.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2016632286.jpg",
+      "title": "Skyline of Columbus, Ohio",
+      "source": "https://www.loc.gov/item/2016632286/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:41400:41468/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "fd4a87a8b7975ae2f1e7cefb815fb6d32a4eb98a4d4133279e28ca96caccdc4a",
+      "catalogue_date": "2016-10-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2010637886.jpg",
+      "title": "Skyline of Mobile, Alabama",
+      "source": "https://www.loc.gov/item/2010637886/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:06400:06472/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "a9ac0beb79279d0a7635fa691ce33f5f8abf8044a48840b0b34ddcdb845aca01",
+      "catalogue_date": "2010 March 23.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2010637030.jpg",
+      "title": "Skyline view of Mobile, Alabama",
+      "source": "https://www.loc.gov/item/2010637030/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05100:05165/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "638c18975b3150ddaa6c97c10a826e7ccb0e4a040558369f9997eda67a6d088a",
+      "catalogue_date": "2010 February 16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2010637088.jpg",
+      "title": "Skyline view of Mobile, Alabama",
+      "source": "https://www.loc.gov/item/2010637088/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05200:05234/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "3ee9614eb523acbc72279453c58d3397c134380e585af4e6cb65c8a1e4f3561b",
+      "catalogue_date": "2010 March 16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2010637031.jpg",
+      "title": "Skyline view of Mobile, Alabama",
+      "source": "https://www.loc.gov/item/2010637031/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05100:05166/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "d9a627c45f5879e604fe7e4121aa3a6ce557130a59ee4079ca8d951dbf0759c4",
+      "catalogue_date": "2010 February 16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2016632402.jpg",
+      "title": "The Columbus, Ohio, skyline",
+      "source": "https://www.loc.gov/item/2016632402/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:41500:41584/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "4752da19d4f0ec0c52b6537daf5f0440d7e11c1e7d8ff344cbed1799186c8ebe",
+      "catalogue_date": "2016-10-09.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2013631474.jpg",
+      "title": "Skyline of Central Los Angeles, California",
+      "source": "https://www.loc.gov/item/2013631474/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:24200:24296/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "1a5a18a874a73b17877024631c30d090995a1fe740bbb18a3dc63e41d476203d",
+      "catalogue_date": "2013.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2013650733.jpg",
+      "title": "Skyline view of Minneapolis, Minnesota",
+      "source": "https://www.loc.gov/item/2013650733/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:18600:18689/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "5b98ed181d00f5cf8c8436b3357bbc0bf43f1e438704470106d7b816befd28ef",
+      "catalogue_date": "2012 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2010637091.jpg",
+      "title": "Skyline view of Mobile, Alabama",
+      "source": "https://www.loc.gov/item/2010637091/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05200:05237/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "90fd3cfe45735262159964861235d72ba20b691e0a30dee247b03e8923c952da",
+      "catalogue_date": "2010 March 16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2013631477.jpg",
+      "title": "Skyline of Central Los Angeles, California",
+      "source": "https://www.loc.gov/item/2013631477/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:24200:24299/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "12d5448d387fba88cbc8b6b54fa75c1d35e2ee41c5b9eb8cc99d2dc020311ae5",
+      "catalogue_date": "2013.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2013631809.jpg",
+      "title": "Skyline view of San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631809/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21300:21349/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "57f2bbc3cc1713334688d2a4f796e0d96fe769a09a4f0fef739861f1b504bf80",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2013631810.jpg",
+      "title": "Skyline view of San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631810/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21300:21350/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "1818ef7c6ef75c85ca91822b63ad8732cd78fbacc3611c1b81ea7b1950e39190",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2013633076.jpg",
+      "title": "View of skyline, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013633076/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22619/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b80b5c27c39ddb684d56c9c89ff72fe8fb1143dd877ab470e920adfcdca40d90",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "cities/2013630716.jpg",
+      "title": "Skyline views in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013630716/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21200:21288/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "fa473bc018b2b0b6a48e0fbb753269ea62e4be47c9a2e88dff691cc0d9237c9f",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697841.jpg",
+      "title": "Tony Vleckas poses as Santa Claus at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697841/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49072/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "fcd1e7230ecc499a572d5ab74184c66f122a8dbe35aafae156dee6b5430666ca",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2017650007.jpg",
+      "title": "Night view of Chicago Federal Center, Chicago, Illinois",
+      "source": "https://www.loc.gov/item/2017650007/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45000:45045/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "67e7647f33bab474c885caa3ff50a77171b66f2dd515b44f64d24ea4e1a12354",
+      "catalogue_date": "2017-07-27.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697861.jpg",
+      "title": "Dan Pugh and Maureen Pugh pose at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697861/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49092/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "a37c0b752aa1196a481d19fe711f206fa6d82fb7fa9278185eeb282fff3256fe",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697862.jpg",
+      "title": "Elvis impersonator, Tommy El, poses at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697862/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49093/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "9a2ea7f189032b8b427bb2b20a4a23f2abf853ee0a09a6fc88b6c5cca11f6be4",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697857.jpg",
+      "title": "Michelle Perkins and Kendra Keiser (Baltimore Hons), pose at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697857/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49088/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "26ce57d337f2b1c129e61f07e7bdcd4efdc63fc8579e6e897b83f57e3fcb10b9",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697854.jpg",
+      "title": "Norman Webb, known as Boardwalk Elvis, poses at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697854/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49085/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "68461607d199edf8adfaa09c5782c6fdb7ee097ea0f70cdc3ee4a884bba53061",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697842.jpg",
+      "title": "Saxaphone player Joseph Atkins, a member of the Wild Anacostias Band poses at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697842/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49073/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "a1b48af0b2a3381f65ccc968f2b9a4466a6881a99682f87865639a91e9644620",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2013633329.jpg",
+      "title": "Golden Gate Bridge at night, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013633329/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22800:22872/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b4603167f8859ee5e423a9bbe2aa5546545f7c5e976c0c9616153e0310b71bf4",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2016631438.jpg",
+      "title": "Cows straggle home for the night as dusk approaches on this St. Croix County, Wisconsin, farm",
+      "source": "https://www.loc.gov/item/2016631438/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:40600:40620/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "f7f5b9019c4f34011941978d2bbac65fb99eb0ca69c7a5266c54dfae3e32c28b",
+      "catalogue_date": "2016-09-05.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697852.jpg",
+      "title": "Tony Vleckas poses as Santa Claus at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697852/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49083/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "2633394a72105af1e0c0fab6e79564ef65a179e74705a8563b577ba0024b75f8",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697860.jpg",
+      "title": "Esmirelda (Baltimore Hon), poses at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697860/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49091/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "4ed73256e2d5dca1421903a3fcd0447ff82a44f9ebeb677e1683270b3c558f23",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697859.jpg",
+      "title": "Elvis impersonator, Tommy El, poses at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697859/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49090/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "d19a3c5459e405fb33a43346c655718d5edd834f6e239f499cee7e915227ce81",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697858.jpg",
+      "title": "Stephanie Murdeck, 2017 Baltimore Hon, poses at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697858/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49089/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "6d388dcaf878cc17864a24b4c094487a04349aeeebfe8cd3247d7567f393a490",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2016632715.jpg",
+      "title": "Neighboring homes decorated with scary Halloween night in mind in old, heavily industrial Elmwood Place, a close-in suburb of Cincinnati, Ohio",
+      "source": "https://www.loc.gov/item/2016632715/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:41800:41897/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "751ec585ad9bf3d5b75f9078f01a1e139011325683b10a2b6a4d1954ce3c7935",
+      "catalogue_date": "2016-10-19.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697847.jpg",
+      "title": "Dwayne Grimes and Kim Eddinger, members of the Wild Anacostias Band pose at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697847/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49078/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "68eac3be79539e4051cd09d4fb9e25d94e51e0db139d5abace8a98f8a9de623d",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "night/2018697843.jpg",
+      "title": "Saxaphone player Joseph Atkins, Trumpet player Sam Atkins and Drummer Dana Grabiner members of the Wild Anacostias Band pose at the Night of 100 Elvises at the Lord Baltimore Hotel in Baltimore, Maryland where the event has been going on for 24 years",
+      "source": "https://www.loc.gov/item/2018697843/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:49000:49074/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "ec203a61014f1421b1951bed6b32a2f2bd1598c1acec6f2ccead4f0ce5b6a540",
+      "catalogue_date": "2017-12-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2014630479.jpg",
+      "title": "The fountain in Market Square, which was created in 1850 for perpetual use as a public market",
+      "source": "https://www.loc.gov/item/2014630479/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26200:26279/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "0ef27a607e9ab7dc7e016670d47da5438484b86d2c7aa854b6296c45871200cc",
+      "catalogue_date": "2014-03-14.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2010637119.jpg",
+      "title": "Southern Market, Royal at Church Street, Mobile, Alabama",
+      "source": "https://www.loc.gov/item/2010637119/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05200:05266/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "a5dfa9159ef7850d725a4b5ae8f55ae1136a4c41ef8d5cb56128ecbb658b0ea9",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2013631863.jpg",
+      "title": "Trolley on Market Street in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631863/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21400:21403/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "c8c876f4d0f8d0df88a408b8a7abca903cbc2e4886aa7507cbfacd3216e42eed",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2013631878.jpg",
+      "title": "Trolley on Market Street in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631878/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21400:21418/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "c548b80804965330dff852e77ddc0ecf18b35609b6f411f68784d78c30768bf2",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2013631877.jpg",
+      "title": "Trolley on Market Street in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631877/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21400:21417/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "0e17ba492e630f586cbd2ce1f5ae3ec12c1e3f857b519e3723d66e3423c8c879",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2016632871.jpg",
+      "title": "Aerial view of the historic Findlay Market, Ohio's oldest public market, in the Over-the-Rhine neighborhood of Cincinnati",
+      "source": "https://www.loc.gov/item/2016632871/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42000:42053/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "9ac5e89d19858cafce1dff0815eab387d061c1af9575390005d241ae19ef0dba",
+      "catalogue_date": "2016-10-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2017685468.jpg",
+      "title": "Gas station and market in Jefferson, Colorado",
+      "source": "https://www.loc.gov/item/2017685468/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34900:34985/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "3db866cc614354b5a9b018a5ae1180849882d4ffb4d61f3b66c0a8345782b458",
+      "catalogue_date": "2015-10-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2013631861.jpg",
+      "title": "Trolley on Market Street in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631861/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21400:21401/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "72d074ba562d473c6e2049d5ad1ae6d4dc851158788e36c78f6ab7bfcd6217e0",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2013631864.jpg",
+      "title": "Trolley on Market Street in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631864/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21400:21404/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "bce0ddbd4cdf50e731c259cdf49de94c52da3e6cff98b39075ef76c153dbcc14",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2016632931.jpg",
+      "title": "The 1855 Findlay Market, Ohio's oldest surviving public market in the now-gentrified (in 2016) Over-the-Rhine neighborhood of Cincinnati, Ohio",
+      "source": "https://www.loc.gov/item/2016632931/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:42100:42113/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "b500ee3d655db4ef99577b173022d3a97241ad8ce38e6ac3577427cc5beeff3b",
+      "catalogue_date": "2016-10-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2010637118.jpg",
+      "title": "Southern Market, Royal at Church Street, Mobile, Alabama",
+      "source": "https://www.loc.gov/item/2010637118/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05200:05265/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "db9e02e73fdfee705f999e6f0724fd392f1008ced142bbc9b83943184dd16008",
+      "catalogue_date": "2010 March 22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2013631862.jpg",
+      "title": "Trolley on Market Street in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631862/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21400:21402/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "9cb46b89199f773d5a181e661d38312b686d62ed9a908c5af88e6e91ac5fd6ec",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2013631866.jpg",
+      "title": "Trolly on Market Street in San Francisco, California",
+      "source": "https://www.loc.gov/item/2013631866/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21400:21406/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "6a17fe0218a0597e46b310956ba499879f61c74ad78ee166fccdab793bb75aeb",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2010639261.jpg",
+      "title": "[Greer's Fairhope Market, Fairhope, Alabama]",
+      "source": "https://www.loc.gov/item/2010639261/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07400:07446/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "7fd5f6e6337f2e201ba3ae990180a085e0ecc8fda67f6cf7b126bd75f7e250a4",
+      "catalogue_date": "2010 May 13.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2010642133.jpg",
+      "title": "Eastern Market is a public market in the Capitol Hill neighborhood of Washington, D.C.",
+      "source": "https://www.loc.gov/item/2010642133/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:10300:10322/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "2e73cc228cb1bd3818e13abf4ccf71b93af785ae314ccedae6000ace8bd73cf6",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "markets/2010642054.jpg",
+      "title": "Eastern Market is a public market in the Capitol Hill neighborhood of Washington, D.C.",
+      "source": "https://www.loc.gov/item/2010642054/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:10200:10243/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "d69c476ee7f8d1c8607e55401a7f8f93ab839c3813a0a8733496993a1a1b8557",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640783.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640783/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08970/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "1bddf8d417d3b82b27fab667702e9d67895f324c7f0d01c718bda0ecdff78d1e",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640745.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640745/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08932/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "7379c4386a32ba428b899f6a6f16ddf3a143377b90ca6ff2de3871e11558f219",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640731.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640731/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08918/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "995798241b2f1b06993d7e27c439bc8530c5fba9b7c70dc5b2858d8a749f6c6a",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640726.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640726/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08913/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "62a8e681fa74e07b7e3b7f10e8b7a1b30cf7c4513eb5946be0c7049d3b79f400",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010639557.jpg",
+      "title": "Panoply Arts Festival in Huntsville, Alabama",
+      "source": "https://www.loc.gov/item/2010639557/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07700:07742/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "0e185fe5fd57ba9527a03797d77c69a7d3196f45f35e4c068aa71dbdf655970b",
+      "catalogue_date": "2010 April 25.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010639554.jpg",
+      "title": "Panoply Arts Festival in Huntsville, Alabama",
+      "source": "https://www.loc.gov/item/2010639554/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07700:07739/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "e02e4cd7a68830e76389a9705016beb3504dcccdad905875ec23de7b5598f27e",
+      "catalogue_date": "2010 April 25.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640781.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640781/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08968/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "cd6745bbc1f55725a7bb17c0e7bf0a8b21870ded5f5c87b6fe08b89ea364e616",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640754.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640754/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08941/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "1738655e2ebc7a562dbafc06f2057a1bb4e6420800fa2d2df817375720112240",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640744.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640744/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08931/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "e7b47a1710d8fa2d2d232a25676c5270b9c3b96a6a22fc7e1aa03e72bd523aad",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640752.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640752/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08939/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "96d9fea9b49b8305a8b9aa623a005bad88753423be713e53456bcbeff9d4a3c4",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010639552.jpg",
+      "title": "Panoply Arts Festival in Huntsville, Alabama",
+      "source": "https://www.loc.gov/item/2010639552/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07700:07737/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "72b14c2b3d83ce0f3ccf0740eb107398f22ae3a952cdcfe57a91e920231d2853",
+      "catalogue_date": "2010 April 25.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010639556.jpg",
+      "title": "Panoply Arts Festival in Huntsville, Alabama",
+      "source": "https://www.loc.gov/item/2010639556/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07700:07741/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "6cd840a907e7954a42184e630ff8eb212778ac3bc3d1e4fb290eac34e5866e57",
+      "catalogue_date": "2010 April 25.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640729.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640729/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08916/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "f351c89456f559e512aa4456236f7fc08f58dff8c016e7f69de54208f7541c4a",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010637828.jpg",
+      "title": "Fairhope Art Festival in Fairhope, Alabama",
+      "source": "https://www.loc.gov/item/2010637828/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:05900:05999/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "2f0f98b0a5752707eed90918b8e558d04f3ae681e9e4d645977700124ad5384a",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640724.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640724/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08911/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "af38314e018f7d222768ada8faf9ec35124fbd9433aba12aa838631f367b48ee",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "people/2010640779.jpg",
+      "title": "Hot Air Balloon Jubilee Festival, Decatur, Alabama",
+      "source": "https://www.loc.gov/item/2010640779/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08900:08966/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "5c6c0a0bed730c74c7ae15810691aeea140dd9c26beba2a9f1b7c411d1f7c8da",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2012631622.jpg",
+      "title": "Union Station train depot in Waterbury, Connecticut",
+      "source": "https://www.loc.gov/item/2012631622/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20213/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "3d5cb3f22aa82206bf2c81e17cda27b77555ba8d01ff18f225a1f9ce4188a08c",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2014630573.jpg",
+      "title": "Train yard in Laredo, Texas",
+      "source": "https://www.loc.gov/item/2014630573/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26300:26373/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "f025529ae5c1e9f8563c92e0e28bbf518dea37cc80a0c82ad2d0c1d951345391",
+      "catalogue_date": "2014-03-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2012631620.jpg",
+      "title": "Union Station train depot in Waterbury, Connecticut",
+      "source": "https://www.loc.gov/item/2012631620/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20211/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "f5ca580171190495441be297f155083b09b2605cd992b07798fca1d8439c2543",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2012631626.jpg",
+      "title": "Union Station train depot in Waterbury, Connecticut",
+      "source": "https://www.loc.gov/item/2012631626/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20217/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "a059e8f314fb6b4dbdbb00d722cd4917c82facd43a7a3f251c427fe3f8ad4b1e",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2013633068.jpg",
+      "title": "Santa Fe train in Barstow, California",
+      "source": "https://www.loc.gov/item/2013633068/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22600:22611/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "0c074648e22786ea8bca188086abc9cffc310708e7acb6f1639a1b16ad6c9c82",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2013632941.jpg",
+      "title": "Santa Fe train in Barstow, California",
+      "source": "https://www.loc.gov/item/2013632941/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22400:22484/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "d9c3ca0e7a02b20f4a97bf825a1821068d459d185806d5332c54eea9231a0dca",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2010640478.jpg",
+      "title": "Historic train bridge in Gadsden, Alabama",
+      "source": "https://www.loc.gov/item/2010640478/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08600:08665/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "f26d39bfd98ebe424b8bdcca08518230ab94b48dc6752b0ebc8a0614b50bf2d8",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2010640477.jpg",
+      "title": "Historic train bridge in Gadsden, Alabama",
+      "source": "https://www.loc.gov/item/2010640477/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08600:08664/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "630adce2d1db06f3699bc7fe5b2ca121df53e53d35e6b6e054ac8d46832fdcee",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2012631630.jpg",
+      "title": "Union Station train depot in Waterbury, Connecticut",
+      "source": "https://www.loc.gov/item/2012631630/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20221/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "9a0fdeaae25ec777bd0d1e6c1cc812194ec063056897db4d78b45c3131c95f4b",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2014630881.jpg",
+      "title": "[Train yard] El Paso, Texas",
+      "source": "https://www.loc.gov/item/2014630881/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26600:26681/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "5499a16df4f15f078ad817afccd4881c9fb5b4ecefce058a1aec750bd1de6e3a",
+      "catalogue_date": "2014-02-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2017882093.jpg",
+      "title": "Train station, Hoboken, New Jersey",
+      "source": "https://www.loc.gov/item/2017882093/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45300:45344/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "49d05a2334f33e134893560aaf4dd0a5079f7bc8c46f300707178ae41fd54de0",
+      "catalogue_date": "2017-08-24.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2010640165.jpg",
+      "title": "Coal train in rural Alabama",
+      "source": "https://www.loc.gov/item/2010640165/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:08300:08352/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "503b56fd0294f7f69df80bae83fd5adda8c38052c86707b52d63483c4c4451ef",
+      "catalogue_date": "2010 May 9.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2014630882.jpg",
+      "title": "[Train yard] El Paso, Texas",
+      "source": "https://www.loc.gov/item/2014630882/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26600:26682/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "af40226d3282d582a1f01a9bde184ff234095cd1e6ee1b648c934091c3ab9065",
+      "catalogue_date": "2014-02-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2014630566.jpg",
+      "title": "Train yard in Laredo, Texas",
+      "source": "https://www.loc.gov/item/2014630566/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26300:26366/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "1316a9da7b1c76e87c6cf69bede93eb69a6cb6eaf1e0f79d3df5797233bd1d0d",
+      "catalogue_date": "2014-03-16.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2013630440.jpg",
+      "title": "[Train, California]",
+      "source": "https://www.loc.gov/item/2013630440/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:21000:21012/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "b72dd76d098c27a187efb0b93930231ac60e98f18b62082e8eb2c73443881e86",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "trains/2012631627.jpg",
+      "title": "Union Station train depot in Waterbury, Connecticut",
+      "source": "https://www.loc.gov/item/2012631627/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20200:20218/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "327099cbb48caa281bf15084639261946b45c4a9e4da38c92cbf54d6c91715eb",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2017883011.jpg",
+      "title": "The Boothbay Harbor Memorial Library in Boothbay Harbor, Maine",
+      "source": "https://www.loc.gov/item/2017883011/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:46200:46263/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "811af420529b6162b4cc7c54244fdcc56e940515929615099af28f8ea5c5efed",
+      "catalogue_date": "2017-10-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012630291.jpg",
+      "title": "Sanatuck Harbor in Westport, Connecticut",
+      "source": "https://www.loc.gov/item/2012630291/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:18800:18856/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "3fc69781d80d12b89439f679955e5e6d76b784c4c1e4a384ad0386bbdc8fd748",
+      "catalogue_date": "2011 August.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2017882559.jpg",
+      "title": "Ogunquit, Maine's, rocky harbor",
+      "source": "https://www.loc.gov/item/2017882559/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45811/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "afea78620c25708772e997d114a79a6040f2f21beba2dc4d1091a37bc8ed0894",
+      "catalogue_date": "2017-09-12.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631496.jpg",
+      "title": "Norwalk Harbor, Norwalk, Connecticut",
+      "source": "https://www.loc.gov/item/2012631496/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20000:20087/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "da191dea15e17ca144e08f52ea29397bf9f890b5c7b3fec176ffc4a54187c3e7",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631324.jpg",
+      "title": "Harbor, Greenwich, Connecticut",
+      "source": "https://www.loc.gov/item/2012631324/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19900:19915/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "3e87df8b512c88773992210f59ba219f325d3c345022f8c32f012758ec2d7133",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631325.jpg",
+      "title": "Harbor, Greenwich, Connecticut",
+      "source": "https://www.loc.gov/item/2012631325/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19900:19916/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "2332dfe52b64834ac694c690d1b9c7a4988ea6c04aa3c40234687f0fd5aef338",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2014633485.jpg",
+      "title": "The Corpus Christi Harbor Bridge, a harbor bridge Corpus Christi, Texas",
+      "source": "https://www.loc.gov/item/2014633485/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:29200:29285/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "34f4eeb6b2e1ef0b3730b67fe7ffeb82ae6c3c82e06be551b3cde8141b1d8332",
+      "catalogue_date": "2014-04-04.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2017882562.jpg",
+      "title": "Harbor in Ogunquit, Maine",
+      "source": "https://www.loc.gov/item/2017882562/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45814/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "90f0f749336832b1525edf0d8118da38cc4e355da6ab2046bfd6138aa99529cf",
+      "catalogue_date": "2017-09-12.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2017883013.jpg",
+      "title": "Footbridge in Boothbay Harbor, Maine",
+      "source": "https://www.loc.gov/item/2017883013/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:46200:46265/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "348164c704938b62c04d789fc12a735d282caabc51d03bbd18391fe213badafd",
+      "catalogue_date": "2017-10-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631322.jpg",
+      "title": "Harbor, Greenwich, Connecticut",
+      "source": "https://www.loc.gov/item/2012631322/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19900:19913/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "e2b757f1d299caa1b32a689ec6dd90df8d460235df5e390af7482c5bc4522f27",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2017883022.jpg",
+      "title": "Harbor in Newcastle, Maine",
+      "source": "https://www.loc.gov/item/2017883022/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:46200:46274/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "adec1c0d4133d9b15479007194b9c68f98350e733c84f94c66be5222026d02bd",
+      "catalogue_date": "2017-10-07.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631318.jpg",
+      "title": "Greenwich Harbor, Connecticut",
+      "source": "https://www.loc.gov/item/2012631318/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19900:19909/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "fd040e6a8c0cb02954fc7324406a36e82b449a40cc1a2183fdeaad70bcdd296e",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631495.jpg",
+      "title": "Norwalk Harbor, Norwalk, Connecticut",
+      "source": "https://www.loc.gov/item/2012631495/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20000:20086/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "26559124db7d1d064c6683b552ab2a9c7009964c03c5545c7d240506e2467f77",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631498.jpg",
+      "title": "Norwalk Harbor, Norwalk, Connecticut",
+      "source": "https://www.loc.gov/item/2012631498/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20000:20089/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "94b223fa80bf9e79e04c03cb8062414a52cf5b1c5c514e47453b7e094cd24129",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2017882561.jpg",
+      "title": "Harbor in Ogunquit, Maine",
+      "source": "https://www.loc.gov/item/2017882561/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45800:45813/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "079edcc3ee075cef4e801bf42061f05026ee815cbd145dfde2ed31723e304cc7",
+      "catalogue_date": "2017-09-12.",
+      "date_precision": "year"
+    },
+    {
+      "file": "harbors/2012631323.jpg",
+      "title": "Harbor, Greenwich, Connecticut",
+      "source": "https://www.loc.gov/item/2012631323/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:19900:19914/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "881030adaff666ba137974cb4fe6ac0efc1cd22f24c43254c80d158b2c4739db",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2015631575.jpg",
+      "title": "The Robert H. Mollohan Bridge, also known as the High-Level Bridge or \"Million-Dollar Bridge,\" over the Monongahela River in Fairmont, West Virginia",
+      "source": "https://www.loc.gov/item/2015631575/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:31500:31500/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "f5e2ee0494e43ab70dc895848e8f44ffec0678fea8eeabd10a9d70686051c265",
+      "catalogue_date": "2015-05-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2017882393.jpg",
+      "title": "Rowell's Covered Bridge, a sheltered bridge in West Hopkinton, New Hampshire, that carries Rowell Bridge Road over the Contoocook River",
+      "source": "https://www.loc.gov/item/2017882393/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45600:45645/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "0f94260e91c11573cd85fa4a3d881d2944e9c48c2fbd17b83bd504fec7ab2eed",
+      "catalogue_date": "2017-09-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2015634518.jpg",
+      "title": "On Bridge Day, crowds pack the New River Gorge Bridge, a steel arch bridge 3,030 feet long near Fayetteville in Fayette County, West Virginia",
+      "source": "https://www.loc.gov/item/2015634518/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34500:34502/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "88c8fd3c0606286d0d76c7055410713852e068329ebb8f0149d6e33b9728fc6e",
+      "catalogue_date": "2015-10-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2010639142.jpg",
+      "title": "Edmund Pettus Bridge, Selma, Alabama",
+      "source": "https://www.loc.gov/item/2010639142/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07300:07326/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "f98ce78a9380a8a0f4ab7a873ec06529bda8b5dd76af5122e97234d61fd81c03",
+      "catalogue_date": "2010 April 7.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2015634517.jpg",
+      "title": "On Bridge Day, crowds pack the New River Gorge Bridge, a steel arch bridge 3,030 feet long near Fayetteville in Fayette County, West Virginia",
+      "source": "https://www.loc.gov/item/2015634517/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34500:34501/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "2cac5bda57db2613ef5fe2ac1a5eb3a9f6c5c994d391005b7f59f6600ad57167",
+      "catalogue_date": "2015-10-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2015631595.jpg",
+      "title": "The Robert H. Mollohan Bridge, also known as the High-Level Bridge or \"Million-Dollar Bridge,\" over the Monongahela River in Fairmont, West Virginia",
+      "source": "https://www.loc.gov/item/2015631595/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:31500:31520/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "5bf5a5d57c7c8a5e004b1d16ef98846b17c26b0dfe3dbe5de3affa35fca8dca9",
+      "catalogue_date": "2015-05-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2010639146.jpg",
+      "title": "Edmund Pettus Bridge, Selma, Alabama",
+      "source": "https://www.loc.gov/item/2010639146/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07300:07330/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "78df3c02f8650d146532e86f6702ca95191ab63ce441308d3421b6cf79d6da1b",
+      "catalogue_date": "2010 April 7.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2015634520.jpg",
+      "title": "On Bridge Day, crowds pack the New River Gorge Bridge, a steel arch bridge 3,030 feet long near Fayetteville in Fayette County, West Virginia",
+      "source": "https://www.loc.gov/item/2015634520/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34500:34504/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "b8b517afd2016a2374e8091b29447bf859f8e48b246de2f9e0e81c42d6309f93",
+      "catalogue_date": "2015-10-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2010646613.jpg",
+      "title": "Edmund Pettus Bridge, Selma, Alabama",
+      "source": "https://www.loc.gov/item/2010646613/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07300:07312/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "0a4a7c30292dba951786f0289e87e8d4e689b5d000a388687c22284f5cfa4174",
+      "catalogue_date": "2010 April 7.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2015634519.jpg",
+      "title": "On Bridge Day, crowds pack the New River Gorge Bridge, a steel arch bridge 3,030 feet long near Fayetteville in Fayette County, West Virginia",
+      "source": "https://www.loc.gov/item/2015634519/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34500:34503/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "70f4acf489354510189287ded2499a41ed162ea5b008163b94fc64f07247a949",
+      "catalogue_date": "2015-10-17.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2015632041.jpg",
+      "title": "The Wheeling Suspension Bridge, also known as the Stone Arch Bridge, which was the largest suspension bridge in the world from 1849 until 1851. Wheeling, West Virginia",
+      "source": "https://www.loc.gov/item/2015632041/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:31900:31966/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "1b319dfcf831678376454c191199d3ed3b2dc90459b4488d974f4496d03200ad",
+      "catalogue_date": "2015-05-11.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2013633030.jpg",
+      "title": "Golden Gate Bridge, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013633030/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22500:22573/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "ec82e61a8cc7ea924806475b48e239acdc71261001f8aed40f72d632a9afe0df",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2017884099.jpg",
+      "title": "The Martin Covered Bridge, a wooden covered bridge spanning the Winooski River near Marshfield, Vermont. Built about 1890, it is the only surviving historic covered bridge in the area",
+      "source": "https://www.loc.gov/item/2017884099/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:47400:47468/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "27d2e6a9cf9ef2b59d31ae00662f65a478738dbd717412e3e7110e659314bfdf",
+      "catalogue_date": "2017-10-03.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2012631589.jpg",
+      "title": "Cornwall covered bridge, Cornwall, Connecticut",
+      "source": "https://www.loc.gov/item/2012631589/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20100:20180/full/!1280,1280/0/default.jpg",
+      "date": "2011-01-01",
+      "sha256": "8206d25dd4b31633df11212c48c8cc79d8244e9beeefe0e223efda6584205c43",
+      "catalogue_date": "2011 October.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2013633033.jpg",
+      "title": "Golden Gate Bridge, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013633033/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:22500:22576/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "454d56d4a472b5b7893197408b8cfd8d42b8bd808ab83112326f07911eb79497",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "bridges/2010639086.jpg",
+      "title": "The Edmund Pettus Bridge, Selma, Alabama",
+      "source": "https://www.loc.gov/item/2010639086/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:07200:07257/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "5c54e0a106ffe5d9b63a1fb06e58e1002859aabd2909fcbd2ea0449afdf28ebb",
+      "catalogue_date": "2010 April 6.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2013633719.jpg",
+      "title": "View of McCoy Station Food & Drink at ski area, Mammoth Lakes, California",
+      "source": "https://www.loc.gov/item/2013633719/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:23200:23262/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "09562d36d66b396e618e840d8573f65a446a5a66bf605ecadcd049c56f2d9eb4",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2017685081.jpg",
+      "title": "Glittering concession stand purveying all sorts of fattening foods and treats at the Colorado State Fair in Pueblo, Colorado",
+      "source": "https://www.loc.gov/item/2017685081/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:34500:34598/full/!1280,1280/0/default.jpg",
+      "date": "2015-01-01",
+      "sha256": "9bc02efe3183a0522235b541e7a20c76d6fcf0580c78572eafd46786cb034f25",
+      "catalogue_date": "2015-09-02.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2010641059.jpg",
+      "title": "Food take out, Birmingham, Alabama",
+      "source": "https://www.loc.gov/item/2010641059/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:09200:09246/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "e771a1ead54559fb967f558f7fcdd6a52a21625692d986e2878e97e260beb1ba",
+      "catalogue_date": "2010.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2016630661.jpg",
+      "title": "Large and long hog shed and food silos in Grundy County, Iowa",
+      "source": "https://www.loc.gov/item/2016630661/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:39800:39843/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "49d63ef701e4ee850f0916b5ba0393ef68023ba1cd2757b52891e51b35ab6b17",
+      "catalogue_date": "2016-08-18.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2014630532.jpg",
+      "title": "A colorful food stand along the road in the little town of Havana in Hidalgo County, Texas",
+      "source": "https://www.loc.gov/item/2014630532/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26300:26332/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "4cddafe1dca298b4b331dfb271855873221bbae69337d10192bb62d760e38e18",
+      "catalogue_date": "2014-03-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2014630528.jpg",
+      "title": "A colorful food stand along the road in the little town of Havana in Hidalgo County, Texas",
+      "source": "https://www.loc.gov/item/2014630528/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26300:26328/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "15883f316592cf3690203f5910b318ad40d8c349e9ce444bda566896691d6223",
+      "catalogue_date": "2014-03-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2017879228.jpg",
+      "title": "Alice's Soul Food restaurant in Marks, a town in Quitman County, Mississippi",
+      "source": "https://www.loc.gov/item/2017879228/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:37200:37276/full/!1280,1280/0/default.jpg",
+      "date": "2016-01-01",
+      "sha256": "67843be9bbb27be47d42cae499edb12ae65df767fb1309a5869eab8a7cc895ba",
+      "catalogue_date": "2016-04-22.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2014632540.jpg",
+      "title": "Two of many food trucks and trailers that serve the eclectic South Austin neighborhood of Austin, Texas",
+      "source": "https://www.loc.gov/item/2014632540/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:28300:28340/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "bfe9ac2942e14925ad427919d963053c9be93f298b217e4c282d89714310d941",
+      "catalogue_date": "2014-04-19.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2013631611.jpg",
+      "title": "Neon sign of the In-Out Burger fast-food chain in Pasadena, California",
+      "source": "https://www.loc.gov/item/2013631611/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:24400:24433/full/!1280,1280/0/default.jpg",
+      "date": "2013-01-01",
+      "sha256": "eea095743c981377e15a1ffe44a01cdd82fba4296026a799e4a71bb3366ce8de",
+      "catalogue_date": "2013.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2017882190.jpg",
+      "title": "Food vendor in Atlantic City, New Jersey",
+      "source": "https://www.loc.gov/item/2017882190/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:45400:45441/full/!1280,1280/0/default.jpg",
+      "date": "2017-01-01",
+      "sha256": "7aefccdf9eeb17f172bc8cbdba3b593c757451c95696ad576146791b330e482b",
+      "catalogue_date": "2017-08-11.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2014630527.jpg",
+      "title": "A colorful food stand along the road in the little town of Havana in Hidalgo County, Texas",
+      "source": "https://www.loc.gov/item/2014630527/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26300:26327/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "e2c8fadd81142c6ba9dc85f5f4b796979a238d58716248b25bf7011e88012373",
+      "catalogue_date": "2014-03-15.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2010638115.jpg",
+      "title": "[Food at] reenactment of Civil War siege of April 1862, Bridgeport, Alabama",
+      "source": "https://www.loc.gov/item/2010638115/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:06700:06701/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "65b80a3e1dd670daa1d7963692e05952fb5159a0859ebb737d26c32702e4d5fa",
+      "catalogue_date": "2010 March 27.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2013630077.jpg",
+      "title": "Food vendor at Fisherman's Wharf, Pier 39, San Francisco, California",
+      "source": "https://www.loc.gov/item/2013630077/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:20600:20649/full/!1280,1280/0/default.jpg",
+      "date": "2012-01-01",
+      "sha256": "8f1a048c79d06c6ecbb2d387779ef87a41a866b06ad5f383eaf5ff2101ea9276",
+      "catalogue_date": "2012.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2014632647.jpg",
+      "title": "Sign for a popular cluster of food trailers in South Austin, Texas, an artsy neighborhood below the Texas capital",
+      "source": "https://www.loc.gov/item/2014632647/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:28400:28447/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "893ae92aac728234a4750d4b4b5f48c94ffae539df1920c89525d8cb71471196",
+      "catalogue_date": "2014-04-19.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2010638114.jpg",
+      "title": "[Food at] reenactment of Civil War siege of April 1862, Bridgeport, Alabama",
+      "source": "https://www.loc.gov/item/2010638114/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:06700:06700/full/!1280,1280/0/default.jpg",
+      "date": "2010-01-01",
+      "sha256": "39d00282697bc0a2fbd6d79fe238e3aa6eec2cd8ef9ff76d45ec024274a11d2f",
+      "catalogue_date": "2010 March 27.",
+      "date_precision": "year"
+    },
+    {
+      "file": "food/2014630529.jpg",
+      "title": "A colorful food stand along the road in the little town of Havana in Hidalgo County, Texas",
+      "source": "https://www.loc.gov/item/2014630529/",
+      "image": "https://tile.loc.gov/image-services/iiif/service:pnp:highsm:26300:26329/full/!1280,1280/0/default.jpg",
+      "date": "2014-01-01",
+      "sha256": "6fcede83638633dfd4b1c3d69a813204a62507c04e8b6bae2037469738b2300c",
+      "catalogue_date": "2014-03-15.",
+      "date_precision": "year"
+    }
+  ]
+}

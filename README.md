@@ -15,7 +15,7 @@ Filter the misses. Stack the near-duplicates. Crown your favourites.
 
 </div>
 
-![MatchER’s sea of polaroids, with colour flowing out of the photos and a notebook game menu above.](docs/images/map.png)
+![Hundreds of travel photographs across MatchER’s sea of polaroids, with colour flowing out of the photos.](docs/images/map.webp)
 
 You know the feeling: a folder full of almost-the-same shot, and no idea which one to keep.
 MatchER makes choosing enjoyable. It recognizes subjects, gathers bursts into stacks and turns your
@@ -93,15 +93,18 @@ Switch on **Stacks only** when you want to concentrate on existing piles.
 
 | Choose the strongest take | Finish your favourites |
 |---|---|
-| ![Two takes compete in Crown, with the same paper frame, hanging sticky notes and focused glow.](docs/images/crown.png) | ![The Look sheet pulled out beside a photo, showing its automatic baseline and editing controls.](docs/images/notes.png) |
+| ![Two takes compete in Crown, with the same paper frame, hanging sticky notes and focused glow.](docs/images/crown.webp) | ![The Look sheet pulled out beside a photo, showing its automatic baseline and editing controls.](docs/images/notes.webp) |
 | Compare expressions, framing and tiny details. | Start with Auto, then make the edit yours. |
 
-| Organize piles and loose photos | Explore the collection |
+| Organize piles and loose photos | Shape your groups |
 |---|---|
-| ![A paperclip spreads the stack’s own takes in place in the sea.](docs/images/stack-fan.png) | ![Searchable sea axes, grouped by colour, ranking, time, subjects and collection.](docs/images/axes.png) |
-| Drag photos together; spread their takes in place. | Change the axes without changing your photos or votes. |
+| ![A paperclip spreads the stack’s own takes in place in the sea.](docs/images/stack-fan.webp) | ![The travel collection gathered into themed groups, with editable photo rosters over the shared sea.](docs/images/groups.webp) |
+| Drag photos together; spread their takes in place. | Gather related photos and get ready for their tournaments. |
 
-All screenshots use the [bundled public-domain demo](matcher/demo/manifest.json).
+More views: [Filter](docs/images/filter.webp) · [Stacks overview](docs/images/stacks.webp) · [Groups in the sea](docs/images/groups-sea.webp) · [Sea axes](docs/images/axes.webp) · [Leaderboard](docs/images/leaderboard.webp) · [Phone](docs/images/phone.webp).
+
+These screenshots use [320 distinct public-domain travel photographs by Carol M. Highsmith](docs/images/README.md).
+The bundled offline sampler is smaller. You can download the screenshot collection and reproduce the captures.
 
 ## Your photos stay yours
 

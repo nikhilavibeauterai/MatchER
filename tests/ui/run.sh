@@ -8,9 +8,11 @@ TMP="${MATCHER_UI_TMP:-${TMPDIR:-/tmp}/matcher-ui}"
 t="${1:?Usage: tests/ui/run.sh <suite> [library]}"; lib="${2:-}"
 [[ "$t" =~ ^[a-z0-9_]+$ && -f "$HERE/suites/$t.js" ]] || { echo "Unknown browser suite: $t" >&2; exit 2; }
 if [ -z "$lib" ]; then  # the "photos of me" suites play on the me-photos library, the rest on the gallery samples
-  case "$t" in me_e2e|analysis_peek|toggles_peek|an_mid|details_peek) lib="$TMP/work/me-photos" ;; filter_stage|filter_teaching|filter_bias|filter_crossing|sea_geography) lib="$TMP/work/geography-photos" ;; *) lib="$TMP/work/sample-photos" ;; esac
+  case "$t" in docs_screenshots) lib="$TMP/work/Highsmith road trip" ;; me_e2e|analysis_peek|toggles_peek|an_mid|details_peek) lib="$TMP/work/me-photos" ;; filter_stage|filter_teaching|filter_bias|filter_crossing|sea_geography) lib="$TMP/work/geography-photos" ;; *) lib="$TMP/work/sample-photos" ;; esac
 fi
-mkdir -p "$TMP/shots"; rm -rf "$TMP/data-$t"; mkdir -p "$TMP/data-$t"
+mkdir -p "$TMP/shots"
+if [ "$t" != "docs_screenshots" ] || [ "${MATCHER_UI_REUSE:-0}" != "1" ]; then rm -rf "$TMP/data-$t"; fi
+mkdir -p "$TMP/data-$t"
 cd "$ROOT"
 MATCHER_DATA="$TMP/data-$t" .venv/bin/python -m matcher --port "${MATCHER_UI_PORT:-8811}" --no-browser > "$TMP/server-$t.log" 2>&1 &
 pid=$!

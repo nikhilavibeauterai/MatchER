@@ -22,6 +22,10 @@ Use the bundled public-domain sample or the libraries fetched by `tests/ui/setup
 throwaway directory; never test decisions against personal saves or attach private photos, previews or databases
 to a report. Stop only servers you started.
 
+For README screenshots, use the separate 320-photo showcase prepared by `tests/ui/setup.sh --showcase`.
+Its [credits and capture instructions](docs/images/README.md) keep the larger photo collection reproducible;
+the documentation suite rejects the small offline sampler.
+
 For performance work, run `python -m tests.benchmark_performance` for synthetic 3,600/20,000-photo API timings
 and CPU profiles, and `tests/ui/run.sh performance` for browser profiles of large group expansion and scrolling.
 Both print JSON; the browser suite also records layouts, long tasks, live cards, requests and screenshots.

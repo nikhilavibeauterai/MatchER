@@ -6,6 +6,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(cd "$HERE/../.." && pwd)"
 TMP="${MATCHER_UI_TMP:-${TMPDIR:-/tmp}/matcher-ui}"
 mkdir -p "$TMP/work"
+if [ "${1:-}" = "--showcase" ]; then
+  shift
+  "$ROOT/.venv/bin/python" "$HERE/fixtures/fetch_showcase.py" "$TMP/work/Highsmith road trip" "$@"
+  exit
+fi
+if [ "$#" -gt 0 ]; then echo "Usage: tests/ui/setup.sh [--showcase]" >&2; exit 2; fi
 cd "$HERE"
 npm ci --no-audit --no-fund
 # (the system browser, Vivaldi, crashes under headless Playwright here: use Playwright's own headless shell)

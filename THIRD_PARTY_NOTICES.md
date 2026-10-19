@@ -24,7 +24,12 @@ notices live beside the fonts in `matcher/static/fonts/*-OFL.txt`.
 
 The nine bundled demo images are public domain. The [manifest](matcher/demo/manifest.json) records the
 source, license and SHA-256 of every original. Four derived Ducreux takes are generated locally for the
-sample stack. Screenshots in `docs/images/` show only that sample library.
+sample stack.
+
+Documentation screenshots use 320 public-domain photographs by Carol M. Highsmith, Library of Congress,
+Prints & Photographs Division. The [screenshot credits](docs/images/README.md) link to the archive's rights
+statement and the [source manifest](tests/ui/fixtures/showcase.json), which records every photograph and checksum.
+This larger collection downloads separately and is not bundled with the app.
 
 Model weights are downloaded separately on first analysis, rather than included in the installer.
 The pinned URLs and SHA-256 values are in `matcher/models.py`. Upstream sources and their model licenses:
