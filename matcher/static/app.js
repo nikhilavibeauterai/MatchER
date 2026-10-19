@@ -4442,9 +4442,9 @@ function draftPhotoCamera(card) {
   if(!card||!World.sea)return;
   const sea=World.sea,deck=card.closest('.deck'),print=$('.print',card),img=$('img',print),events=new AbortController(),{signal}=events,viewSignal=S.events.signal;
   const controls='button,a,input,textarea,select,.photo-notes-paper,.photo-sticky,.user-note,.twin-ask';
-  let base,sourceTimer,pending=null,wanted=img.getAttribute('src'),closed=false;
+  let sourceTimer,pending=null,wanted=img.getAttribute('src'),closed=false;
   sea.enableCamera(true);sea.hold(null);sea.externalFocus=card;deck.classList.add('camera-deck');
-  base=deck.getBoundingClientRect();
+  let previous={...sea.camera},x=0,y=0;
   const item={el:card,size:print.getBoundingClientRect().width};
   const cancelCarry=()=>{if(card.classList.contains('held'))card.dispatchEvent(new Event('pointercancel'));};
   const load=()=>{
@@ -4457,7 +4457,12 @@ function draftPhotoCamera(card) {
   const paint=()=>{
     if(closed||!card.isConnected)return;
     cancelCarry();
-    const c=sea.camera,r=sea.el.getBoundingClientRect(),x=c.tx+(base.left-r.left)*(c.zoom-1),y=c.ty+(base.top-r.top)*(c.zoom-1);
+    // Fonts and help can move the deck after it is dealt. Continue from its visible position; scaling the
+    // first layout rectangle instead magnifies that drift into a large crop jump at deep zoom.
+    const c=sea.camera,r=sea.el.getBoundingClientRect(),base=deck.getBoundingClientRect(),ratio=c.zoom/previous.zoom;
+    x=c.zoom===1?0:c.tx-previous.tx*ratio+x+(base.left-r.left)*(ratio-1);
+    y=c.zoom===1?0:c.ty-previous.ty*ratio+y+(base.top-r.top)*(ratio-1);
+    previous={...c};
     deck.style.transform=c.zoom===1?'':`translate(${x}px,${y}px) scale(${c.zoom})`;
     deck.classList.toggle('zoomed',c.zoom>1.001);card.dataset.cameraZoom=String(c.zoom);photoSampling(img,c.zoom);
     if(c.zoom>1.001)sea.stillCard(item);else sea.resumeCards(true);
@@ -4475,7 +4480,7 @@ function draftPhotoCamera(card) {
   for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])card.addEventListener(type,pointer,{capture:true,signal});
   card.addEventListener('dblclick',e=>{if(Toolbelt.tool==='hand'&&!e.target.closest(controls)){e.preventDefault();e.stopPropagation();sea.resetCamera();}},{signal});
   window.addEventListener('sea-camera',e=>{if(e.detail.sea===sea)paint();},{signal});
-  window.addEventListener('resize',()=>{sea.resetCamera();base=deck.getBoundingClientRect();item.size=print.getBoundingClientRect().width;},{signal});
+  window.addEventListener('resize',()=>{sea.resetCamera();item.size=print.getBoundingClientRect().width;},{signal});
   const focus=World.draftCamera={card,close(){
     if(closed)return;closed=true;cancelCarry();events.abort();viewSignal.removeEventListener('abort',focus.close);clearTimeout(sourceTimer);
     if(pending)pending.src='';deck.style.transform='';deck.classList.remove('camera-deck','zoomed');

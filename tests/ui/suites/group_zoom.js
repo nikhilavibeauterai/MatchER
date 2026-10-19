@@ -21,7 +21,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
   for(const route of ['#draw?sort=1',`#draw?play=${group}`]){
     await page.goto(BASE+'/'+route);await page.waitForSelector('.draw-play');
     if(await page.locator('[data-c=onebyone]').count())await page.click('[data-c=onebyone]');
-    await page.waitForSelector('#dtop .print img');await page.waitForFunction(()=>{const img=document.querySelector('#dtop .print img');return img?.complete&&img.naturalWidth&&!World.arrivals?.has(Number(document.querySelector('#dtop').dataset.photo));});
+    await page.waitForSelector('#dtop .print img');await page.waitForFunction(()=>{const host=document.querySelector('#dtop .print'),img=host?.querySelector('img');return img?.complete&&img.naturalWidth&&PhotoNotes.hosts.get(host)?.data&&!World.arrivals?.has(Number(document.querySelector('#dtop').dataset.photo));});
     assert(await page.evaluate(()=>World.sea.cameraOn),'Group drafting keeps the shared sea camera enabled');
     const before=await state(),calls=writes.length,origin=await page.locator('#dtop .print').boundingBox();
     await page.evaluate(()=>{window.groupZoomPhoto=document.querySelector('#dtop .print');window.groupZoomImage=groupZoomPhoto.querySelector('img');});
@@ -37,7 +37,29 @@ const {BASE,LINK,LIB,OUT}=process.env;
     assert.deepEqual(await camera(),panned,'The group list keeps its own wheel');
     assert.deepEqual(await state(),before);assert.equal(writes.length,calls,'Zooming, panning and scrolling do not file, toss or vote');
     await page.screenshot({path:`${OUT}/group-zoom-${route.includes('sort')?'quick-sort':'find-more'}.png`});
+    // A close look extends beneath the controls, rather than being cut out by the old photo column.
+    const shifted=await page.locator('.draw-play .screen-head').evaluate(head=>{const deck=head.closest('.draw-play').querySelector('.deck'),top=deck.getBoundingClientRect().top;head.style.paddingBottom='44px';return deck.getBoundingClientRect().top-top;});
+    assert(Math.abs(shifted)>5,'A late help or font layout moves the dealt photo before the next gesture');
+    p=await point();p={x:Math.round(p.x),y:Math.round(p.y)}; // Native wheel coordinates are whole screen pixels.
+    const underPointer=()=>page.locator('#dtop img').evaluate((img,p)=>{const r=img.getBoundingClientRect();return[(p.x-r.left)/r.width,(p.y-r.top)/r.height];},p);
+    const originalPoint=await underPointer(),delta=await page.evaluate(()=>-Math.log(56/World.sea.camera.zoom)/World.sea.tuning.wheelSpeed);
+    await page.mouse.move(p.x,p.y);await page.mouse.wheel(0,delta);await page.waitForFunction(()=>World.sea.camera.zoom>55);
+    const closePoint=await underPointer();
+    assert(Math.hypot(...closePoint.map((v,i)=>v-originalPoint[i]))<.0001,`Deep zoom keeps the same part of the photo under the pointer after layout changes: ${JSON.stringify({originalPoint,closePoint,p})}`);
+    const outside=await page.evaluate(()=>{
+      const card=document.querySelector('#dtop'),print=card.querySelector('.print'),r=card.closest('.screen-body').getBoundingClientRect();
+      const points=[{x:r.left-8,y:r.top+64},{x:r.right+8,y:r.top+64},{x:r.left+64,y:r.top-8},{x:r.left+64,y:r.bottom+8}];
+      return points.find(p=>p.x>0&&p.x<innerWidth&&p.y>80&&p.y<innerHeight&&print.contains(document.elementFromPoint(p.x,p.y)));
+    });
+    assert(outside,'The visible enlarged print continues beyond the former photo column');
+    const deep=await camera();await page.mouse.move(outside.x,outside.y);await page.mouse.down();await page.mouse.move(outside.x+30,outside.y+20,{steps:4});await page.mouse.up();
+    const beyond=await camera();assert(Math.abs(beyond.tx-deep.tx-30)<3&&Math.abs(beyond.ty-deep.ty-20)<3,'Dragging the photo beyond its former column still pans');
+    assert(await page.locator('.draw-play .screen-head').evaluate(head=>{const controls=[...head.querySelectorAll('a,button')].filter(el=>el.getBoundingClientRect().width&&getComputedStyle(el).opacity!=='0');return controls.length&&controls.every(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));});}),'The enlarged photo stays beneath the header controls');
+    assert(await page.evaluate(()=>{const main=document.querySelector('#main'),body=document.querySelector('.draw-play .screen-body');main.scrollTo(100,100);return !main.scrollLeft&&!main.scrollTop&&!body.scrollTop&&document.documentElement.scrollWidth<=innerWidth;}),'Deep zoom cannot scroll or expand the page');
+    assert.deepEqual(await state(),before);assert.equal(writes.length,calls,'Looking outside the old column never files a photo');
+    await page.screenshot({path:`${OUT}/group-zoom-${route.includes('sort')?'quick-sort':'find-more'}-deep.png`});
     p=await point();await page.mouse.dblclick(p.x,p.y);await page.waitForFunction(()=>World.sea.camera.zoom===1);
+    await page.locator('.draw-play .screen-head').evaluate(head=>head.style.removeProperty('padding-bottom'));
     // Real two-finger gestures cancel a begun one-finger card drag instead of committing it on release.
     p=await point();await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:p.x-35,y:p.y},{x:p.x+35,y:p.y}]});
     for(const offset of [50,65,80])await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:p.x-offset,y:p.y},{x:p.x+offset,y:p.y}]});
@@ -52,7 +74,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
     await page.screenshot({path:`${OUT}/group-zoom-${route.includes('sort')?'quick-sort':'find-more'}-phone.png`});
     const previous=before.photo;await page.click('[data-c=skip]');await page.waitForFunction(previous=>document.querySelector('#dtop')?.dataset.photo!==previous,previous);
     assert.equal((await camera()).zoom,1,'The next dealt photo starts in its normal place');assert.equal(writes.length,calls,'Skipping stays a deferral');
-    results.push({route,zoom:zoomed.zoom,pinched:pinched.zoom,phone:true});await page.setViewportSize({width:1440,height:1000});
+    results.push({route,zoom:zoomed.zoom,deep:deep.zoom,pinched:pinched.zoom,phone:true});await page.setViewportSize({width:1440,height:1000});
   }
   await page.goto(BASE+'/#draw?sort=1');await page.waitForSelector('#dtop .print img');
   await page.waitForFunction(()=>World.sea.settled&&!World.arrivals?.has(Number(document.querySelector('#dtop')?.dataset.photo)));

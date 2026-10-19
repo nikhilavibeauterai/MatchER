@@ -1934,6 +1934,11 @@ code.path { word-break: normal; overflow-wrap: anywhere; }
 .bins .bin { min-width: 0; }
 /* One focus scale: the Quick sort print matches a duel print instead of filling the whole screen. */
 .draw-play .screen-body > .deck { max-height: min(66vh, 720px); margin: auto 0; }
+/* The camera can carry a dealt print across the whole sea, underneath the fixed sorting controls. Only the
+   viewport clips it; the old photo column must not cut a rectangle out of the paper at deep zoom. */
+#main:has(.camera-deck) { overflow: clip; }
+.draw-play .screen-body.fill:has(> .camera-deck) { overflow: visible; }
+#main .draw-play :is(.screen-head,.screen-rail,.screen-bar) { z-index:6; }
 .draw-play .camera-deck { transform-origin:0 0;touch-action:none; }
 body.sea-panning .camera-deck .swipe-card.top { cursor:grabbing; }
 .swipe-card .stamp.toss { font-size: 22px; }
