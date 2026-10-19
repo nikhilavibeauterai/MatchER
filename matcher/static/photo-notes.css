@@ -113,14 +113,23 @@ body.sea-panning .photo-note-sheet,.viewer-stage.panning .photo-note-sheet { cur
 .photo-notes-paper fieldset { min-width:0;padding:0;margin:0;border:0; }
 .photo-notes-paper legend { font:700 24px/1.2 var(--hand);padding:0 0 6px; }
 .sheet-seg { display:flex;flex-wrap:wrap;gap:6px; }
-.photo-notes-paper .sheet-seg .btn { min-height:40px;font-size:16px;flex:1 0 auto; }
+.photo-notes-paper .sheet-seg .btn { min-height:44px;font-size:16px;flex:1 0 auto; }
 .photo-notes-paper [data-crop][aria-pressed=true],.photo-notes-paper [data-edit=enhance][aria-pressed=true] { background:var(--highlight)!important;border-radius:5px 8px 4px 6px!important; }
 .photo-notes-paper .sheet-row { display:flex;flex-wrap:wrap;gap:8px;align-items:center; }
-.notes-look-intro { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px; }
+.notes-look-intro { position:sticky;top:-12px;z-index:4;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;padding:8px 0 10px;background:var(--paper);border-bottom:1px solid var(--rule); }
 .notes-look-intro .notes-intro { margin:0;flex:1 1 130px; }
 .notes-compare { min-height:44px;justify-self:start;touch-action:none;user-select:none; }
 .photo-notes-paper .notes-compare[aria-pressed=true] { background:var(--highlight)!important; }
 .photo-notes-paper .sheet-knobs { margin-top:14px; }
+.notes-auto-name { font:700 23px/1.2 var(--hand);margin:0;color:var(--green); }
+.photo-notes-paper .notes-adjustment { border-top:1px dashed var(--pencil);margin-top:14px; }
+.photo-notes-paper .notes-adjustment > summary { display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-height:44px;padding:10px 0;box-sizing:border-box;list-style:none; }
+.photo-notes-paper .notes-adjustment > summary::-webkit-details-marker { display:none; }
+.notes-adjustment > summary::after { content:'＋';color:var(--pencil);font:22px/1 var(--hand); }
+.notes-adjustment[open] > summary::after { content:'−'; }
+.notes-adjustment > summary small { margin-left:auto;color:var(--green);font:15px/1.2 var(--font); }
+.photo-notes-paper details.notes-adjustment { padding-left:0;border-left:0; }
+.photo-notes-paper .notes-finishing > .notes-adjustment { margin-top:0; }
 .photo-notes-paper .sheet-knob { display:grid;grid-template-columns:minmax(0,1fr) 52px 28px;grid-template-rows:auto 26px;align-items:center;gap:2px 6px;margin:12px 0; }
 .photo-notes-paper .sheet-knob label { grid-column:1;grid-row:1;color:var(--ink);font-size:16px; }
 .photo-notes-paper .sheet-knob input { grid-column:1/-1;grid-row:2;width:100%;min-width:0;padding:0;accent-color:var(--accent); }
@@ -158,10 +167,18 @@ body.sea-panning .photo-note-sheet,.viewer-stage.panning .photo-note-sheet { cur
   .notes-page { padding-top:10px; }
   .notes-title-label { font-size:13px; }
   .notes-intro { font-size:13px;margin-bottom:12px; }
+  .notes-look-intro .notes-intro { display:none; }
+  .notes-look-intro { justify-content:flex-end; }
   .notes-history-actions span { display:none; }
   .notes-tag-remove { min-height:44px; }
   .notes-active { translate:0; }
   .photo-notes-paper.is-open { z-index:10;transform:translate(var(--notes-x,8px),var(--notes-y,10px)) rotate(0deg); }
   .sea-photo-detail.notes-active > .sea-note-underlay { clip-path:none;z-index:10;pointer-events:auto; }
+  /* The sheet overlays the print on a phone. Holding Original clears the paper, keeping only that same
+     held button in place so the photograph being compared is actually visible underneath. */
+  .notes-comparing .notes-face { background:none;border-color:transparent;pointer-events:none; }
+  .notes-comparing :is(.notes-nav,.notes-heading,.notes-footer,.notes-finishing,.notes-look-intro .notes-intro) { visibility:hidden; }
+  .notes-comparing .notes-look-intro { background:none;border-color:transparent; }
+  .notes-comparing .notes-compare { pointer-events:auto;visibility:visible; }
 }
 @media(prefers-reduced-motion:reduce) { .photo-notes-paper,.has-photo-notes { transition:none; } }

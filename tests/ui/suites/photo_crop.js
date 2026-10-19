@@ -1,3 +1,4 @@
+const {adjustment}=require('./notes-helpers.cjs');
 // Manual framing selects source-photo coordinates, saves once, survives turns and has a local cancel.
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict');
 const {BASE,LINK,LIB,OUT}=process.env;
@@ -47,7 +48,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.screenshot({path:OUT+'/crop-custom-preview.png'});
   await page.click('[data-notes-undo]');await page.waitForFunction(expected=>JSON.stringify(Toolbelt.current(PhotoNotes.active.pid).crop_box)===expected,JSON.stringify(fractional.crop_box));assert.deepEqual((await read()).crop_box,fractional.crop_box);
   await page.click('[data-notes-redo]');await page.waitForFunction(()=>document.querySelector('.viewer .print').dataset.crop==='custom');assert.deepEqual((await read()).crop_box,saved.crop_box);
-  await page.click('[data-turn="90"]');await page.waitForFunction(()=>document.querySelector('.viewer .print').dataset.rotate==='90');
+  await adjustment(page,'alignment');await page.click('[data-turn="90"]');await page.waitForFunction(()=>document.querySelector('.viewer .print').dataset.rotate==='90');
   await open();const turned=await values();assert(turned.every((v,i)=>Math.abs(v-[30,20,60,50][i])<.01),JSON.stringify(turned));
   const beforeCancel=await read();await dialog.locator('.crop-selection').focus();await page.keyboard.press('ArrowRight');
   assert(Math.abs((await values())[0]-30.5)<.01,'The selection supports precise keyboard movement');

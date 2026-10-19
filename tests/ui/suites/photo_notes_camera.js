@@ -1,3 +1,4 @@
+const {adjustment}=require('./notes-helpers.cjs');
 // Paper surfaces pan the photo's own camera; editing controls stay native and zoom never scales the writing.
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict');
 const {boot}=require('./stack-helpers.cjs');
@@ -62,8 +63,10 @@ let page;
     assert(await writing.evaluate(el=>el.selectionEnd>el.selectionStart),`${kind}: writing is still selectable`);
     let edited=await geometry();assert.deepEqual(edited.camera,moved.camera);assert(Math.abs(edited.card.left-moved.card.left)<1);
     await page.click('[data-notes-page=look]');
+    await adjustment(page,'grading');
     const wheel=page.locator('.grade-wheel').first();await wheel.scrollIntoViewIfNeeded();await drag(wheel,15,8);
     edited=await geometry();assert.deepEqual(edited.camera,moved.camera,`${kind}: colour wheels retain their own drag`);
+    await adjustment(page,'alignment');
     const slider=page.locator('.photo-note-sheet [name=straighten]');await slider.scrollIntoViewIfNeeded();await drag(slider,20,0);
     edited=await geometry();assert.deepEqual(edited.camera,moved.camera,`${kind}: alignment sliders retain their own drag`);
     await page.click('[data-notes-page=notes]');await page.locator('.notes-story-label').click();

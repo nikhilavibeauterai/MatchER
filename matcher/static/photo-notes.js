@@ -539,18 +539,19 @@ const PhotoNotes = {
   renderLook() {
     const p=this.active.data,panel=$('[data-notes-panel=look]',this.sheet);
     panel.innerHTML=`<div class="notes-look-intro"><p class="notes-intro">Fine-tune this photo. Watch the print as you work.</p><button type="button" class="btn notes-compare" data-notes-compare aria-pressed="false">Hold for original</button></div>
-      <div class="notes-finishing edit-sheet"><fieldset><legend>Framing</legend><div class="sheet-seg">${[['best','Best'],['subject','Subject'],['height','Height'],['width','Width'],['off','Whole photo'],['custom','Custom…']].map(([key,label])=>`<button type="button" class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div><p class="notes-crop-hint"></p></fieldset>
-      <fieldset><legend>Alignment</legend><div class="sheet-row"><button type="button" class="btn ghost" data-auto-align>Auto-align <kbd>A</kbd></button><button type="button" class="btn ghost" data-align-reset hidden>Use automatic angle</button></div><p class="notes-hint" data-align-status></p><div class="sheet-row notes-turn"><button type="button" class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><output class="sheet-deg"></output><button type="button" class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div>
-        <div class="straighten-control"><label for="${this.sheet.id}-straighten">Straighten</label><output for="${this.sheet.id}-straighten" data-straighten-angle></output><input id="${this.sheet.id}-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${p.edits.straighten||0}"></div><button type="button" class="btn ghost" data-align>Align horizon…</button></fieldset>
-      <fieldset><legend>Light & colour</legend><section class="notes-auto"><h3>Automatic baseline</h3><p class="notes-auto-name"></p><p class="notes-hint notes-auto-why"></p>
+      <div class="notes-finishing edit-sheet"><fieldset><legend>Light & colour</legend><section class="notes-auto"><p class="notes-auto-name"></p><p class="notes-hint notes-auto-why"></p>
         <div class="sheet-row"><button type="button" class="btn" data-auto-reset>Auto</button><button type="button" class="btn ghost" data-edit="enhance">Enhance</button></div>
         <label class="notes-auto-amount">Amount <output data-auto-value></output><input type="range" data-auto-amount min="0" max="1.5" step="0.01"></label>
-        <div class="notes-auto-parts">${[['tone','Light & contrast'],['colour','Colour balance'],['grade','Scene colour'],['detail','Detail'],['subject','Backlit subject']].map(([key,label])=>`<label data-auto-part-label="${key}"><input type="checkbox" data-auto-part="${key}">${label}</label>`).join('')}</div>
-        <div class="sheet-row"><button type="button" class="btn ghost" data-auto-mask hidden>Edit subject mask…</button></div></section>
-        <div class="sheet-row"><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
+        <details class="notes-adjustment" data-notes-detail="recipe"><summary>What Auto changes</summary><div class="notes-auto-parts">${[['tone','Light & contrast'],['colour','Colour balance'],['grade','Scene colour'],['detail','Detail'],['subject','Backlit subject']].map(([key,label])=>`<label data-auto-part-label="${key}"><input type="checkbox" data-auto-part="${key}">${label}</label>`).join('')}</div>
+        <div class="sheet-row"><button type="button" class="btn ghost" data-auto-mask hidden>Edit subject mask…</button></div></details></section>
+        </fieldset>
+      <fieldset><legend>Framing</legend><div class="sheet-seg">${[['best','Best'],['subject','Subject'],['height','Fill height'],['width','Fill width'],['off','Whole photo'],['custom','Custom…']].map(([key,label])=>`<button type="button" class="btn ghost" data-crop="${key}" ${key==='subject'&&!p.subject?'hidden':''}>${label}</button>`).join('')}</div><p class="notes-crop-hint"></p>
+        <details class="notes-adjustment" data-notes-detail="alignment" ${p.edits.straighten!=null||p.edits.rotate?'open':''}><summary>Align & turn <small data-angle-state></small></summary><div class="sheet-row"><button type="button" class="btn ghost" data-auto-align>Auto-align <kbd>A</kbd></button><button type="button" class="btn ghost" data-align-reset hidden>Use automatic angle</button></div><p class="notes-hint" data-align-status></p><div class="sheet-row notes-turn"><button type="button" class="btn ghost" data-turn="-90" aria-label="Turn a quarter anticlockwise">↺</button><output class="sheet-deg"></output><button type="button" class="btn ghost" data-turn="90" aria-label="Turn a quarter clockwise">↻</button></div>
+        <div class="straighten-control"><label for="${this.sheet.id}-straighten">Straighten</label><output for="${this.sheet.id}-straighten" data-straighten-angle></output><input id="${this.sheet.id}-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${p.edits.straighten||0}"></div><button type="button" class="btn ghost" data-align>Align horizon…</button></details></fieldset>
+        <details class="notes-adjustment" data-notes-detail="light" ${p.edits.look?'open':''}><summary>Adjust light & colour <small data-light-state></small></summary><div class="sheet-row"><button type="button" class="btn ghost" data-edit="auto" hidden>Reset adjustments</button></div>
         <div class="sheet-knobs">${Object.entries(KNOBS).map(([key,[lo,hi]])=>`<div class="sheet-knob"><label for="${this.sheet.id}-${key}">${KNOB_WORD[key]}</label><input id="${this.sheet.id}-${key}" type="range" data-knob="${key}" min="${lo}" max="${hi}" step="0.05"><output for="${this.sheet.id}-${key}"></output><button type="button" class="notes-knob-reset" data-knob-reset="${key}" aria-label="Reset ${KNOB_WORD[key]}" hidden>↶</button></div>`).join('')}</div>
-        <div class="notes-grading"><h3>Colour grading</h3><p class="notes-hint">Shape the colour after the light adjustments. Drag a wheel or enter exact values.</p>${PhotoFinish.wheels(p.edits.grade)}</div></fieldset>
-      <fieldset><legend>Local adjustments</legend><p class="notes-mask-summary"></p><button type="button" class="btn" data-masks>Paint masks…</button><p class="notes-hint">Brush exposure and colour onto part of the photo. Erase or soften the mask whenever you like.</p></fieldset></div>`;
+        </details><details class="notes-adjustment" data-notes-detail="grading" ${p.edits.grade?'open':''}><summary>Colour grading <small data-grade-state></small></summary><div class="notes-grading"><p class="notes-hint">Shape the colour after the light adjustments. Drag a wheel or enter exact values.</p>${PhotoFinish.wheels(p.edits.grade)}</div></details>
+      <details class="notes-adjustment" data-notes-detail="masks" ${p.edits.masks?.length?'open':''}><summary>Local adjustments <small data-mask-state></small></summary><p class="notes-mask-summary"></p><button type="button" class="btn" data-masks>Paint masks…</button><p class="notes-hint">Brush exposure and colour onto part of the photo. Erase or soften the mask whenever you like.</p></details></div>`;
     const compare=$('[data-notes-compare]',panel),end=()=>this.compare(false);
     compare.onpointerdown=event=>{if(event.button)return;event.preventDefault();compare.setPointerCapture(event.pointerId);this.compare(true);};
     for(const type of ['pointerup','pointercancel','lostpointercapture','blur'])compare.addEventListener(type,end);
@@ -589,7 +590,7 @@ const PhotoNotes = {
     if(!active?.data)return;
     active.comparing=on;
     if(active.host?.isConnected)this.preview(active.host,active.data,on?{crop:'off',rotate:0,straighten:0,auto_align:false,enhance:false}:active.data.edits);
-    if(this.active===active&&this.sheet){const button=$('[data-notes-compare]',this.sheet);if(button){button.setAttribute('aria-pressed',String(on));button.textContent=on?'Original':'Hold for original';}}
+    if(this.active===active&&this.sheet){this.sheet.classList.toggle('notes-comparing',on);const button=$('[data-notes-compare]',this.sheet);if(button){button.setAttribute('aria-pressed',String(on));button.textContent=on?'Original':'Hold for original';}}
   },
   knobValue(range) {
     const key=range.dataset.knob,value=Number(range.value);
@@ -659,6 +660,10 @@ const PhotoNotes = {
     const angle=$('[name=straighten]',sheet);if(document.activeElement!==angle){angle.value=String(degrees);$('[data-straighten-angle]',sheet).textContent=`${degrees>0?'+':''}${degrees.toFixed(2)}°`;}
     if(!$('.notes-grading',sheet).contains(document.activeElement))PhotoFinish.fillWheels($('.notes-grading',sheet),e.grade||{});
     $('.notes-mask-summary',sheet).textContent=e.masks?.length?`${e.masks.length} editable ${e.masks.length===1?'mask':'masks'} on this photo.`:'Paint an area to adjust it without changing the rest of the photo.';
+    $('[data-light-state]',sheet).textContent=e.look?'Adjusted':'';
+    $('[data-grade-state]',sheet).textContent=e.grade?'Adjusted':'';
+    $('[data-angle-state]',sheet).textContent=e.straighten!=null?`${degrees>0?'+':''}${degrees.toFixed(2)}°`:e.rotate?`${e.rotate}°`:aligned?'Auto':'';
+    $('[data-mask-state]',sheet).textContent=e.masks?.length?plural(e.masks.length,'mask'):'';
     const k=knobsOf(e.look);for(const r of $$('[data-knob]',sheet))if(document.activeElement!==r){r.value=k[r.dataset.knob];this.knobValue(r);}
     this.writingStatus();
   }

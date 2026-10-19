@@ -48,9 +48,11 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.evaluate(pid=>{const sea=World.sea;clearInterval(World.watch);sea.resetCamera();
     sea.setVenn([],Array.from({length:512},(_,i)=>({id:90000+i,photo:pid,n:1,tags:[],visual:{colorfulness:(i%32)/31,brightness:Math.floor(i/32)/15}})));},pid);
   await page.waitForFunction(()=>World.sea.settled&&World.sea.items.size===512);
-  const point=await page.evaluate(()=>{const sea=World.sea,it=[...sea.items.values()].find(it=>it.density&&it.x>200&&it.x<1100&&it.y>200&&it.y<650),[x,y]=sea.toScreen(it.x,it.y),r=sea.el.getBoundingClientRect();return {x:x+r.left,y:y+r.top};});
   // Playwright constructs a plain Event for contextmenu; use its actual mouse coordinates without hover promotion.
-  assert(await page.evaluate(point=>{const event=new MouseEvent('contextmenu',{button:2,clientX:point.x,clientY:point.y,bubbles:true,cancelable:true});return !document.body.dispatchEvent(event);},point));
+  const point=await page.evaluate(()=>{const sea=World.sea,it=[...sea.items.values()].find(it=>it.density&&it.x>200&&it.x<1100&&it.y>200&&it.y<650),[wx,wy]=sea.waveOffset(it),[x,y]=sea.toScreen(it.x+wx,it.y+wy),r=sea.el.getBoundingClientRect();
+    const event=new MouseEvent('contextmenu',{button:2,clientX:x+r.left,clientY:y+r.top,bubbles:true,cancelable:true});
+    return {x:x+r.left,y:y+r.top,handled:!document.body.dispatchEvent(event)};
+  });assert(point.handled,'The context menu hits the sprite at its displayed wave position');
   await page.waitForSelector('.viewer .photo-note-sheet:not(.notes-opening) .notes-nav');assert.equal(await page.evaluate(()=>PhotoNotes.active.pid),pid,'A sprite hit resolves to its photo');
   assert.equal(votes,0);assert.deepEqual(problems,[]);console.log(JSON.stringify({pid,point,votes,problems}));await browser.close();
 })().catch(e=>{console.error('FAILED:',e.stack);process.exit(1);});

@@ -1,8 +1,13 @@
 .stack-stage { position:relative;z-index:6;height:100%;pointer-events:none; }
-.stack-toolbar { position:absolute;left:18px;right:18px;top:42px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;pointer-events:none; }
+.stack-toolbar { position:absolute;left:50%;top:36px;transform:translateX(-50%);width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:var(--paper);color:var(--ink);border-radius:var(--scrap-round);box-shadow:var(--scrap-shadow);pointer-events:auto; }
 .stack-toolbar > * { pointer-events:auto; }
 .stack-closeup :is(.stack-toolbar,.stack-bottom) { visibility:hidden; }
-.stack-census { font:19px var(--hand);color:var(--ink);padding:6px 12px;background:#f6f0e6dd;border-radius:8px; }
+.stack-census { font:19px var(--hand);color:var(--ink);padding:6px 10px 6px 0;border-right:1px solid var(--rule); }
+.stack-toolbar :is(.btn,.chip,.seg-btn) { min-height:44px;padding:6px 10px; }
+.stack-toolbar :is(.btn,.chip):not(.on),.stack-toolbar .seg-btn:not(.on) { background:none;border:0;box-shadow:none; }
+.stack-toolbar [aria-pressed=true] { background:var(--highlight); }
+.stack-toolbar [data-stack-overview] { font-size:0; }
+.stack-toolbar [data-stack-overview]::before { content:'↔';font:24px/1 var(--hand); }
 .stack-toolbar .help-btn { display:none; }
 .stack-tools { position:absolute;bottom:62px;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;max-width:calc(100vw - 32px);width:max-content;padding:10px 14px;background:var(--paper);color:var(--ink);box-shadow:0 6px 24px #0003;border-radius:6px;pointer-events:auto; }
 .stack-tools[hidden] { display:none; }
@@ -18,9 +23,10 @@
 .stack-field .stack-fan-take > .copy-path::before { content:'⧉';font-size:9cqw; }
 .stack-field .stack-fan-take:is(:hover,:focus-within) > .copy-path { opacity:1; }
 @media(max-width:600px){
-  .stack-toolbar { left:8px;right:8px;top:36px;gap:6px; }
-  .stack-toolbar .btn,.stack-toolbar .chip,.stack-toolbar .seg-btn { min-height:36px;padding:6px 9px; }
-  .stack-census { font-size:16px;padding:4px 6px; }
+  .stack-toolbar { top:12px;gap:4px;padding:5px 8px;max-width:calc(100% - 16px); }
+  .stack-toolbar .btn,.stack-toolbar .chip,.stack-toolbar .seg-btn { min-height:44px;padding:5px 7px;font-size:17px; }
+  .stack-census { display:none; }
+  .stack-toolbar [data-stack-overview] { font-size:0;min-width:44px; }
   .stack-dates { flex-basis:100%;display:flex;justify-content:center; }
   .stack-tools { bottom:58px;padding:8px;gap:5px; }
   .stack-tools .btn { min-height:36px;padding:5px 8px;font-size:13px; }

@@ -29,6 +29,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
         if(proof.readout)for(const tool of proof.tools)assert(!overlap(proof.readout,tool),'The folded toolbelt stays clear of the chart key');
       }
       if(name==='groups'){
+        const index=page.locator('.group-index');if(await index.count()&&!await index.evaluate(el=>el.open))await index.locator('summary').click();
         const next=page.locator('#bins [data-bin=new]');await next.scrollIntoViewIfNeeded();const box=await next.boundingBox();assert(box.x>=0&&box.x+box.width<=width+1,'New group fits inside the roster');
         await next.click();assert.match(await page.locator('#toast').textContent(),/Select some photos/);
       }

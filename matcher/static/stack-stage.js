@@ -42,7 +42,7 @@ async function stacksPage(main){
   main.innerHTML=`<div class="stacker stack-stage"><div class="stack-toolbar" aria-label="Stack arrangement">
     <span class="stack-census" role="status"><b data-stack-total>…</b> <span data-stack-word>shots</span></span>
     <span class="seg" role="group" aria-label="Stack order"><button class="seg-btn" data-stack-order="look">Similar</button><button class="seg-btn" data-stack-order="time">By date</button></span>
-    <button class="chip" data-stacks-only>Stacks only</button><button class="btn ghost" data-stack-overview title="See every shot">Overview</button>
+    <button class="chip" data-stacks-only>Stacks only</button><button class="btn ghost" data-stack-overview title="See every shot" aria-label="See every shot">Overview</button>
     <div class="stack-dates"></div>
     ${helpBtn('These are the same prints as the sea, arranged for stacking. Wheel or pinch to zoom, drag open water to pan. Click a print to bring it closer; drag one onto another to combine them. A paperclip opens its takes here. Right-click a photo for its notes. X sets the selected stack aside; Z undoes.')} </div>
     <section class="stack-tools" aria-label="Selected stack" hidden></section>
@@ -129,7 +129,7 @@ async function stacksPage(main){
     const twins=$('[data-twins]',main);twins.hidden=!pairs.length;twins.textContent=`Twin check · ${fmt(pairs.length)} pairs →`;
     $('[data-stack-hint]',main).textContent=open?'Click a take to inspect it. Drag it onto another stack to move it.':`${plural(shots.filter(s=>s.members.length>1).length,'stack')} · ${plural(shots.filter(s=>s.members.length===1).length,'loose photo')}`;
     const empty=$('.stack-empty',main);empty.hidden=!!visible().length;empty.textContent=stacksOnly?'No stacks yet. Turn off Stacks only to combine loose photos.':'No eligible shots yet. Return to Filter to bring some in.';
-    setForward(pairs.length?{label:'Twin check →',name:'Twin check',href:'#stacks?check=1'}:{label:'Next: Crown →',name:'Crown',href:'#duel?stage=stacks'});
+    setForward({label:'Next: Crown →',name:'Crown',href:'#duel?stage=stacks'});
     dateControls();
   }
   function dateControls(){

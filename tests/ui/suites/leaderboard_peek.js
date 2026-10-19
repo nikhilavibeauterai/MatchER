@@ -1,3 +1,4 @@
+const {adjustment}=require('./notes-helpers.cjs');
 // The leaderboard shows one still card at a time with a square sticky note (everything the sorter knows) that grows
 // to fit and can be dragged, the file, group and date handwritten on the chin, and a finishing sheet beside it:
 // enhance with knobs, four crop modes, quarter turns; F, C, R and Z; cards slide in and out without flights.
@@ -44,7 +45,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.evaluate(id=>openViewer(id),first.photo);await page.waitForSelector('.viewer .photo-facts');
   assert.equal((await page.locator('.viewer .photo-sticky').innerText()).replace(/\s+/g,' '),boardNote.replace(/\s+/g,' '),'Opening the same photo keeps its full sticky content');
   await page.screenshot({path:OUT+'/LB-viewer-sticky.png'});await page.click('.viewer #close-modal');
-  const openNotes=async()=>{await page.locator('.board-card .photo-notes-tab').click();await page.waitForSelector('.photo-note-sheet:not(.notes-opening) .notes-nav');await page.click('[data-notes-page=look]');await page.waitForSelector('.photo-note-sheet [data-knob]');};
+  const openNotes=async()=>{await page.locator('.board-card .photo-notes-tab').click();await page.waitForSelector('.photo-note-sheet:not(.notes-opening) .notes-nav');await page.click('[data-notes-page=look]');await adjustment(page,'light');await page.waitForSelector('.photo-note-sheet [data-knob]');};
   const closeNotes=async()=>{await page.keyboard.press('Escape');await page.waitForSelector('.photo-note-sheet',{state:'detached'});await page.locator('.board-card .photo-notes-tab').blur();};
   await openNotes();const withSheet=await look();assert.equal(withSheet.sheet.knobs,5,'Five knobs on the sheet');assert(withSheet.sheet.crops.length>=3,'Crop modes on the sheet');
   const longTag='A long tag following this exact take';

@@ -37,12 +37,12 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.waitForTimeout(600);
   res.emoji = await page.$eval(".gsec:not(.unsorted) [data-emoji-for]", (b) => b.textContent.trim());
   // look for
-  await page.click(".gsec:not(.unsorted) [data-hint]");
+  await page.click(".gsec:not(.unsorted) [data-group-menu]");await page.locator(".ip-hint").focus();
   await page.keyboard.type("laptops, screens");
   res.hintColor = await page.$eval(".hint-input", (i) => getComputedStyle(i).color);
   await page.keyboard.press("Enter");
   await page.waitForTimeout(2500);
-  res.hint = await page.$eval(".gsec:not(.unsorted) [data-hint]", (b) => b.textContent.trim());
+  await page.click(".gsec:not(.unsorted) [data-group-menu]");res.hint = await page.locator(".ip-hint").inputValue();
   console.log(JSON.stringify({ ...res, problems }, null, 1));
   await browser.close();
 })().catch((e) => { console.error("FAILED:", e.message); process.exit(1); });

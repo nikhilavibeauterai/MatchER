@@ -1,3 +1,4 @@
+const {adjustment}=require('./notes-helpers.cjs');
 // Real writing survives slow replies, failed saves, local actions and closing its physical sheet.
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict');
 const {LINK,LIB,OUT}=process.env;
@@ -49,7 +50,7 @@ const problems=[],res={};let page;
   await page.locator('.notes-removed summary').click();await page.locator('.notes-removed li').filter({hasText:'Little paper treasure'}).getByRole('button',{name:'Put back'}).click();
   await page.waitForSelector('.notes-tag:has-text("Little paper treasure")');
   check('removedTagCanBeRestoredLocally',true);
-  await page.click('[data-notes-page=look]');await page.click('[data-crop=height]');await page.click('[data-turn="90"]');
+  await page.click('[data-notes-page=look]');await page.click('[data-crop=height]');await adjustment(page,'alignment');await page.click('[data-turn="90"]');
   await page.waitForFunction(()=>document.querySelector('.viewer .print').dataset.rotate==='90');
   const before=await page.locator('.viewer .print').evaluate(card=>({crop:card.dataset.crop,turn:card.dataset.rotate,enhance:card.dataset.enhance}));
   const original=page.locator('[data-notes-compare]');await original.scrollIntoViewIfNeeded();

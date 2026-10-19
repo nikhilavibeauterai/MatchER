@@ -43,7 +43,7 @@ let page;
     const panned=await page.evaluate(()=>({...World.sea.camera}));
     assert(Math.abs(panned.tx-zoom.tx+65)<3&&Math.abs(panned.ty-zoom.ty+45)<3,'A close-up drag pans the shared camera');
     assert.equal(writes.length,calls,'Zooming and panning never vote, file or edit');
-    const glow=await page.evaluate(()=>{const focus=World.draftCamera;return{n:focus.layer.querySelectorAll(':scope > .photo-glow').length,paper:focus.prints.length,front:Number(getComputedStyle(focus.layer).zIndex),back:Number(getComputedStyle(World.el).zIndex),glows:[...focus.layer.querySelectorAll(':scope > .photo-glow')].map(g=>({z:Number(getComputedStyle(g).zIndex),events:getComputedStyle(g).pointerEvents}))};});
+    const glow=await page.evaluate(()=>{const focus=PhotoCamera.active;return{n:focus.layer.querySelectorAll(':scope > .photo-glow').length,paper:focus.prints.length,front:Number(getComputedStyle(focus.layer).zIndex),back:Number(getComputedStyle(World.el).zIndex),glows:[...focus.layer.querySelectorAll(':scope > .photo-glow')].map(g=>({z:Number(getComputedStyle(g).zIndex),events:getComputedStyle(g).pointerEvents}))};});
     assert.equal(glow.n,glow.paper,'Every focused print casts a glow beneath the shared photo layer');
     assert(glow.front>glow.back&&glow.glows.every(g=>g.z===0&&g.events==='none'),'Glow cannot obscure a photo or intercept input');
     await page.screenshot({path:`${OUT}/focus-${label}.png`});

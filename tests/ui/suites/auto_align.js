@@ -1,3 +1,4 @@
+const {adjustment}=require('./notes-helpers.cjs');
 // Alignment follows each picture through the atlas, sea and notes; A never makes a directional game choice.
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict');
 const {boot}=require('./stack-helpers.cjs');const {BASE,OUT}=process.env;
@@ -18,7 +19,7 @@ const {boot}=require('./stack-helpers.cjs');const {BASE,OUT}=process.env;
   await page.evaluate(()=>PhotoNotes.edit({straighten:0}));assert.equal(await page.locator('[name=straighten]').inputValue(),'0');
   const stopped=()=>page.evaluate(id=>!World.sea.items.get(id).el.querySelector('.window img').style.transform.includes('-4deg'),pid);
   assert(await stopped());await page.evaluate(()=>toggleAlign());await page.evaluate(()=>toggleAlign());assert(await stopped(),'Manual zero takes priority');
-  await page.locator('[data-align-reset]').click();await page.waitForFunction(id=>World.sea.items.get(id).el.querySelector('.window img').style.transform.includes('-4deg'),pid);
+  await adjustment(page,'alignment');await page.locator('[data-align-reset]').click();await page.waitForFunction(id=>World.sea.items.get(id).el.querySelector('.window img').style.transform.includes('-4deg'),pid);
   await page.screenshot({path:OUT+'/auto-align-notes.png'});
   await page.keyboard.press('Escape');await page.evaluate(()=>api('/api/stacks/auto',{}));await page.goto(BASE+'/#duel?stage=open');await page.waitForFunction(()=>S.current?.type==='duel'&&!S.busy);
   const before=writes.length;await page.keyboard.press('a');for(const key of ['w','s','d'])await page.keyboard.press(key);assert.equal(writes.length,before);

@@ -151,7 +151,7 @@ let page;
       });
       assert.equal(panel.expanded,open);assert.equal(panel.heights.length,2);
       assert(panel.heights.every(h=>h>=(open?90:150)),`Phone standings must leave useful comparison photos: ${JSON.stringify(panel)}`);
-      assert.deepEqual(panel.controls.map(x=>x.key).sort(),['a','b','crop','filter','great','meh','skip']);
+      assert.deepEqual(panel.controls.map(x=>x.key).sort(),['a','b','great','meh','skip']);
       assert(panel.controls.every(x=>x.visible),'All phone duel controls stay below the stage HUD and within the viewport');
       assert.equal(panel.overflow,false);assert.equal(panel.rows>0,open);phonePanels.push(panel);
     };
@@ -201,7 +201,7 @@ let page;
     assert.equal(state.expanded,open);assert.equal(state.bracket>0,open);
     if(open)assert(state.headingVisible,`The expanded bracket starts at the round headings: ${JSON.stringify(state.heading)}`);
     assert(state.slots[1].top>=state.slots[0].bottom&&state.slots.every(s=>s.height>=(open?100:150)),`Finals keeps the same useful stacked comparison: ${JSON.stringify(state)}`);
-    assert.deepEqual(state.controls.map(x=>x.key).sort(),['a','b','crop','f-bracket-toggle','f-reset','filter','skip']);  // Finals keeps Crop like every other duel
+    assert.deepEqual(state.controls.map(x=>x.key).sort(),['a','b','f-bracket-toggle',...(open?['f-reset']:[]),'skip']);
     assert(state.controls.every(x=>x.visible),`Finals actions have 44px targets below the stage HUD and within the viewport: ${JSON.stringify(state.controls)}`);return state;
   };
   const finalPanels=[await finalsPhone(false)];await page.click('#f-bracket-toggle');finalPanels.push(await finalsPhone(true));

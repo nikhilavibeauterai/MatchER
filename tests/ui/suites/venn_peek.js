@@ -106,7 +106,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
     res.badges = await page.evaluate(() => document.querySelectorAll(".ps-badge").length);
   }
   // the tag tray
-  await page.click("#tag-tray");
+  await page.click('.group-sea-tools summary');await page.click("#tag-tray");
   res.tray = await page.evaluate(() => ({ chips: document.querySelectorAll(".tag-chip").length, on: document.querySelectorAll(".tag-chip.on").length,
     fams: [...document.querySelectorAll(".tray-fam > b")].map((b) => b.textContent) }));
   await page.screenshot({ path: `${OUT}/V-tray.png` });

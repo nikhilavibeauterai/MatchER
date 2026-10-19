@@ -11,7 +11,7 @@ Everything they create (data dirs, server logs, results, screenshots in `shots/`
 (default `/tmp/matcher-ui`). A suite fails if it exits non-zero or its result lists `problems` (page or console errors).
 
 `tests/ui/setup.sh --sample-only` prepares the bundled public sample and browser dependencies without fetching
-the larger Commons libraries. The release workflow uses it in a fresh temporary directory for its seven
+the larger Commons libraries. The release workflow uses it in a fresh temporary directory for its eight
 campaign, editing, storage and performance suites. The full suite also needs the default setup's portrait library.
 
 Documentation captures use a separate collection of 320 distinct public-domain photographs. Prepare it with
@@ -22,6 +22,7 @@ analysis during capture iterations; every other suite still gets a fresh save.
 | suite | covers |
 |---|---|
 | experience_flow | visible forward actions from first launch through Filter, Stacks, Crown, Groups, group stage, Knockouts (or straight to a bracket the advancers already fill, with the rail marking the skip), Finals, Reveal and a real export on public fixtures; qualification preview/commit/undo; desktop and phone screenshots at every stage |
+| product_polish | compact group contact sheets and shared Options with real hint edit/undo, folded phone index, tucked sea tools and local Escape, Crown as the next stage, retained notes sections through Undo, reachable original comparison while scrolling and clear phone paper while held, real popup pinch and camera teardown, 44px comparison choices at 390px and 320px |
 | game_flow | Home activities launch Tag lab editor/check, recovery, trophies and timed open duels; Esc pause/resume preserves cards, focus and Lightning time, nested dialogs stay paused, local vote timing excludes pauses; Filter review returns in place; fixed phone menu/forward actions; phone Groups rail has one scrollport and visible, reachable 44px controls |
 | game_keys | real arrow decisions and inert former WASD keys, A alignment, native editing and held-key isolation, pause protection, X toss/undo, C crop and F enhancement; Twin/Tag skips make no edits; Finals deferral makes no winner, and tossing then undoing restores its field; desktop/phone screenshots |
 | filter_stage | uses the larger geography fixture to exercise every-take pagination; four directional choices with no tuning panel; compatible saved quality/subject drafts preview before Next confirms them; pass/fail badges, native keys, stale previews, delayed confirmation, individual rescue/undo and unreadable takes; phone screenshots |
@@ -52,7 +53,7 @@ analysis during capture iterations; every other suite still gets a fresh save.
 | sea_slots_peek / tour | synthetic 2k/20k feeds with real miniature previews and bounded DOM; screenshots of every screen (desktop and phone) |
 | tags_e2e | tag editor, full roster, rename, merge, delete, finite tag check and undo; shared 3:4 polaroids, paper margins and contained photos in the roster, tag pop-ups and correction game on desktop and phone; drawing/undo on roster cards and hit tests above the sea |
 | photo_notes | a full notes sheet tucked behind the frame, exposed corner and hover, the same element sliding out from underneath, frame titles, long notes, exact-take tags, crop/turn/enhance and Undo, saved ink and the shared detailed sticky hanging clear of the picture, dragging and retained placement, equal-size paper beside the desktop card and over it on phones; click outside dismisses the viewer, local Escape and no vote passthrough or metadata polling |
-| photo_notes_editing | four keyboard-accessible sheets selected through their staggered paper corners; autosaving during slow replies, failed-save draft retention and retry, close-to-save and isolation between photos; searchable tag creation, correction provenance and restoration without losing writing; hold for original, local Undo/Redo, every page on desktop and 320px phones, no page overflow or vote passthrough |
+| photo_notes_editing | four keyboard-accessible sheets selected through their staggered paper corners; autosaving during slow replies, failed-save draft retention and retry, close-to-save and isolation between photos; searchable tag creation, correction provenance and restoration without losing writing; expandable editing sections, hold for original, local Undo/Redo, every page on desktop and 320px phones, no page overflow or vote passthrough |
 | photo_notes_zoom | readable writing and usable controls through wide sea zoom changes; the same sheet and text field, retained writing, viewport bounds on desktop and 320px phones, independently scrolling pages, no metadata reloads or accidental votes |
 | photo_notes_camera | dragging the paper pans the sea, comparison or popup without selecting text; opening and reopening after zoom and pan stays anchored and readable; native text selection, labels and colour wheels remain usable, including phone layout |
 | photo_notes_stacks | the pulled-out paper stack stays clear of inspector clipping, with reachable handwritten page corners on desktop and narrow phones |

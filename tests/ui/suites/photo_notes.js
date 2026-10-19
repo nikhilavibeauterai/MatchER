@@ -1,3 +1,4 @@
+const {adjustment}=require('./notes-helpers.cjs');
 // A focused print exposes its writing and stickies; its longer sheet opens locally without making a game choice.
 const {chromium}=require('playwright-core');
 const assert=require('node:assert/strict');
@@ -55,11 +56,11 @@ const {BASE,LINK,LIB,OUT}=process.env;
   const tag=await page.locator('.notes-tag:has-text("Paper treasures") [data-remove-tag]').getAttribute('data-remove-tag');
   assert.equal(await page.evaluate(async key=>(await api('/api/tags?all=1')).tags.find(t=>t.key===key).count,tag),1);
   await page.screenshot({path:OUT+'/N-notes-tags.png'});await page.click('[data-notes-page=look]');
-  await page.click('.photo-note-sheet [data-crop=off]');await page.click('.photo-note-sheet [data-turn="90"]');
+  await page.click('.photo-note-sheet [data-crop=off]');await adjustment(page,'alignment');await page.click('.photo-note-sheet [data-turn="90"]');
   await page.waitForFunction(()=>document.querySelector('.viewer .print').dataset.rotate==='90');
   if(await page.locator('.photo-note-sheet [data-edit=enhance]').getAttribute('aria-pressed')!=='true')await page.click('.photo-note-sheet [data-edit=enhance]');
   await page.waitForFunction(()=>document.querySelector('.photo-note-sheet [data-edit=enhance]').getAttribute('aria-pressed')==='true');
-  await page.locator('.photo-note-sheet [data-knob=colour]').evaluate(r=>{r.value=0;r.dispatchEvent(new Event('input',{bubbles:true}));r.dispatchEvent(new Event('change',{bubbles:true}));});
+  await adjustment(page,'light');await page.locator('.photo-note-sheet [data-knob=colour]').evaluate(r=>{r.value=0;r.dispatchEvent(new Event('input',{bubbles:true}));r.dispatchEvent(new Event('change',{bubbles:true}));});
   await page.waitForFunction(async id=>(await api(`/api/edit?photo=${id}`)).edits.look?.colour===0,pid);
   await page.click('[data-notes-undo]');await page.waitForFunction(async id=>!(await api(`/api/edit?photo=${id}`)).edits.look,pid);
   await page.locator('[data-notes-panel=look]').evaluate(e=>e.scrollTop=0);await page.screenshot({path:OUT+'/N-notes-look.png'});

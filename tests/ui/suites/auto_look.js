@@ -1,3 +1,4 @@
+const {adjustment}=require('./notes-helpers.cjs');
 // Saved scene-aware looks stay identical across image levels; editable amounts/components share normal undo.
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict'),{execFileSync}=require('node:child_process');
 const {BASE,LINK,LIB,OUT}=process.env;
@@ -21,10 +22,10 @@ let page;
   const pixel=JSON.parse(execFileSync('../../.venv/bin/python',['-c','from PIL import Image;import io,sys,json;im=Image.open(io.BytesIO(sys.stdin.buffer.read())).convert("RGB");print(json.dumps(im.getpixel((im.width//2,im.height//2))))'],{input:shot}).toString());
   assert(pixel.every(v=>Math.abs(v-100)<=2),`Zero amount displays the unadjusted pixels: ${pixel}`);
   await page.click('[data-notes-undo]');await page.waitForFunction(()=>!PhotoNotes.busy&&Toolbelt.current(PhotoNotes.active.pid).auto_amount===undefined);
-  await amount(.65);await page.locator('[data-auto-part=detail]').uncheck();await page.waitForFunction(()=>Toolbelt.current(PhotoNotes.active.pid).auto_parts?.detail===false);
+  await amount(.65);await adjustment(page,'recipe');await page.locator('[data-auto-part=detail]').uncheck();await page.waitForFunction(()=>Toolbelt.current(PhotoNotes.active.pid).auto_parts?.detail===false);
   assert.equal(await page.evaluate(id=>JSON.stringify(AutoLook.recipes.get(id)),pid),recipe,'Manual amounts never remeasure the baseline');
   const img=page.locator('.viewer .window img');assert(await img.evaluate(img=>img.style.filter.includes('url(')));
-  await page.locator('[data-knob=warmth]').evaluate(r=>{r.value=.2;r.dispatchEvent(new Event('input',{bubbles:true}));r.dispatchEvent(new Event('change',{bubbles:true}));});
+  await adjustment(page,'light');await page.locator('[data-knob=warmth]').evaluate(r=>{r.value=.2;r.dispatchEvent(new Event('input',{bubbles:true}));r.dispatchEvent(new Event('change',{bubbles:true}));});
   await page.waitForFunction(()=>Toolbelt.current(PhotoNotes.active.pid).look?.warmth===.2);
   await page.click('[data-auto-reset]');await page.waitForFunction(()=>!PhotoNotes.busy&&Toolbelt.current(PhotoNotes.active.pid).auto_amount===undefined&&!Toolbelt.current(PhotoNotes.active.pid).auto_parts);
   assert.equal(await page.evaluate(()=>Toolbelt.current(PhotoNotes.active.pid).look.warmth),.2,'Auto retains the photographer’s manual adjustments');

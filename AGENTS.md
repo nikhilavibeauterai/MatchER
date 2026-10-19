@@ -58,6 +58,8 @@ the suites in step with deliberate UI changes (see `tests/ui/README.md` for what
 - `matcher/game.py`: XP, levels, achievements, stage-clear bonuses. `matcher/ranker.py`: the Bayesian ranker.
 - `matcher/static/app.js`: views, game flow and `World`, the shared sea behind every screen. Views are `view*`
   functions routed by `#hash` (`VIEWS`). UI is ethereal; focused photos fly out and back.
+- `matcher/static/photo-camera.js`: focused and popup cameras, gesture ownership and shared decoded-image upgrades.
+  Stages provide their prints; leaving the stage releases its camera listeners, retries and pending images.
 - `matcher/static/photo-sea.js`: photo interaction, stack presentation, tag focus and bounded DOM/atlas rendering.
 - `matcher/static/sea-gl.js`: the GPU sprite layer: every small print as an instanced quad from the atlas sheets (one
   draw call per sheet, the camera a uniform), the same polaroid as drawCard; photo-sea.js keeps its 2D canvas as the

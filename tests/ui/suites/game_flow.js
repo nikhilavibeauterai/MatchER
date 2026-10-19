@@ -132,7 +132,7 @@ let page;const res={},problems=[];
     await page.screenshot({path:`${OUT}/GF-${name}-phone.png`});return geometry;
   };
   res.stacks=assert(await page.locator('.stack-toolbar').isVisible());await page.goto(BASE+'/#draw');await page.waitForSelector('.screen.sorter');res.groups=await editor('groups');
-  await page.click('[data-mode="sea"]');await page.waitForSelector('#sea-head');await page.waitForSelector('#more-circles');res.sea=await editor('groups-sea');
+  await page.click('[data-mode="sea"]');await page.waitForSelector('#sea-head');await page.waitForSelector('.group-sea-tools summary');res.sea=await editor('groups-sea');
   // The short phone rail has one scrollport; useful rows cannot collapse behind their headings.
   const rail=page.locator('#venn-rail'),railBar=await page.locator('.screen-bar').boundingBox();
   const reachable=async(target)=>{

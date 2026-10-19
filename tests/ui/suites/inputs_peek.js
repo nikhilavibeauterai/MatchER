@@ -115,7 +115,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.click(".gsec [data-rename]");
   res.spills.push(...(await spill()));
   await page.keyboard.press("Escape");
-  await page.click(".gsec [data-hint]");
+  await page.click(".gsec [data-group-menu]");await page.locator(".ip-hint").focus();
   res.spills.push(...(await spill()));
   await page.keyboard.press("Escape");
   // sea view island menu + emoji search

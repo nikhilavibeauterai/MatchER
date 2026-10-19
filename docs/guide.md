@@ -191,13 +191,14 @@ When the last winner returns in the next comparison, it stays on the same side a
   rebuilding the sea or waiting for the whole collection. The same recipe follows the photo through thumbnail,
   preview, original and edited export. `F` flips the preview; a photo’s own Enhance choice takes priority.
   New browsers start with Enhance on; an existing saved on/off preference is respected.
-  In **Notes → Look**, **Amount** runs from 0–150% and each automatic component can be switched off.
+  In **Notes → Look**, **Amount** runs from 0–150%. Open **What Auto changes** to switch individual automatic
+  components off; **Adjust light & colour** and **Colour grading** open the manual controls below it.
   **Auto** restores that baseline without clearing your own light knobs, colour wheels, masks or framing.
   A backlit-subject mask can be copied into the mask painter for editing. All your adjustments are undoable.
 - **Auto-align** looks for agreement between long, independent horizontal and vertical references across the
   picture, or a single clear horizon. Repeated detections of one edge count once, tiny texture is excluded, and
   conflicting angles leave the original angle intact. `A` toggles the preview separately
-  from Enhance and Crop. **Notes → Look → Alignment** offers a per-photo switch, manual slider and return to
+  from Enhance and Crop. **Notes → Look → Align & turn** offers a per-photo switch, manual slider and return to
   the automatic angle. Manual zero also overrides the automatic correction. Alignment turns and trims only the
   picture inside its paper; the same correction reaches thumbnails, full-size viewing and edited exports.
 - **Auto-crop** (on by default for profile pics) frames every photo the same way around the face, in a
@@ -291,15 +292,18 @@ Two views of the same thing (🫧 / ▦ in the top strip):
   **Focus** button looks without moving the selection. Group keys focus when nothing is selected, and **Esc** releases
   focus. **Drag a photo** to play with the swarm; releasing it keeps its tags and group intact. Explicit selection
   actions, group keys and side-list bins edit groups and stacks. Right-click a label to edit it; **Edit tags** opens
-  the full editor. All recognized tags remain in the tag shelf; 🏷️ searches them and **T** tags the selection.
-- **▦ List**: every group as a section of tiles (open a stack with ⧉ to keep a take, split one out or split it all).
+  the full editor from **Tools**. That menu also finds a tag and switches the colour field. All recognized tags remain
+  in the tag shelf, and **T** tags the selection.
+- **▦ List**: every group as a contact sheet (open a stack with its paperclip to keep a take, split one out or split it all).
+  Small groups use shorter sheets, and Unsorted disappears when it is empty. **Jump to a group** is a compact index
+  and a drop target; it starts folded on phones. The group's **Options** opens the same editing menu as its sea label.
   Selected photos keep a gold frame and ✓ until you deselect or move them. Click, **Enter** or **Space** toggles a
   photo; **Esc** clears the selection. A white dashed inset marks keyboard focus separately.
 
 In both, click photos to select several, then press the group's key: **1–9**, **0** for the 10th, **Alt+1…Alt+0** for
-the 11th to the 20th (Alt+Shift for the 21st to the 30th). **N** makes a new group from the selection, **S** stacks
+the 11th to the 20th (Alt+Shift for the 21st to the 30th). **N** makes a new group from the selection, **M** stacks
 it, **U** unsorts it, **Z** undoes. The groups are in your order, which sets their keys: drag them in a side list,
-**Shift+↑ ↓** on the highlighted one, the island menu's earlier / later, or ▲▼ in the list view. A group left with
+**Shift+↑ ↓** on the highlighted one in the sorting games, or **Earlier / Later** in the group's menu. A group left with
 no shots disappears (Z brings it back). New groups get a catchy name from what sets their photos apart in this
 library (*Golden Hour Gang*, *Good Boy Gallery*, *Office Hours*); 🔎 words (*laptops, screens, desks*), or a name
 you typed yourself, steer which photos come up first.

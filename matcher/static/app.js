@@ -86,6 +86,24 @@ function askInGame(message, action = "Continue") {
   });
 }
 
+// Context menus belong to the current screen. Replacing one releases its old handlers too; Escape dismisses
+// this local layer before the game's selection or pause menu, including after the pointer has left it.
+function closeIsland(){const pop=$('.island-pop');if(pop?.dismiss)pop.dismiss();else pop?.remove();}
+function paperPopup(pop,anchor,onClose=null){
+  closeIsland();document.body.append(pop);
+  const events=new AbortController(),{signal}=events,viewSignal=S.events.signal;let closed=false;
+  if(!pop.hasAttribute('role'))pop.setAttribute('role','dialog');
+  if(!pop.hasAttribute('aria-label'))pop.setAttribute('aria-label','Photo tools');
+  if(anchor?.hasAttribute('aria-haspopup'))anchor.setAttribute('aria-expanded','true');
+  const close=pop.dismiss=()=>{
+    if(closed)return;closed=true;pop.remove();events.abort();viewSignal.removeEventListener('abort',close);
+    if(anchor?.hasAttribute('aria-haspopup'))anchor.setAttribute('aria-expanded','false');onClose?.();
+  };
+  document.addEventListener('pointerdown',e=>{if(!pop.contains(e.target)&&!e.target.closest('.emoji-pop'))close();},{capture:true,signal});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('.emoji-pop')){e.preventDefault();e.stopImmediatePropagation();close();if(anchor?.isConnected)anchor.focus({preventScroll:true});}},{capture:true,signal});
+  viewSignal.addEventListener('abort',close,{once:true});return close;
+}
+
 const LOCK = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M17 9h-1V7a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2zm-7-2a2 2 0 1 1 4 0v2h-4V7z"/></svg>`;
 
 const FLAG_LABELS = {
@@ -2183,6 +2201,7 @@ function startLightning() {
            xp0: (S.game && S.game.xp) || 0, best0: (S.game && S.game.lightning_best) || 0 };
   $("#lr-slot").innerHTML = `<div class="lr-bar"><i></i><span class="lr-text">⚡ GO! <b id="lr-calls">0</b> calls</span><span id="lr-secs">${LR_SECONDS}s</span></div>`;
   $("#hud-bolt").classList.add("on");
+  $("#hud-bolt").setAttribute('aria-label','Finish lightning round');$("#hud-bolt").title='Finish this lightning round';
   Sound.play("level");
   banner(`<small>Lightning round</small><b>⚡ 60 seconds. Go!</b>`, 900);
   const tick = () => {
@@ -2213,6 +2232,7 @@ async function endLightning() {
   S.lr = null;
   cancelAnimationFrame(lr.raf);
   $("#hud-bolt")?.classList.remove("on");
+  $("#hud-bolt")?.setAttribute('aria-label','Start a lightning round');if($("#hud-bolt"))$("#hud-bolt").title='Lightning round: as many calls as you can in 60 seconds';
   $("#lr-slot") && ($("#lr-slot").innerHTML = "");
   await sleep(450);  // let the last answer land
   let g = S.game;
@@ -2277,7 +2297,7 @@ function finishStage({ icon, title, text, next, undo: canUndo = true, clear = ca
   bar.hidden = false;
   const u = $("[data-fin=undo]", bar);
   if (u) u.onclick = () => undo();
-  setHint(next ? `Enter continues to the next stage.${canUndo ? " Z undoes the last call." : ""}` : "Nothing to play here yet. The map is bottom-left.");
+  setHint(next ? `Enter continues to the next stage.${canUndo ? " Z undoes the last call." : ""}` : "Nothing to play here yet. The title above returns to the sea.");
 }
 
 function stagesDone() {
@@ -3536,7 +3556,7 @@ function placePairNote(card,note,size){
   const key=[card.clientWidth,card.clientHeight,innerWidth,innerHeight,size,note.textContent,picture?.style.width,picture?.style.height,picture?.style.transform,...panels.map(r=>[r.x,r.y,r.width,r.height])].join('|');
   const old=note.pairPose;
   // A mip arriving during zoom keeps the note's physical position. Only a new layout or new writing refits it.
-  if(old&&(old.key===key||World.draftCamera&&World.sea.camera.zoom>1.001)){
+  if(old&&(old.key===key||PhotoCamera.active&&World.sea.camera.zoom>1.001)){
     note.style.setProperty('--note-x',old.x);note.style.setProperty('--note-y',old.y);return;
   }
   const r=card.getBoundingClientRect(),nr=note.getBoundingClientRect(),w=nr.width,h=nr.height;
@@ -3611,9 +3631,9 @@ async function viewShortlist(main) {
         ${d.settled ? `<span class="stat-chip good">👑 top <b>${d.settled}</b> from the finals</span>` : ""}
         <span class="stat-chip board-pos" ${entries.length ? "" : "hidden"}></span>
         <span class="grow"></span>
-        ${helpBtn(`One shot at a time, best first: <b>←</b> and <b>→</b> (or A and D) walk the ranks and then <b>On the bubble</b>, the next
+        ${helpBtn(`One shot at a time, best first: <b>←</b> and <b>→</b> walk the ranks and then <b>On the bubble</b>, the next
           ones in line. The sticky note is everything the sorter knows about the shot: how sure it is that it belongs here (more duels make
-          it surer), its takes, tags and looks; drag it where you like. The sheet beside the card is the finishing: <b>F</b> enhance (with
+          it surer), its takes, tags and looks; drag it where you like. The sheet beside the card is the finishing: <b>A</b> auto-aligns, <b>F</b> enhances (with
           knobs for levels, light, contrast, colour and warmth), <b>C</b> walks the crops (best, focus subject, fill height, fill width, off), <b>R</b> turns a
           quarter; each is kept for that shot, shown in the card's window and baked into <b>Save my best</b> (Z takes one back). At most
           ${S.lib.settings.per_scene} per scene, so it stays varied. Add a bubble shot by hand and it rides along in the export without a rank.
@@ -3820,95 +3840,6 @@ document.addEventListener('contextmenu',e=>{
   else openViewer(id,{notes:true});
 });
 
-function openViewer(id,{notes=false}={}) {
-  const m = $("#modal");
-  m.viewerControls?.abort();
-  const events=new AbortController(),{signal}=events;m.viewerControls=events;
-  m.className = "wide photo-viewer";
-  m.innerHTML = `<div class="viewer"><div class="viewer-stage" role="region" aria-label="Photo preview. Scroll to zoom; drag to pan when zoomed in."><div class="print"><img src="${T(id)}" alt="" draggable="false"></div></div><div class="viewer-actions">${photoPathButton(id)}<button class="btn" data-viewer-reset hidden>Reset view</button><button class="btn" data-viewer-notes hidden>Notes</button><button class="btn" id="close-modal">Close</button></div></div>`;
-  const stage=$('.viewer-stage',m),card=$('.print',stage),img=$('img',card),resetButton=$('[data-viewer-reset]',m),notesButton=$('[data-viewer-notes]',m);
-  let zoom=1,x=0,y=0,drag=null,suppressClick=false,sourceTimer=null,pendingSource=null,wantedSource=img.getAttribute('src');
-  const loadSource=()=>{
-    if(signal.aborted||!m.open||pendingSource||img.getAttribute('src')===wantedSource)return;
-    const source=wantedSource,next=new Image();pendingSource=next;next.src=source;
-    // Keep the currently decoded picture on the card until its replacement is ready. Only one resolution can
-    // be loading at once, and an old response cannot replace the level the latest camera position needs.
-    next.decode().then(()=>{
-      if(!signal.aborted&&m.open&&source===wantedSource)img.src=source;
-    }).catch(()=>{/* Retain the last good picture; the next zoom or resize can retry this level. */}).finally(()=>{
-      if(pendingSource===next)pendingSource=null;
-      if(source!==wantedSource)loadSource();
-    });
-  };
-  const requestSource=()=>{
-    clearTimeout(sourceTimer);
-    sourceTimer=setTimeout(()=>{
-      if(signal.aborted||!m.open)return;
-      const r=card.getBoundingClientRect(),picture=img.getBoundingClientRect();
-      photoSampling(img,zoom);
-      wantedSource=M(id,Math.max(picture.width,picture.height),r.height>=innerHeight*.8);
-      loadSource();
-    },120);
-  };
-  const paint=()=>{
-    card.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;
-    if(card.dataset.viewerZoom!==String(zoom)){card.dataset.viewerZoom=String(zoom);photoSampling(img,zoom);}
-    stage.classList.toggle('zoomed',zoom>1.001);resetButton.hidden=notesButton.hidden=zoom<=1.001;
-    if(PhotoNotes.active?.host===card)PhotoNotes.position();
-  };
-  const reset=()=>{zoom=1;x=y=0;paint();requestSource();};
-  const constrain=()=>{
-    const r=card.getBoundingClientRect(),s=stage.getBoundingClientRect(),left=r.left-x,top=r.top-y;
-    const bound=(value,lo,hi,base,size)=>size>hi-lo?Math.max(hi-24-base-size,Math.min(lo+24-base,value)):Math.max(lo+8-base,Math.min(hi-8-base-size,value));
-    x=bound(x,s.left,s.right,left,r.width);y=bound(y,s.top,s.bottom,top,r.height);
-  };
-  const zoomAt=(next,cx,cy)=>{
-    const r=card.getBoundingClientRect(),ratio=next/zoom;
-    x+=(cx-r.left)*(1-ratio);y+=(cy-r.top)*(1-ratio);zoom=next;
-    if(zoom<=1.001)reset();else{paint();constrain();paint();}
-    requestSource();
-  };
-  stage.addEventListener('wheel',e=>{
-    if(e.target.closest('.photo-notes-paper'))return;
-    e.preventDefault();e.stopPropagation();
-    const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?stage.clientHeight:1);
-    zoomAt(Math.max(1,Math.min(12,zoom*Math.exp(-Math.max(-500,Math.min(500,delta))*.0015))),e.clientX,e.clientY);
-  },{passive:false,signal});
-  stage.addEventListener('pointerdown',e=>{
-    if(e.button||zoom<=1.001||Toolbelt.tool!=='hand'||e.target.closest('button,a,input,textarea,select,label,summary,[contenteditable],.grade-wheel,.photo-sticky,.user-note')||
-      e.target.closest('.photo-notes-paper')&&!PhotoNotes.panTarget(e.target,e.pointerType))return;
-    e.preventDefault();e.stopPropagation();drag={id:e.pointerId,x:e.clientX,y:e.clientY,px:x,py:y,moved:false};
-    stage.setPointerCapture(e.pointerId);stage.classList.add('panning');
-  },{signal});
-  stage.addEventListener('pointermove',e=>{
-    if(!drag||e.pointerId!==drag.id)return;
-    const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.moved||=Math.hypot(dx,dy)>4;
-    x=drag.px+dx;y=drag.py+dy;paint();constrain();paint();
-  },{signal});
-  const release=e=>{
-    if(!drag||e.pointerId!==drag.id)return;
-    suppressClick=drag.moved;drag=null;stage.classList.remove('panning');
-    if(stage.hasPointerCapture(e.pointerId))stage.releasePointerCapture(e.pointerId);
-  };
-  for(const type of ['pointerup','pointercancel','lostpointercapture'])stage.addEventListener(type,release,{signal});
-  stage.addEventListener('dblclick',e=>{if(Toolbelt.tool==='hand'&&!e.target.closest('button,input,textarea,.photo-sticky,.user-note')){e.preventDefault();e.stopPropagation();reset();}},{signal});
-  stage.addEventListener('click',e=>{if(e.target.closest('.photo-notes-tab'))reset();},{capture:true,signal});
-  window.addEventListener('resize',reset,{signal});resetButton.onclick=reset;
-  notesButton.onclick=()=>{reset();PhotoNotes.open(card);};
-  m.onclick = e => {if(suppressClick){suppressClick=false;e.preventDefault();return;}if(!e.target.closest('.print,.viewer-actions,.photo-note-sheet'))m.close();};
-  $('#close-modal',m).onclick=()=>m.close();
-  const sizes=new ResizeObserver(requestSource);for(const el of [card,img,stage])sizes.observe(el);
-  img.addEventListener('load',()=>{
-    const state=PhotoNotes.hosts.get(card);if(state?.data)PhotoNotes.preview(card,state.data,Toolbelt.current(id));
-    requestSource();
-  },{signal});
-  // A dialog's close event is queued: reopening it before that event arrives must keep the new viewer alive.
-  m.addEventListener('close',()=>{if(!m.open)events.abort();},{signal});
-  signal.addEventListener('abort',()=>{clearTimeout(sourceTimer);sizes.disconnect();if(pendingSource)pendingSource.src='';},{once:true});
-  reset();
-  m.showModal();
-  if(notes){PhotoNotes.attach(card);PhotoNotes.open(card);}
-}
 
 async function openFrames(photo, done) {
   const view=S.view;
@@ -4204,82 +4135,7 @@ async function drawUndo(after) {
 // A dealt print stays on the shared sea camera. The deck carries its paper, notes and underprints together;
 // the group list stays on screen, and a close-up drag pans instead of making a filing decision.
 function draftPhotoCamera(card) {
-  focusPhotoCamera(card?.closest('.deck'),card?[$('.print',card)]:[]);
-}
-
-// A comparison, a dealt take and the podium all carry the same paper through the same camera. The layer
-// moves as one; its controls keep their own scale and a close-up pointer gesture never makes a decision.
-function focusPhotoCamera(layer,prints=[]) {
-  prints=prints.filter(Boolean);
-  const signature=prints.map(p=>Toolbelt.pidOf(p)).join(','),old=World.draftCamera;
-  if(old&&old.layer===layer&&old.signature===signature&&prints.every((p,i)=>p===old.prints[i])){old.still();return;}
-  old?.close();
-  if(!layer||!prints.length||!World.sea)return;
-  const sea=World.sea,events=new AbortController(),{signal}=events,viewSignal=S.events.signal;
-  const controls='button,a,input,textarea,select,.photo-notes-paper,.photo-sticky,.user-note,.twin-ask';
-  let sourceTimer,closed=false,gestureUntil=0;
-  sea.enableCamera(true);sea.hold(null);sea.externalFocus=layer;layer.classList.add('focus-camera');
-  if(layer.matches('.deck'))layer.classList.add('camera-deck');
-  let previous={...sea.camera},x=0,y=0;
-  const photos=prints.map(print=>({print,side:print.closest('.side'),pid:Toolbelt.pidOf(print),pending:null,wanted:null,item:{el:print,size:print.getBoundingClientRect().width}}));
-  for(const p of photos){const img=p.print.querySelector('.window img');if(img?.complete&&img.naturalWidth)FocusGlow.attach(p.print,img);else img?.addEventListener('load',()=>FocusGlow.attach(p.print,img),{once:true,signal});}
-  const unfreeze=p=>{if(!p.pose)return;Object.assign(p.side.style,p.pose);p.pose=null;};
-  const cancelCarry=()=>{for(const card of $$('.held',layer))card.dispatchEvent(new Event('pointercancel'));};
-  const load=p=>{
-    const img=p.print.querySelector('.window img');if(closed||p.pending||!img||img.getAttribute('src')===p.wanted)return;
-    const source=p.wanted,next=new Image();p.pending=next;next.src=source;
-    next.decode().then(()=>{const current=p.print.querySelector('.window img');if(!closed&&source===p.wanted&&current){current.src=source;p.failures=0;photoSampling(current,sea.camera.zoom);}}).catch(()=>{
-      // A removable drive can pause while opening an original. Keep the decoded picture and retry gently.
-      if(!closed&&source===p.wanted){clearTimeout(p.retry);p.retry=setTimeout(()=>load(p),Math.min(8000,750*2**(p.failures=(p.failures||0)+1)));}
-    }).finally(()=>{
-      if(p.pending===next)p.pending=null;if(!closed&&source!==p.wanted)load(p);
-    });
-  };
-  const paint=()=>{
-    if(closed||!layer.isConnected)return;
-    cancelCarry();
-    // Fonts and help can move the deck after it is dealt. Continue from its visible position; scaling the
-    // first layout rectangle instead magnifies that drift into a large crop jump at deep zoom.
-    const c=sea.camera,r=sea.el.getBoundingClientRect(),base=layer.getBoundingClientRect(),ratio=c.zoom/previous.zoom;
-    x=c.zoom===1?0:c.tx-previous.tx*ratio+x+(base.left-r.left)*(ratio-1);
-    y=c.zoom===1?0:c.ty-previous.ty*ratio+y+(base.top-r.top)*(ratio-1);
-    previous={...c};
-    layer.style.transform=c.zoom===1?'':`translate(${x}px,${y}px) scale(${c.zoom})`;
-    layer.classList.toggle('zoomed',c.zoom>1.001);
-    for(const p of photos){p.print.dataset.viewerZoom=String(c.zoom);photoSampling(p.print.querySelector('.window img'),c.zoom);
-      if(c.zoom>1.001){if(p.side&&!p.pose){p.pose={scale:p.side.style.scale,transition:p.side.style.transition};const scale=getComputedStyle(p.side).scale;p.side.style.transition='none';p.side.style.scale=scale;}sea.stillCard(p.item);}else unfreeze(p);}
-    FocusGlow.place(layer,prints,c.zoom);
-    if(prints.includes(PhotoNotes.active?.host))PhotoNotes.position();
-    if(c.zoom<=1.001)sea.resumeCards(true);
-    clearTimeout(sourceTimer);sourceTimer=setTimeout(()=>{
-      if(closed)return;
-      for(const p of photos){const img=p.print.querySelector('.window img');if(!img)continue;const r=p.print.getBoundingClientRect(),picture=img.getBoundingClientRect();
-        if(r.right<=0||r.left>=innerWidth||r.bottom<=0||r.top>=innerHeight)continue;
-        p.wanted=M(p.pid,Math.max(picture.width,picture.height),r.height>=innerHeight*.8);load(p);}
-    },120);
-  };
-  const pointer=e=>{
-    if(Toolbelt.tool!=='hand'||e.target.closest(controls)&&!PhotoNotes.panTarget(e.target,e.pointerType))return;
-    const pinching=sea.pinch(e);
-    if(pinching||e.pointerType==='touch'&&sea.touches.size>1){gestureUntil=performance.now()+600;cancelCarry();e.preventDefault();e.stopImmediatePropagation();return;}
-    if(e.type==='pointerdown'&&sea.camera.zoom>1.001&&!e.button){gestureUntil=performance.now()+600;cancelCarry();sea.panStart(e);e.stopImmediatePropagation();}
-  };
-  for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])layer.addEventListener(type,pointer,{capture:true,signal});
-  layer.addEventListener('click',e=>{if(!e.target.closest(controls)&&(sea.camera.zoom>1.001||performance.now()<gestureUntil)){e.preventDefault();e.stopImmediatePropagation();}},{capture:true,signal});
-  layer.addEventListener('dblclick',e=>{if(Toolbelt.tool==='hand'&&!e.target.closest(controls)){e.preventDefault();e.stopPropagation();gestureUntil=performance.now()+350;sea.resetCamera();}},{signal});
-  window.addEventListener('sea-camera',e=>{if(e.detail.sea===sea)paint();},{signal});
-  window.addEventListener('resize',()=>{sea.resetCamera();for(const p of photos)p.item.size=p.print.getBoundingClientRect().width;},{signal});
-  const sizing=new ResizeObserver(entries=>{for(const entry of entries){const p=photos.find(p=>p.print===entry.target);if(p)p.item.size=entry.contentRect.width;}paint();});
-  for(const p of photos)sizing.observe(p.print);
-  const focus=World.draftCamera={layer,prints,signature,still(){if(sea.camera.zoom>1.001)for(const p of photos)sea.stillCard(p.item);},close(){
-    if(closed)return;closed=true;cancelCarry();events.abort();sizing.disconnect();viewSignal.removeEventListener('abort',focus.close);clearTimeout(sourceTimer);
-    for(const p of photos){clearTimeout(p.retry);if(p.pending)p.pending.src='';delete p.print.dataset.viewerZoom;unfreeze(p);}
-    FocusGlow.release(layer,prints);
-    layer.style.transform='';layer.classList.remove('focus-camera','camera-deck','zoomed');
-    if(sea.externalFocus===layer)sea.externalFocus=null;sea.panEnd();sea.touches.clear();sea.resumeCards(true);sea.resetCamera();
-    if(World.draftCamera===focus)World.draftCamera=null;
-  }};
-  viewSignal.addEventListener('abort',focus.close,{once:true});paint();
+  PhotoCamera.focus(card?.closest('.deck'),card?[$('.print',card)]:[]);
 }
 
 // A card you can fling or carry: let go over a group bin and it drops there; otherwise a fling past a third of its
@@ -4329,15 +4185,15 @@ function carryable(el, { right, left, up, drop }) {
 
 // Every group as a numbered bin (stable order: the order they were made), plus "new group". `fits` stars the groups
 // this shot is most like. Keys: the number (two digits for 10+), N for new.
-function binsHtml(bins, current, fits, focusable = false) {
+function binsHtml(bins, current, fits, focusable = false, tools = true) {
   return bins.map((g, i) => `
     <div class="bin ${g.id === current ? "current" : ""} ${fits && fits[0] === g.id ? "fit" : ""}" data-bin="${g.id}" role="group" tabindex="-1"
       title="${esc(g.name)}: ${plural(g.size, "shot")}. ${groupKeyLabel(i) ? `Key ${groupKeyLabel(i)}` : "Drag here"}${g.id === current ? " (or →)" : ""}">
       <button class="bin-place" aria-label="${esc(g.name)}"><span class="bin-n">${groupKeyLabel(i)}</span><img src="${T(g.cover)}" alt="" loading="lazy">
         <span class="bin-name"><span class="bin-label">${g.id === current ? "This group" : esc(g.name)}</span>
         ${g.adv ? `<small>· ${g.adv} through</small>` : ""}</span><span class="bin-size">${fmt(g.size)}</span></button>
-      <button class="bin-emoji" data-emoji-bin="${g.id}" title="Change the emoji" aria-label="Change emoji for ${esc(g.name)}">${esc(g.emoji || "🗂️")}</button>
-      <button class="bin-edit" data-rename-bin="${g.id}" title="Rename" aria-label="Rename ${esc(g.name)}">✏️</button>
+      ${tools?`<button class="bin-emoji" data-emoji-bin="${g.id}" title="Change the emoji" aria-label="Change emoji for ${esc(g.name)}">${esc(g.emoji || "🗂️")}</button>
+      <button class="bin-edit" data-rename-bin="${g.id}" title="Rename" aria-label="Rename ${esc(g.name)}">✏️</button>`:''}
       ${focusable && g.size ? `<button class="btn ghost bin-focus" data-focus-bin="${g.id}" aria-label="Focus ${esc(g.name)}" aria-pressed="false">Focus</button>` : ""}
       ${fits && fits[0] === g.id ? `<span class="bin-star" title="Looks most like this group">★</span>` : ""}
     </div>`).join("") + `
@@ -4686,6 +4542,8 @@ function expandStack(root, x, btn, boxes, reveal = true) {
 // and press a group's number. Quick sort (the minigame) deals the unsorted ones one at a time.
 async function drawSorter(main, focus) {
   const view = S.view;
+  document.addEventListener('pointerdown',e=>{const tools=$('.group-sea-tools',main);if(tools?.open&&!tools.contains(e.target)&&!e.target.closest('.island-pop'))tools.open=false;},{signal:S.events.signal});
+  document.addEventListener('keydown',e=>{const tools=$('.group-sea-tools',main);if(e.key==='Escape'&&tools?.open&&!$('.island-pop')){e.preventDefault();e.stopImmediatePropagation();tools.open=false;$('summary',tools).focus({preventScroll:true});}},{capture:true,signal:S.events.signal});
   const selected = new Set(), full = new Set(), windows = new Map();
   let b = null, busy = false, sea = null;
   // 🌊 sea: every photo floating, groups as islands (the default on a big screen); ▦ list: sections of tiles
@@ -4814,10 +4672,10 @@ async function drawSorter(main, focus) {
     return `
     <h1>🗂️ Groups</h1>
     <span class="stat-chip" title="Shots in a group">${ring(b.total ? b.drawn / b.total : 0)}<b>${fmt(b.drawn)}</b>/ ${fmt(b.total)} grouped · ${plural(b.groups.length, "group")}</span>
-    <a class="btn ghost" href="#tags">Edit tags</a><button class="btn ghost" id="more-circles">${Sea.on?'Hide sea colours':'Show sea colours'}</button>
-    <button class="stat-chip chip-btn" id="tag-tray" title="Find a tag to focus">🏷️ <b>${fmt((b.allTags?.tags||T.tags).length)}</b> tags</button>
     <span class="grow"></span>
     ${viewToggle()}
+    <details class="group-sea-tools"><summary>Tools</summary><div class="group-sea-menu"><a class="btn ghost" href="#tags">Edit tags</a><button class="btn ghost" id="more-circles">${Sea.on?'Hide sea colours':'Show sea colours'}</button>
+      <button class="btn ghost" id="tag-tray" title="Find a tag to focus">Find a tag <span>${fmt((b.allTags?.tags||T.tags).length)}</span></button></div></details>
     ${b.unsorted.count ? `<button class="btn" id="d-auto" title="Groups everything that's left for you (rename, merge or dissolve after)">✨ Auto-group the rest</button>` : ""}
     ${helpBtn(`Photos sharing <b>tags</b> flock together, leaving room between prints. Lassos follow the neighbourhoods they form.<br><br>
       Select tags to gather their photos onto steady spots. <b>All</b> selected tags narrows the focus; <b>Any</b> widens it.
@@ -4981,9 +4839,9 @@ async function drawSorter(main, focus) {
   // A group's menu (its bubble's label): rename, emoji, what to look for, deal more for it, merge it, dissolve it.
   function groupMenu(g, anchor) {
     if (!g) return;
-    $(".island-pop")?.remove();
     const pop = document.createElement("div");
     pop.className = "pop-card island-pop";
+    pop.setAttribute('role','dialog');pop.setAttribute('aria-label',`Options for ${g.name}`);
     pop.innerHTML = `<div class="ip-head"><button class="t-emoji ip-emoji" data-ip="emoji" title="Change the emoji">${esc(g.emoji || "🗂️")}</button>
         <input class="hint-input ip-name" value="${esc(g.name)}" maxlength="60" aria-label="Group name"></div>
       <label class="ip-row">🔎 <input class="hint-input ip-hint" value="${esc(g.hint || "")}" maxlength="120" placeholder="what to look for: laptops, screens…" aria-label="What to look for"></label>
@@ -4997,13 +4855,10 @@ async function drawSorter(main, focus) {
           .map((x) => `<option value="${x.id}">${esc(x.emoji)} ${esc(x.name)}</option>`).join("")}</select>` : ""}
         <button class="btn ghost danger" data-ip="dissolve">Dissolve</button>
       </div>`;
-    document.body.append(pop);
+    const close=paperPopup(pop,anchor);
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - pop.offsetWidth / 2, innerWidth - pop.offsetWidth - 8))}px`;
     pop.style.top = `${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
-    const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); };
-    const away = (e) => { if (!pop.contains(e.target) && !e.target.closest(".emoji-pop")) close(); };
-    setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
     const name = $(".ip-name", pop), hint = $(".ip-hint", pop);
     name.onkeydown = hint.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") close(); };
     name.onchange = () => { const v = name.value.trim(); if (v && v !== g.name) { close(); act("/api/draw/rename", { theme: g.id, name: v }, "Renamed."); } };
@@ -5024,20 +4879,16 @@ async function drawSorter(main, focus) {
   function tagMenu(key, anchor) {
     const t = (b.allTags?.tags || b.tagging.tags).find((x) => x.key === key);
     if (!t) return;
-    $(".island-pop")?.remove();
     const pop = document.createElement("div");
     pop.className = "pop-card island-pop tag-pop";
     pop.innerHTML = `<div class="ip-head"><button class="t-emoji ip-emoji" data-tp="emoji" title="Change the emoji">${esc(t.emoji || "🏷️")}</button>
         <input class="hint-input ip-name" value="${esc(t.label)}" maxlength="40" aria-label="Tag name"></div>
       <span class="muted small">${plural(t.count, "shot")} · ${{ what: "what's in it", people: "who", look: "how it looks", when: "when" }[t.family] || "your tag"}${t.user ? " · yours" : ""}</span>
       <div class="ip-actions"><button class="btn" data-tp="select">Select its photos</button></div>`;
-    document.body.append(pop);
+    const close=paperPopup(pop,anchor);
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - pop.offsetWidth / 2, innerWidth - pop.offsetWidth - 8))}px`;
     pop.style.top = `${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
-    const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); };
-    const away = (e) => { if (!pop.contains(e.target) && !e.target.closest(".emoji-pop")) close(); };
-    setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
     const name = $(".ip-name", pop);
     name.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") name.blur(); if (e.key === "Escape") close(); };
     name.onchange = () => { const v = name.value.trim(); if (v && v !== t.label) { close(); act("/api/tags/meta", { key, label: v }, "Renamed."); } };
@@ -5051,7 +4902,6 @@ async function drawSorter(main, focus) {
   }
   // Every tag, by kind: click one to narrow the sea's focus.
   function tagTray(anchor) {
-    $(".island-pop")?.remove();
     const T = {...b.tagging,tags:b.allTags?.tags||b.tagging.tags}, shown = sea.focusKeys;
     const pop = document.createElement("div");
     pop.className = "pop-card island-pop tag-tray";
@@ -5070,13 +4920,10 @@ async function drawSorter(main, focus) {
       }));
     };
     pop.innerHTML = `<input class="hint-input tray-q" placeholder="Find a tag" aria-label="Find a tag"><div class="tray-body"></div>`;
-    document.body.append(pop);
+    const close=paperPopup(pop,anchor);
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
     pop.style.top = `${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
-    const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); };
-    const away = (e) => { if (!pop.contains(e.target)) close(); };
-    setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
     const q = $(".tray-q", pop);
     q.oninput = () => paint(q.value.trim().toLowerCase());
     q.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") close(); };
@@ -5086,17 +4933,13 @@ async function drawSorter(main, focus) {
   // T: a tag of your own on the selected photos.
   function tagSelection(anchor) {
     if (!selected.size) return toast("Select photos first, then press T to tag them.");
-    $(".island-pop")?.remove();
     const pop = document.createElement("div");
     pop.className = "pop-card island-pop";
     pop.innerHTML = `<label class="ip-row">🏷️ <input class="hint-input" maxlength="40" placeholder="a tag for these ${plural(selected.size, "shot")}" aria-label="New tag"></label>`;
-    document.body.append(pop);
+    const close=paperPopup(pop,anchor||$("#mergebar"));
     const r = (anchor || $("#mergebar")).getBoundingClientRect();
     pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
     pop.style.top = `${Math.max(8, r.top - pop.offsetHeight - 10) + window.scrollY}px`;
-    const close = () => { pop.remove(); document.removeEventListener("pointerdown", away, true); };
-    const away = (e) => { if (!pop.contains(e.target)) close(); };
-    setTimeout(() => document.addEventListener("pointerdown", away, true), 0);
     const inp = $("input", pop);
     inp.onkeydown = (e) => {
       e.stopPropagation();
@@ -5123,9 +4966,8 @@ async function drawSorter(main, focus) {
   function render() {
     clearWindows();
     const left_ = b.unsorted.count;
-    const opts = (id) => b.groups.filter((g) => g.id !== id).map((g) => `<option value="${g.id}">${esc(g.emoji)} ${esc(g.name)}</option>`).join("");
     main.innerHTML = `
-      <div class="screen sorter">
+      <div class="screen sorter group-list">
         <div class="screen-head">
           <h1>🗂️ Groups</h1>
           <span class="stat-chip" title="Shots in a group">${ring(b.total ? b.drawn / b.total : 0)}<b>${fmt(b.drawn)}</b>/ ${fmt(b.total)} grouped · ${plural(b.groups.length, "group")}</span>
@@ -5139,32 +4981,26 @@ async function drawSorter(main, focus) {
             🔎 adds words <i>Find more</i> looks for. Drop one photo on another to stack them.`)}
         </div>
         <div class="screen-body sections" id="sections">
-            <section class="gsec unsorted" id="gsec--1" data-drop-group="none">
+            ${left_?`<section class="gsec unsorted gsec-wide" id="gsec--1" data-drop-group="none">
               <header class="gsec-head"><span class="gsec-title">🗃️ <b>Unsorted</b></span><span class="muted small">${plural(left_, "shot")}</span>
                 ${left_ ? `<span class="gsec-actions"><a class="btn" href="#draw?sort=1">🎮 Quick sort these</a></span>` : ""}</header>
               ${left_ ? `<div class="lookgrid gsec-tiles" data-grid-group="-1">${tiles(b.unsorted.shots)}</div>${more(-1, b.unsorted)}`
                 : `<p class="muted small gsec-empty">Nothing left unsorted. 🎉</p>`}
-            </section>
+            </section>`:''}
             ${b.groups.map((g, i) => `
-            <section class="gsec" id="gsec-${g.id}" data-drop-group="${g.id}">
+            <section class="gsec ${g.count>6?'gsec-wide':''}" id="gsec-${g.id}" data-drop-group="${g.id}">
               <header class="gsec-head">
-                <span class="gsec-order"><button class="icon ${i ? "" : "invisible"}" data-order-up="${g.id}" ${i ? "" : `tabindex="-1"`} title="Earlier in your order" aria-label="Move earlier">▲</button>
-                  <button class="icon ${i < b.groups.length - 1 ? "" : "invisible"}" data-order-down="${g.id}" ${i < b.groups.length - 1 ? "" : `tabindex="-1"`} title="Later in your order" aria-label="Move later">▼</button></span>
                 <span class="bin-n" title="Select photos and press ${groupKeyLabel(i) || "drag them here"}">${groupKeyLabel(i) || "·"}</span>
                 <button class="t-emoji gsec-emoji" data-emoji-for="${g.id}" title="Change the emoji" aria-label="Change the emoji">${esc(g.emoji || "🗂️")}</button>
                 <span class="gsec-title"><button class="t-name" data-rename="${g.id}" title="Rename">${esc(g.name)}</button></span>
-                <span class="muted small">${plural(g.size, "shot")}${g.tagline ? ` · ${esc(g.tagline)}` : ""}</span>
-                <button class="linkish small" data-hint="${g.id}" title="Words Find more looks for">🔎 ${g.hint ? `<b>${esc(g.hint)}</b>` : "look for…"}</button>
-                <span class="gsec-actions">
-                  ${left_ ? `<a class="btn" href="#draw?play=${g.id}" title="Deals the unsorted shots likeliest to belong here">🎮 Find more</a>` : ""}
-                  ${b.groups.length > 1 ? `<select data-merge="${g.id}" aria-label="Merge this group into another"><option value="">Merge into…</option>${opts(g.id)}</select>` : ""}
-                  <button class="btn ghost danger" data-dissolve="${g.id}" title="Put its shots back in the unsorted pile">Dissolve</button></span>
+                <span class="muted small">${plural(g.size, "shot")}</span>
+                <button class="btn ghost gsec-options" data-group-menu="${g.id}" aria-haspopup="dialog" aria-expanded="false" aria-label="Options for ${esc(g.name)}">Options <span aria-hidden="true">⋯</span></button>
               </header>
               ${g.count ? `<div class="lookgrid gsec-tiles" data-grid-group="${g.id}">${tiles(g.shots)}</div>${more(g.id, g)}` : `<p class="muted small gsec-empty">Empty: drag photos here.</p>`}
             </section>`).join("")}
         </div>
-        <aside class="screen-rail bins-wrap" aria-label="Groups"><div class="bins-head"><b>Groups</b>
-          <span class="muted small">drag photos here, or select some and press a number</span></div><div class="bins" id="bins"></div></aside>
+        <aside class="screen-rail bins-wrap" aria-label="Group index"><details class="group-index" ${innerWidth>760?'open':''}><summary class="bins-head">Jump to a group <span>${b.groups.length}</span></summary>
+          <div class="bins" id="bins"></div></details></aside>
         <div class="screen-bar action-bar" id="mergebar">
           <div class="bar-left"><a class="btn ghost" id="groups-tag-lab" href="#tags">🏷️ Tag lab</a><span id="sel-count" class="muted small"></span></div>
           <div class="bar-mid">
@@ -5179,7 +5015,7 @@ async function drawSorter(main, focus) {
         </div>
       </div>`;
     forwardState();
-    $("#bins").innerHTML = binsHtml(b.bins, null, null);
+    $("#bins").innerHTML = binsHtml(b.bins, null, null, false, false);
     bind();
     if(byRep.size>80)for(const group of [{...b.unsorted,id:-1},...b.groups]){
       const root=$(`[data-grid-group="${group.id}"]`,main);if(root)windows.set(group.id,new ShotWindow(root,group.shots,selected,b.boxes,$('#sections',main)));
@@ -5198,7 +5034,10 @@ async function drawSorter(main, focus) {
       });
     });
   }
-  const onResize = () => {if(left(view))return;sizeFamilies();for(const grid of windows.values())grid.layout();};
+  let indexWide=innerWidth>760;
+  const onResize = () => {if(left(view))return;
+    const wide=innerWidth>760,index=$('.group-index',main);if(index&&wide!==indexWide)index.open=wide;indexWide=wide;
+    sizeFamilies();for(const grid of windows.values())grid.layout();};
   window.addEventListener("resize", onResize, { signal: S.events.signal });
   function updateSelection(anchor = null) {
     queueWindows();
@@ -5263,14 +5102,9 @@ async function drawSorter(main, focus) {
     }));
     const page = $(".sorter", main);
     page.onclick = (e) => {
-      const ord = e.target.closest("[data-order-up],[data-order-down]");
-      if (ord) {
-        e.stopPropagation();
-        const id = Number(ord.dataset.orderUp || ord.dataset.orderDown), ids = moveInOrder(b.groups.map((x) => x.id), id, ord.dataset.orderUp ? -1 : 1);
-        if (ids) saveOrder(ids).then((ok) => ok && load(true));
-        return;
-      }
-      const t = e.target.closest("[data-expand],[data-keep],[data-split],[data-unstack],[data-reset],[data-view],[data-more],[data-less],[data-rename],[data-emoji-for],[data-hint],[data-dissolve]");
+      const menu=e.target.closest('[data-group-menu]');
+      if(menu){groupMenu(b.groups.find(g=>g.id===Number(menu.dataset.groupMenu)),menu);return;}
+      const t = e.target.closest("[data-expand],[data-keep],[data-split],[data-unstack],[data-reset],[data-view],[data-more],[data-less],[data-rename],[data-emoji-for]");
       if (t) {
         e.stopPropagation();
         if (t.dataset.expand) return expand(Number(t.dataset.expand), t);
@@ -5281,25 +5115,14 @@ async function drawSorter(main, focus) {
         if (t.dataset.view) return openViewer(Number(t.dataset.view));
         if (t.dataset.more) { full.add(Number(t.dataset.more)); return load(true); }
         if (t.dataset.less) { full.delete(Number(t.dataset.less)); return load(true); }
-        const id = Number(t.dataset.rename || t.dataset.emojiFor || t.dataset.hint || t.dataset.dissolve);
+        const id = Number(t.dataset.rename || t.dataset.emojiFor);
         const g = b.groups.find((x) => x.id === id);
         if (t.dataset.rename) return inlineRename(t, g.name, (name) => (name ? act("/api/draw/rename", { theme: id, name }, "Renamed.") : render()));
         if (t.dataset.emojiFor) return emojiPicker(t, (emoji) => act("/api/draw/rename", { theme: id, emoji }, "New emoji."));
-        if (t.dataset.hint) return inlineRename(t, g.hint || "", (hint) => (hint !== null ? act("/api/draw/hint", { theme: id, hint }, hint ? "Find more will look for that." : "Cleared.") : render()),
-          { cls: "hint-input", max: 120, label: "What to look for", placeholder: "laptops, screens, desks", empty: true });
-        if (t.dataset.dissolve) {
-          act("/api/draw/dissolve", { theme: id }, "Dissolved. Z undoes it.");
-          return;
-        }
+
       }
       const sel = e.target.closest("[data-sel]");
       if (sel && !e.target.closest("a, .tile-frames")) { const r = Number(sel.dataset.sel); selected.has(r) ? selected.delete(r) : selected.add(r); updateSelection(sel); }
-    };
-    page.onchange = (e) => {
-      const m = e.target.closest("[data-merge]");
-      if (!m || !m.value) return;
-      const from = Number(m.dataset.merge), into = Number(m.value);
-      act("/api/draw/merge", { from, into }, "Merged. Z undoes it.");
     };
     page.onkeydown = (e) => {  // tiles are buttons: Enter or Space selects one
       const sel = e.target.closest(".tile[data-sel]");
@@ -6412,7 +6235,7 @@ const FocusGlow={
     this.nodes.set(host,glow);
     palette.slice(0,3).forEach((rgb,i)=>glow.style.setProperty(`--glow-${i}`,rgb.map(Math.round).join(' ')));
     if(palette.length<3)for(let i=palette.length;i<3;i++)glow.style.setProperty(`--glow-${i}`,palette[0].map(Math.round).join(' '));
-    const focus=World.draftCamera;if(focus?.prints.includes(host))this.place(focus.layer,focus.prints,World.sea.camera.zoom);
+    const focus=PhotoCamera.active;if(focus?.prints.includes(host))this.place(focus.layer,focus.prints,World.sea.camera.zoom);
   },
   place(layer,prints,zoom){
     const base=layer.getBoundingClientRect();
@@ -6467,12 +6290,12 @@ const World = {
   focusCamera(main){
     const layer=$('#dtop',main)?.closest('.deck')||$('#stage:has(.print),#f-arena:has(.print),.twin-arena:has(.print),.board-fit:has(.print),.podium:has(.print),.tag-call > .print',main);
     const prints=layer?(layer.matches('.print')?[layer]:$$('.print',layer).filter(p=>!p.closest('.under,.crew,.twin-ask,.photo-notes-paper'))):[];
-    focusPhotoCamera(layer,prints);
+    PhotoCamera.focus(layer,prints);
   },
   // ambient: the sea is the map; focus: a screen is showing you photos; dim: a page of its own. In every mode the sea's
   // photos continue behind its translucent controls.
   setMode(mode) {
-    this.draftCamera?.close();
+    PhotoCamera.release();
     if (this.handlers && mode !== "live") {  // the Groups page let go of the sea: back to the plain world
       this.handlers = null;
       Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null, onSelectMatches:null,onFocus:null,onStack:null }, this.plain);
@@ -6836,19 +6659,15 @@ const World = {
   // it; Esc (or a click outside) shrinks it back to its spot.
   tagMenu(key, anchor) {
     const tag=this.tagMeta?.get(key);if(!tag)return;
-    $(".island-pop")?.remove();
     const photos=[...this.photos.values()].filter((p)=>p.tags.includes(key)),pop=document.createElement("div");
     pop.className="pop-card island-pop sea-tag-pop";
     pop.innerHTML=`<form><button class="btn" type="button" data-tag-emoji>${esc(tag.emoji||"🏷️")}</button><input class="hint-input" aria-label="Tag name" name="label" value="${esc(tag.label)}" maxlength="40" required><button class="btn">Save</button></form>
       <p class="muted small">${plural(photos.length,"photo")} · includes takes and photos set aside</p>
       <div class="sea-tag-photos">${photos.slice(0,12).map((p)=>`<button data-tag-photo="${p.id}" aria-label="Open photo"><img src="${T(p.id)}" alt="" loading="lazy"></button>`).join("")}</div>
       <div class="row"><button class="btn" data-tag-select ${photos.length?"":"hidden"}>Select its photos</button><a class="btn" href="#tags?key=${encodeURIComponent(key)}">Edit tag & roster</a><a class="btn primary" href="#tags?play=${encodeURIComponent(key)}">Check tag →</a></div>`;
-    document.body.append(pop);const r=anchor.getBoundingClientRect();
+    const close=paperPopup(pop,anchor,()=>this.sea.highlight(null)),r=anchor.getBoundingClientRect();
     pop.style.left=`${Math.max(8,Math.min(r.left,innerWidth-pop.offsetWidth-8))}px`;
     pop.style.top=`${Math.max(62,Math.min(r.bottom+8,innerHeight-pop.offsetHeight-12))+window.scrollY}px`;
-    const close=()=>{pop.remove();this.sea.highlight(null);document.removeEventListener("pointerdown",away,true);};
-    const away=(e)=>{if(!pop.contains(e.target)&&!e.target.closest(".emoji-pop"))close();};
-    setTimeout(()=>document.addEventListener("pointerdown",away,true),0);
     const save=async(body)=>{try{const result=await api("/api/tags/meta",{key,...body});updateHudQuiet(result.game);close();toast("Saved. Z undoes it.");}catch(e){toast(e.message);}};
     $("form",pop).onsubmit=(e)=>{e.preventDefault();save({label:new FormData(e.target).get("label")});};
     $("[data-tag-emoji]",pop).onclick=(e)=>emojiPicker(e.currentTarget,(emoji)=>save({emoji}));

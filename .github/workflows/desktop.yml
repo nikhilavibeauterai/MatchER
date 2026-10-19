@@ -82,7 +82,7 @@ jobs:
         run: |
           python -m venv --system-site-packages .venv
           tests/ui/setup.sh --sample-only
-          tests/ui/run_all.sh experience_flow storage_media stacks_layout group_zoom auto_look photo_notes_camera performance
+          tests/ui/run_all.sh experience_flow product_polish storage_media stacks_layout group_zoom auto_look photo_notes_camera performance
       - name: Save browser results
         if: runner.os == 'Linux' && always()
         uses: actions/upload-artifact@v7

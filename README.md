@@ -32,6 +32,8 @@ favourites into a tournament. You make quick, small choices; it learns what you 
   Notes saves your title and story as you write; Tags lets you search,
   add and correct what it recognizes; Look has exact crop and aspect-ratio controls, horizon straightening,
   three colour wheels and painted local adjustments, with a hold-to-compare original;
+  Look starts with enhancement and framing; expand the named sections for manual light, grading, alignment or masks.
+  Hold for original stays reachable as you scroll and clears the overlaid paper on phones so you can see the photo.
   Details keeps the file information, collection and analysis together. The sheet stays readable as you zoom;
   drag its paper to pan the view, or scroll inside it to read more. Undo is there when you change your mind.
 - **Find a photo with words.** Search for “red jacket”, a tag, a filename or your own writing from any stage.
@@ -90,6 +92,9 @@ playable again when their folder returns; Browse here also updates its mounted-d
 
 Stacks shows loose photos alongside piles of takes, so you can drag either onto another to combine them.
 Switch on **Stacks only** when you want to concentrate on existing piles.
+Crown is always the next stage; **Twin check** is an optional way to find more possible stacks.
+Groups keeps the same sea, with a contact-sheet List view when you want to work through rosters.
+Each group's **Options** holds merging, ordering and Find more settings; the group index folds away on phones.
 
 | Choose the strongest take | Finish your favourites |
 |---|---|
