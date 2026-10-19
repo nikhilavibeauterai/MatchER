@@ -62,6 +62,11 @@ def test_extended_axes_use_local_dates_saved_faces_and_distinct_rankings(client,
     import json
     s = client.matcher.session
     s.ensure_ranker()
+    # A read-only request must not be charged for the save's independent cache upgrades.
+    for worker in (s._subjects_thread, s._looks_thread):
+        if worker is not None:
+            worker.join(timeout=10)
+            assert not worker.is_alive()
     pid = s.store.one("SELECT id FROM photos WHERE n_faces>0 ORDER BY id LIMIT 1")["id"]
     with s.store.tx() as c:
         c.execute("UPDATE photos SET taken='2021-02-07T23:30:00',taken_ts=1612740600,prior=.7,zs=?,"

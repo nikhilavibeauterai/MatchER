@@ -13,6 +13,11 @@ from matcher.server import create_app
 def test_visible_cards_read_their_full_edits_in_one_batch_without_writes(client):
     s = client.matcher.session
     ids = [single(client, i) for i in range(3)]
+    # Count the request's writes only after background thumbnail upgrades have finished.
+    for worker in (s._subjects_thread, s._looks_thread):
+        if worker is not None:
+            worker.join(timeout=10)
+            assert not worker.is_alive()
     edits = {"title": "Saved title", "notes": [{"x": 8, "y": 120, "text": "Keep this note"}],
              "marks": [{"t": "pen", "c": "ink", "w": 1, "p": [[1, 2], [3, 4]]}]}
     with s.store.tx() as c:
