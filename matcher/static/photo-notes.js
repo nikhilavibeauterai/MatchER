@@ -103,9 +103,10 @@ const PhotoNotes = {
   },
   paperSize(photoWidth) {
     const actions=this.active?.host?.closest('.viewer')?.querySelector('.viewer-actions'),bottom=Math.min(innerHeight,actions?actions.getBoundingClientRect().top-8:innerHeight),
-      margin=innerWidth<760?8:16,maxWidth=Math.min(innerWidth-2*margin-52,(bottom-2*margin-132)*3/4),
+      margin=innerWidth<760?8:16,top=this.active?.host?.closest('.focus-camera')?Math.max(margin,$('#topbar').getBoundingClientRect().bottom+8):margin,
+      maxWidth=Math.min(innerWidth-2*margin-52,(bottom-top-margin-132)*3/4),
       width=Math.max(Math.min(300,maxWidth),Math.min(photoWidth,maxWidth));
-    return {margin,width,height:width*4/3,bottom};
+    return {margin,top,width,height:width*4/3,bottom};
   },
   camera(sea=World.sea) {
     if(sea!==World.sea)return;
@@ -123,7 +124,7 @@ const PhotoNotes = {
       const zoom=sea.camera.zoom,size=it.size||sea.s;
       detail.style.cssText=`left:0;top:0;width:${size*zoom}px;height:${size*zoom*4/3}px;transition:none`;
       const img=document.createElement('img');img.src=it.el.querySelector('.pile-cover')?.getAttribute('src')||M(it.photo,r.width,true);img.alt='Focused photo';img.draggable=false;detail.append(img);
-      detail.onpointerdown=e=>{if(e.target.closest('button,input,textarea,.meta.sticky')||Toolbelt.tool!=='hand')return;e.stopPropagation();
+      detail.onpointerdown=e=>{if(e.target.closest('button,a,input,textarea,select,label,summary,[contenteditable],.grade-wheel,.meta.sticky')||Toolbelt.tool!=='hand')return;e.stopPropagation();
         if(sea.overZoomed(it.el)||e.button===1)sea.panStart(e);else sea.down(e,it.el);};
       detail.ondblclick=e=>{if(e.target.closest('button,input,textarea,.meta.sticky'))return;e.preventDefault();e.stopPropagation();
         if(sea.overZoomed(it.el))sea.resetCamera();else sea.onSelect?.(it,e);};
@@ -157,16 +158,19 @@ const PhotoNotes = {
     tab.onclick=e=>{e.preventDefault();e.stopPropagation();this.active?.host===host?this.close():this.open(host);};
     const paper=document.createElement('div');paper.className='photo-notes-paper rail-card';paper.id=`photo-notes-${++this.paperID}`;
     paper.append(tab);host.classList.add('has-photo-notes');
-    if(host===this.seaDetail){const under=document.createElement('div');under.className='sea-note-underlay';under.append(paper);host.append(under);}
-    else host.append(paper);
-    for(const type of ['pointerdown','click','dblclick','wheel'])paper.addEventListener(type,e=>e.stopPropagation());
+    const under=document.createElement('div');under.className='photo-note-underlay'+(host===this.seaDetail?' sea-note-underlay':'');under.append(paper);host.append(under);
+    paper.addEventListener('pointerdown',e=>{
+      const zoom=Number(host.dataset.viewerZoom)||(host===this.seaDetail?World.sea?.camera.zoom:1);
+      if(Toolbelt.tool!=='hand'||zoom<=1.001||!this.panTarget(e.target,e.pointerType))e.stopPropagation();
+    });
+    for(const type of ['click','dblclick','wheel'])paper.addEventListener(type,e=>e.stopPropagation());
     paper.addEventListener('click',()=>{if(!paper.classList.contains('photo-note-sheet')&&!paper.classList.contains('notes-returning'))this.open(host);});
     const state={pid,tab,paper,data:null,motion:0};this.hosts.set(host,state);this.load(host,state);
   },
   detach(host) {
     if(this.active?.host===host)this.close(false);
     const state=this.hosts.get(host);if(state)state.motion++;
-    for(const el of $$(':scope > .photo-notes-paper,:scope > .sea-note-underlay,:scope > .photo-writing,:scope > .photo-facts',host))el.remove();
+    for(const el of $$(':scope > .photo-note-underlay,:scope > .photo-writing,:scope > .photo-facts',host))el.remove();
     host.classList.remove('has-photo-notes','has-photo-sticky');this.hosts.delete(host);
   },
   async get(pid) {
@@ -261,7 +265,7 @@ const PhotoNotes = {
     sheet.innerHTML='<button class="btn notes-close" aria-label="Close photo notes">×</button><p role="status">Opening notes…</p>';
     this.sheet=sheet;this.active={...state,host,source:this.source,page:this.page,draft:null,dirty:false};state.tab.setAttribute('aria-expanded','true');state.tab.setAttribute('aria-controls',sheet.id);
     sheet.onkeydown=e=>e.stopPropagation();
-    $('.notes-close',sheet).onclick=()=>this.close();this.position();sheet.getBoundingClientRect();sheet.classList.add('is-open');sheet.focus({preventScroll:true});
+    $('.notes-close',sheet).onclick=()=>this.close();this.position(true);sheet.getBoundingClientRect();sheet.classList.add('is-open');sheet.focus({preventScroll:true});
     this.afterMotion(host,state,()=>sheet.classList.remove('notes-opening'));
     try{await this.reload();}catch(e){if(this.sheet===sheet){$('p',sheet).textContent=e.message;
       const retry=document.createElement('button');retry.className='btn';retry.textContent='Try again';retry.onclick=()=>this.reload().catch(error=>toast(error.message));sheet.append(retry);}}
@@ -277,7 +281,8 @@ const PhotoNotes = {
     const tuck=()=>{
       paper.replaceChildren(tab);paper.inert=false;paper.scrollTop=0;paper.classList.remove('notes-returning');paper.removeAttribute('role');paper.removeAttribute('tabindex');host.classList.remove('notes-active');
       for(const key of ['width','height','x','y'])paper.style.removeProperty(`--notes-${key}`);
-      paper.closest('.sea-note-underlay')?.classList.remove('notes-overlap');
+      const under=paper.closest('.photo-note-underlay');under?.classList.remove('notes-overlap');
+      if(host!==this.seaDetail)under?.removeAttribute('style');
       if(focus&&tab.isConnected)tab.focus({preventScroll:true});
     };
     if(!focus||reduceMotion)tuck();else if(state)this.afterMotion(host,state,tuck);
@@ -291,25 +296,39 @@ const PhotoNotes = {
       if(state.motion===version)done();
     });
   },
-  position() {
+  panTarget(target,pointerType) {
+    return !!target.closest('.photo-note-sheet')&&!target.closest('button,a,input,textarea,select,label,summary,[contenteditable],.grade-wheel')&&
+      !(pointerType==='touch'&&target.closest('.notes-page'));  // Fingers still scroll the writing; a mouse drags the view.
+  },
+  position(reframe=false) {
     if(!this.sheet||!this.active)return;
     const host=this.active.host;host.classList.add('notes-active');
-    const r=host.getBoundingClientRect(),current=parseFloat(getComputedStyle(host).translate)||0,left=r.left-current,right=r.right-current;
+    let r=host.getBoundingClientRect();
     if(host===this.seaDetail){
       host.style.removeProperty('--notes-shift');this.followSea();
       const width=parseFloat(this.sheet.style.getPropertyValue('--notes-width'))||r.width;
-      if(innerWidth>=760&&r.width+width+18+52<=innerWidth-32){
-        const shift=Math.max(16-left,Math.min(0,innerWidth-16-width-52-18-right)),sea=this.seaPose.sea;
+      if(reframe&&innerWidth>=760&&r.width+width+18+52<=innerWidth-32){
+        const shift=Math.max(16-r.left,Math.min(0,innerWidth-16-width-52-18-r.right)),sea=this.seaPose.sea;
         if(Math.abs(shift)>.5)sea.setCamera(sea.camera.zoom,sea.camera.tx+shift,sea.camera.ty);
       }
       return;
     }
-    const {margin,width,height,bottom}=this.paperSize(r.width),
-      shift=innerWidth>=760&&r.width+width+18+52<=innerWidth-2*margin?Math.max(margin-left,Math.min(0,innerWidth-margin-width-52-18-right)):0,
-      x=Math.max(margin,Math.min(innerWidth<760?left+8:left+shift+r.width+18,innerWidth-margin-width-52)),
-      y=Math.max(margin,Math.min(r.top+(innerWidth<760?10:0),bottom-margin-height-132));
-    host.style.setProperty('--notes-shift',`${shift}px`);
-    for(const [key,value] of Object.entries({width,height,x:x-left-shift,y:y-r.top}))this.sheet.style.setProperty(`--notes-${key}`,`${value}px`);
+    // The card may already be far from the centre and magnified by a parent camera. Cancel that scale on
+    // the paper's underlay, then place readable writing relative to the card's actual on-screen position.
+    const style=getComputedStyle(host),scale=r.width/parseFloat(style.width)||1,{margin,top,width,height,bottom}=this.paperSize(r.width),
+      current=(parseFloat(style.translate)||0)*scale,left=r.left-current,right=r.right-current;
+    let shift=(parseFloat(host.style.getPropertyValue('--notes-shift'))||0)*scale;
+    if(reframe&&Math.abs(scale-1)<.01){
+      shift=innerWidth>=760&&r.width+width+18+52<=innerWidth-2*margin?Math.max(margin-left,Math.min(0,innerWidth-margin-width-52-18-right)):0;
+      host.style.setProperty('--notes-shift',`${shift/scale}px`);
+    }
+    r={...r.toJSON(),left:left+shift,right:right+shift};
+    const under=this.sheet.parentElement;
+    under.style.width=`${r.width}px`;under.style.height=`${r.height}px`;under.style.transform=`scale(${1/scale})`;
+    const x=Math.max(margin,Math.min(innerWidth<760?r.left+8:r.right+18,innerWidth-margin-width-52)),
+      y=Math.max(top,Math.min(r.top+(innerWidth<760?10:0),bottom-margin-height-132));
+    under.classList.toggle('notes-overlap',x<r.right);
+    for(const [key,value] of Object.entries({width,height,x:x-r.left,y:y-r.top}))this.sheet.style.setProperty(`--notes-${key}`,`${value}px`);
   },
   async reload() {
     const active=this.active,sheet=this.sheet;if(!active||!sheet)return;

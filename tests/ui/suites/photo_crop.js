@@ -18,9 +18,13 @@ const {BASE,LINK,LIB,OUT}=process.env;
   const open=async()=>{await custom.click();await dialog.waitFor();await page.waitForFunction(()=>!document.querySelector('.photo-crop-editor [type=submit]').disabled);};
   const read=()=>page.evaluate(async pid=>(await api(`/api/edit?photo=${pid}`)).edits,pid);
   const values=()=>dialog.locator('[data-crop-param]').evaluateAll(fields=>fields.map(f=>Number(f.value)));
-  await open();const image=await dialog.locator('.crop-viewport').boundingBox();
-  await page.mouse.move(image.x+image.width*.1,image.y+image.height*.2);await page.mouse.down();
-  await page.mouse.move(image.x+image.width*.7,image.y+image.height*.75,{steps:8});await page.mouse.up();
+  const pointsAt=fractions=>dialog.locator('.crop-viewport').evaluate((el,fractions)=>{
+    const r=el.getBoundingClientRect(),w=parseFloat(el.style.width),h=parseFloat(el.style.height),angle=new DOMMatrix(getComputedStyle(el).transform);
+    return fractions.map(([x,y])=>({x:r.left+r.width/2+(x-.5)*w*angle.a+(y-.5)*h*angle.c,y:r.top+r.height/2+(x-.5)*w*angle.b+(y-.5)*h*angle.d}));
+  },fractions);
+  await open();const initial=await pointsAt([[.1,.2],[.7,.75]]);
+  await page.mouse.move(initial[0].x,initial[0].y);await page.mouse.down();
+  await page.mouse.move(initial[1].x,initial[1].y,{steps:8});await page.mouse.up();
   const drawn=await values();assert(drawn.every((v,i)=>Math.abs(v-[10,20,60,55][i])<.4),JSON.stringify(drawn));
   assert(await dialog.locator('form').evaluate(form=>form.checkValidity()),'A rectangle drawn with fractional percentages passes native form validation');
   await dialog.locator('[data-crop-param="0"]').fill('10.123');
@@ -59,6 +63,22 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.screenshot({path:OUT+'/crop-custom-phone.png'});
   await dialog.getByRole('button',{name:'Apply crop'}).click();await dialog.waitFor({state:'detached'});
   const retried=await read();assert.equal(retried.crop,'custom');assert.notDeepEqual(retried.crop_box,saved.crop_box);
+  // Reopening the cropper retains the saved alignment, including while drawing at a quarter turn.
+  await page.setViewportSize({width:1440,height:900});
+  for(const angle of [-13.25,9.75]){
+    await page.evaluate(angle=>PhotoNotes.edit({straighten:angle}),angle);await open();
+    const alignment=await dialog.locator('.window img').evaluate(img=>({transform:img.style.transform,r:img.getBoundingClientRect().toJSON(),window:img.closest('.window').getBoundingClientRect().toJSON()}));
+    assert.equal(alignment.transform,`rotate(${90+angle}deg)`,'The saved alignment is visible before toggling a preview');
+    assert(alignment.r.left>=alignment.window.left-1&&alignment.r.right<=alignment.window.right+1&&alignment.r.top>=alignment.window.top-1&&alignment.r.bottom<=alignment.window.bottom+1,'The whole aligned original remains available to crop');
+    await dialog.locator('[data-draw-crop]').click();
+    const points=await pointsAt([[.15,.2],[.65,.6]]);
+    await page.mouse.move(points[0].x,points[0].y);await page.mouse.down();await page.mouse.move(points[1].x,points[1].y,{steps:8});await page.mouse.up();
+    const aligned=await values();assert(aligned.every((v,i)=>Math.abs(v-[15,20,50,40][i])<.6),`Drawing on the aligned preview preserves source coordinates: ${JSON.stringify({aligned,points})}`);
+    await page.screenshot({path:`${OUT}/crop-aligned-${angle}.png`});
+    await dialog.locator('[data-preview-crop]').click();assert.equal(await dialog.locator('.window img').evaluate(img=>img.style.transform),`rotate(${90+angle}deg)`);
+    await dialog.getByRole('button',{name:'Apply crop'}).click();await dialog.waitFor({state:'detached'});
+    assert.equal((await read()).straighten,angle,'Changing the crop keeps its existing alignment');
+  }
   await open();await dialog.locator('[data-level]').click();await dialog.getByRole('button',{name:'Apply crop'}).click();await dialog.waitFor({state:'detached'});
   assert.equal((await read()).straighten,0,'Choosing Reset angle explicitly saves a manual zero');
   assert.equal(votes,0);assert.deepEqual(problems,[]);console.log(JSON.stringify({pid,drawn,saved,turned,retried,edits,votes,problems}));await browser.close();

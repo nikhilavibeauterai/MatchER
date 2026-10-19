@@ -2,19 +2,19 @@
 .has-photo-notes { overflow:visible;transition:translate .4s cubic-bezier(.22,.8,.25,1); }
 .sea-photo-detail-layer { position:fixed;inset:0;z-index:55;pointer-events:none;transform-origin:0 0; }
 .sea-photo-detail { position:absolute;max-width:none;aspect-ratio:3 / 4;pointer-events:auto;transition:transform var(--sea-glide,50ms) linear; }
-.sea-photo-detail.pinned { transition:none; }
+.sea-photo-detail:is(.pinned,.notes-active) { transition:none; }
 .photo-detail-source { pointer-events:none!important; }
 .photo-detail-source > :is(svg.marks,.user-note,.stack-clip) { visibility:hidden; }
 /* The real print stays in the world. This layer carries only its writing, stickies and notes controls. */
 .sea-photo-detail > .paper { animation:none;visibility:hidden; }
 .photo-sea .ps-item.framed-photo > .paper { box-shadow:none; }
 /* A hole over the real print lets the whole sheet emerge from underneath, without repainting its photo here. */
-.sea-note-underlay { position:absolute;left:0;top:0;z-index:5;pointer-events:none;transform-origin:0 0;clip-path:polygon(evenodd,-100vmax -100vmax,calc(100% + 100vmax) -100vmax,calc(100% + 100vmax) calc(100% + 100vmax),-100vmax calc(100% + 100vmax),-100vmax -100vmax,0 0,0 100%,100% 100%,100% 0,0 0); }
-.sea-note-underlay > .photo-notes-paper { pointer-events:auto; }
-.sea-note-underlay > .photo-note-sheet { width:var(--notes-width,100%);height:var(--notes-height,100%); }
-.sea-note-underlay > .photo-notes-paper.is-open { transform:translate(var(--notes-x,calc(100% + 18px)),var(--notes-y,0px)) rotate(0deg); }
-.sea-note-underlay > .photo-note-sheet.is-open:not(.notes-opening) { transition:none; }
-.sea-note-underlay.notes-overlap { clip-path:none;z-index:10; }
+.photo-note-underlay { position:absolute;left:0;top:0;width:100%;height:100%;z-index:5;pointer-events:none;transform-origin:0 0;clip-path:polygon(evenodd,-100vmax -100vmax,calc(100% + 100vmax) -100vmax,calc(100% + 100vmax) calc(100% + 100vmax),-100vmax calc(100% + 100vmax),-100vmax -100vmax,0 0,0 100%,100% 100%,100% 0,0 0); }
+.photo-note-underlay > .photo-notes-paper { pointer-events:auto; }
+.photo-note-underlay > .photo-note-sheet { width:var(--notes-width,100%);height:var(--notes-height,100%); }
+.photo-note-underlay > .photo-notes-paper.is-open { transform:translate(var(--notes-x,calc(100% + 18px)),var(--notes-y,0px)) rotate(0deg); }
+.photo-note-underlay > .photo-note-sheet.is-open:not(.notes-opening) { transition:none; }
+.photo-note-underlay.notes-overlap { clip-path:none;z-index:10; }
 .map-census { position:fixed;left:18px;bottom:14px;z-index:6;max-width:calc(100% - 90px);font-size:16px;white-space:normal;pointer-events:auto; }
 .has-photo-notes.print > img:not(.under) { position:relative;z-index:6; }
 /* This is the whole sheet, even while the frame hides all but its lower-right corner. */
@@ -58,6 +58,10 @@ dialog.photo-viewer { width:100vw;height:100dvh;max-width:none;max-height:none;i
 .photo-viewer .viewer-actions { justify-content:center;flex-wrap:wrap;max-width:100%;position:relative;z-index:60;justify-self:center;padding:0 8px;background:var(--paper);color:var(--ink);border-radius:var(--scrap-round); }
 /* Four actual paper backs carry handwritten corners; the current sheet's writing stays on its face. */
 .photo-notes-paper.photo-note-sheet { display:block;width:var(--notes-width,100%);height:var(--notes-height,100%);overflow:visible;cursor:auto;padding:0;background:none;color:var(--ink);border:0;box-shadow:none;line-height:1.45; }
+.photo-note-sheet { user-select:none; }
+.photo-note-sheet :is(input,textarea,[contenteditable]) { user-select:text; }
+:is(.zoomed,.sea-photo-detail) .photo-note-sheet { cursor:grab; }
+body.sea-panning .photo-note-sheet,.viewer-stage.panning .photo-note-sheet { cursor:grabbing; }
 .photo-notes-paper.photo-note-sheet:not(:has(.notes-face)) { padding:16px 18px 16px 32px;background:var(--margin),var(--ruled) 0 8px / 100% 26px,var(--paper);border:1px solid var(--pencil);box-shadow:3px 5px 9px #0003; }
 .notes-face { position:relative;z-index:5;display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:0 16px 0 34px;background:var(--margin),var(--ruled) 0 8px / 100% 26px,var(--paper);border:1px solid var(--pencil);border-bottom:0;border-radius:4px 9px 0 0; }
 .notes-heading { flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:10px; }

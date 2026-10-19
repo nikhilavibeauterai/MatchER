@@ -33,7 +33,7 @@ favourites into a tournament. You make quick, small choices; it learns what you 
   add and correct what it recognizes; Look has exact crop and aspect-ratio controls, horizon straightening,
   three colour wheels and painted local adjustments, with a hold-to-compare original;
   Details keeps the file information, collection and analysis together. The sheet stays readable as you zoom;
-  scroll inside it to read more. Undo is there when you change your mind.
+  drag its paper to pan the view, or scroll inside it to read more. Undo is there when you change your mind.
 - **Find a photo with words.** Search for “red jacket”, a tag, a filename or your own writing from any stage.
   Visual search runs locally using the understanding already saved during analysis.
 - **Find another way to see the collection.** Arrange the sea by machine ranking, your own preferences, hue,

@@ -45,10 +45,13 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.click('[data-notes-redo]');await page.waitForFunction(()=>Toolbelt.current(PhotoNotes.active.pid).masks?.[0]?.strokes.length===2);
   await openMask();await page.click('[data-add-mask]');await page.keyboard.press('Escape');await page.waitForSelector('.photo-mask-editor',{state:'detached'});assert.deepEqual((await read()).masks,painted.masks,'Cancel leaves the saved masks alone');
   await page.click('[data-align]');await page.waitForSelector('.photo-crop-editor .crop-viewport');
-  const rect=await page.locator('.crop-viewport').boundingBox();
-  await page.mouse.move(rect.x+rect.width*.2,rect.y+rect.height*.4);await page.mouse.down();await page.mouse.move(rect.x+rect.width*.8,rect.y+rect.height*.5,{steps:12});await page.mouse.up();
+  const line=await page.locator('.crop-viewport').evaluate(el=>{
+    const r=el.getBoundingClientRect(),w=parseFloat(el.style.width),h=parseFloat(el.style.height),a=new DOMMatrix(getComputedStyle(el).transform);
+    return [[.2,.4],[.8,.5]].map(([x,y])=>({x:r.left+r.width/2+(x-.5)*w*a.a+(y-.5)*h*a.c,y:r.top+r.height/2+(x-.5)*w*a.b+(y-.5)*h*a.d}));
+  });
+  await page.mouse.move(line[0].x,line[0].y);await page.mouse.down();await page.mouse.move(line[1].x,line[1].y,{steps:12});await page.mouse.up();
   const correction=Number(await page.locator('.photo-crop-editor [name=straighten]').inputValue());
-  assert(Math.abs(correction+Math.atan2(.1*data.height,.6*data.width)*180/Math.PI)<.1);
+  assert(Math.abs(correction+Math.atan2(.1*data.height,.6*data.width)*180/Math.PI)<.1,`The drawn source horizon is level: ${JSON.stringify({correction,expected:-Math.atan2(.1*data.height,.6*data.width)*180/Math.PI,line})}`);
   assert.equal(await page.locator('[data-preview-crop]').getAttribute('aria-pressed'),'true');
   await page.screenshot({path:OUT+'/finish-horizon-preview.png'});
   const image=await page.locator('.viewer .window img').elementHandle();

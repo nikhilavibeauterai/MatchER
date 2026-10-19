@@ -10,7 +10,7 @@ const PhotoCrop = {
       <form class="crop-controls rail-card"><fieldset><legend>Exact crop <small>(%)</small></legend><div class="crop-fields">${['Left','Top','Width','Height'].map((name,i)=>`<label>${name}<input type="number" data-crop-param="${i}" min="${i<2?0:.1}" max="100" step="any" inputmode="decimal" required></label>`).join('')}</div></fieldset>
         <fieldset class="crop-aspect"><legend>Aspect ratio</legend><div class="crop-ratio-fields"><label><input type="number" name="ratio-width" aria-label="Ratio width" min="0.001" step="any" inputmode="decimal" placeholder="Width"></label><span>:</span><label><input type="number" name="ratio-height" aria-label="Ratio height" min="0.001" step="any" inputmode="decimal" placeholder="Height"></label><button type="button" class="btn ghost" data-swap-ratio aria-label="Swap ratio width and height">⇄</button></div><div class="crop-ratio-presets" role="group" aria-label="Aspect ratio presets">${['Free','Original','1:1','3:2','4:5','16:9'].map(name=>`<button type="button" class="btn ghost" data-ratio="${name}">${name}</button>`).join('')}</div></fieldset>
         <fieldset><legend>Alignment</legend><div class="straighten-control"><label for="crop-straighten">Straighten</label><output for="crop-straighten" data-straighten-angle></output><input id="crop-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${AutoLook.angle(photo.auto_look,{...photo.edits,auto_align:photo.edits?.auto_align??S.align})}"></div><div class="crop-actions"><button type="button" class="btn ghost" data-horizon>Align horizon</button><button type="button" class="btn ghost" data-level>Reset angle</button></div><p class="crop-horizon-help" hidden>Draw along a horizon or another line that should be level.</p></fieldset>
-        <button type="button" class="btn" data-preview-crop aria-pressed="false">Preview crop & alignment</button>
+        <button type="button" class="btn" data-preview-crop aria-pressed="false">Preview finished crop</button>
         <div class="crop-actions"><button type="button" class="btn" data-draw-crop>Draw crop</button><button type="button" class="btn ghost" data-whole>Whole photo</button></div><p class="crop-size" aria-live="polite"></p><p class="crop-error" role="alert"></p>
         <div class="crop-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn primary" disabled>Apply crop</button></div></form></div>`;
     document.body.append(dialog);this.dialog=dialog;
@@ -35,17 +35,27 @@ const PhotoCrop = {
       $('[data-straighten-angle]',form).textContent=`${straighten>0?'+':''}${straighten.toFixed(2)}°`;
     };
     const fit=()=>{
-      if(!ready)return;
+      if(!ready||!dialog.open)return;
       framePhoto(card,{dims:[photo.width,photo.height]},{crop:previewing?'custom':'off',cropBox:rotateBox(box,(360-turn)%360),rotate:turn,straighten:previewing?straighten:0,enhance:false,
         finishing:{grade:photo.edits?.grade,masks:photo.edits?.masks}});
       if(previewing){render();return;}
-      const r=img.getBoundingClientRect(),c=card.getBoundingClientRect();
-      Object.assign(overlay.style,{left:`${r.left-c.left}px`,top:`${r.top-c.top}px`,width:`${r.width}px`,height:`${r.height}px`});render();
+      // Keep the current angle visible while choosing the source rectangle, not only behind the preview
+      // toggle. Fit its whole rotated perimeter so the corners remain available to the crop handles.
+      const win=$('.window',card),style=getComputedStyle(win),W=parseFloat(style.width),H=parseFloat(style.height),
+        a=straighten*Math.PI/180,c=Math.abs(Math.cos(a)),s=Math.abs(Math.sin(a)),
+        k=Math.min(W/(dims[0]*c+dims[1]*s),H/(dims[0]*s+dims[1]*c)),w=dims[0]*k,h=dims[1]*k,
+        r=win.getBoundingClientRect(),base=card.getBoundingClientRect();
+      img.style.cssText=`position:absolute;left:${(W-photo.width*k)/2}px;top:${(H-photo.height*k)/2}px;width:${photo.width*k}px;height:${photo.height*k}px;max-width:none;object-fit:fill;transform:rotate(${turn+straighten}deg)`;
+      Object.assign(overlay.style,{left:`${r.left-base.left+(W-w)/2}px`,top:`${r.top-base.top+(H-h)/2}px`,width:`${w}px`,height:`${h}px`,transform:`rotate(${straighten}deg)`});render();
     };
     const resize=new ResizeObserver(fit);resize.observe(card);
     img.addEventListener('load',()=>{ready=true;apply.disabled=false;fit();},{once:true});
     if(img.complete&&img.naturalWidth){ready=true;apply.disabled=false;fit();}
-    const point=event=>{const r=overlay.getBoundingClientRect();return [clamp((event.clientX-r.left)/r.width,0,1),clamp((event.clientY-r.top)/r.height,0,1)];};
+    const point=event=>{
+      const r=overlay.getBoundingClientRect(),dx=event.clientX-(r.left+r.width/2),dy=event.clientY-(r.top+r.height/2),
+        a=straighten*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+      return [clamp(.5+(dx*c+dy*s)/parseFloat(overlay.style.width),0,1),clamp(.5+(-dx*s+dy*c)/parseFloat(overlay.style.height),0,1)];
+    };
     const size=(x0,y0,x1,y1)=>{
       let w=Math.abs(x1-x0),h=Math.abs(y1-y0);
       if(ratio){const aspect=ratio*dims[1]/dims[0];if(w/h>aspect)h=w/aspect;else w=h*aspect;
@@ -55,7 +65,7 @@ const PhotoCrop = {
     };
     overlay.onpointerdown=event=>{
       if(event.button||!ready||saving)return;event.preventDefault();event.stopPropagation();
-      const p=point(event),corner=event.target.closest('[data-corner]')?.dataset.corner;
+      const p=point(event),corner=drawing?null:event.target.closest('[data-corner]')?.dataset.corner;
       if(horizon){drag={id:event.pointerId,p,horizon:true};line.setAttribute('x1',p[0]*100);line.setAttribute('y1',p[1]*100);line.setAttribute('x2',p[0]*100);line.setAttribute('y2',p[1]*100);overlay.setPointerCapture(event.pointerId);return;}
       drag={id:event.pointerId,p,box:[...box],corner,moving:!corner&&!drawing&&selection.contains(event.target)};
       if(!corner&&!drag.moving)box=size(...p,...p);
@@ -126,6 +136,6 @@ const PhotoCrop = {
     dialog.addEventListener('pointerdown',event=>event.stopPropagation());
     const leave=()=>dialog.close();window.addEventListener('hashchange',leave,{once:true});
     dialog.addEventListener('close',()=>{resize.disconnect();window.removeEventListener('hashchange',leave);dialog.remove();if(this.dialog===dialog)this.dialog=null;},{once:true});
-    dialog.showModal();if(align){horizon=true;drawing=false;}requestAnimationFrame(fit);
+    dialog.showModal();if(align){horizon=true;drawing=false;}fit();
   }
 };

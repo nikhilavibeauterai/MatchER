@@ -32,8 +32,8 @@ const {BASE,LINK,LIB,OUT}=process.env;
   assert.deepEqual(await sticky.evaluate(note=>['--note-x','--note-y'].map(k=>Number(note.style.getPropertyValue(k)))),stickyPosition,'A saved sticky position follows the photo when reopened');
   const tab=page.locator('.viewer .photo-notes-tab'),rest=await tab.evaluate(e=>getComputedStyle(e.parentElement).transform);
   const tucked=await page.locator('.viewer .photo-notes-paper').evaluate(paper=>{
-    window.tuckedPaper=paper;const r=paper.getBoundingClientRect(),card=paper.parentElement,c=card.getBoundingClientRect(),style=getComputedStyle(paper);
-    return {sameParent:paper.parentElement===card,fullSize:Math.abs(paper.offsetWidth-card.clientWidth)<2&&Math.abs(paper.offsetHeight-card.clientHeight)<2,under:Number(style.zIndex)<Number(getComputedStyle(card.querySelector('.paper')).zIndex),peek:r.right>c.right&&r.bottom>c.bottom};
+    window.tuckedPaper=paper;const r=paper.getBoundingClientRect(),card=paper.closest('.print'),c=card.getBoundingClientRect(),style=getComputedStyle(paper.parentElement);
+    return {fullSize:Math.abs(paper.offsetWidth-card.clientWidth)<2&&Math.abs(paper.offsetHeight-card.clientHeight)<2,under:Number(style.zIndex)<Number(getComputedStyle(card.querySelector('.paper')).zIndex),peek:r.right>c.right&&r.bottom>c.bottom};
   });assert(tucked.fullSize&&tucked.under&&tucked.peek,JSON.stringify(tucked));
   await page.screenshot({path:OUT+'/N-notes-tucked.png'});
   await tab.hover();await page.waitForTimeout(450);const hover=await tab.evaluate(e=>getComputedStyle(e.parentElement).transform);assert.notEqual(rest,hover,'The whole sheet rotates outward on hover');

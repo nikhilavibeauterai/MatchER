@@ -1945,6 +1945,7 @@ code.path { word-break: normal; overflow-wrap: anywhere; }
 .screen-body:has(.focus-camera) { overflow: visible; }
 #main:has(.focus-camera) :is(.screen-head,.screen-rail,.screen-bar,.duel-head,.controls,.group-table) { z-index:6; }
 #main .focus-camera { position:relative;z-index:5;transform-origin:0 0;touch-action:none; }
+#main .focus-camera:has(.notes-active) { z-index:7; }
 body.sea-panning .camera-deck .swipe-card.top { cursor:grabbing; }
 .swipe-card .stamp.toss { font-size: 22px; }
 @media (max-width: 760px) {

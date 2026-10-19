@@ -3854,6 +3854,7 @@ function openViewer(id,{notes=false}={}) {
     card.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;
     if(card.dataset.viewerZoom!==String(zoom)){card.dataset.viewerZoom=String(zoom);photoSampling(img,zoom);}
     stage.classList.toggle('zoomed',zoom>1.001);resetButton.hidden=notesButton.hidden=zoom<=1.001;
+    if(PhotoNotes.active?.host===card)PhotoNotes.position();
   };
   const reset=()=>{zoom=1;x=y=0;paint();requestSource();};
   const constrain=()=>{
@@ -3874,7 +3875,8 @@ function openViewer(id,{notes=false}={}) {
     zoomAt(Math.max(1,Math.min(12,zoom*Math.exp(-Math.max(-500,Math.min(500,delta))*.0015))),e.clientX,e.clientY);
   },{passive:false,signal});
   stage.addEventListener('pointerdown',e=>{
-    if(e.button||zoom<=1.001||Toolbelt.tool!=='hand'||e.target.closest('button,a,input,textarea,.photo-sticky,.user-note'))return;
+    if(e.button||zoom<=1.001||Toolbelt.tool!=='hand'||e.target.closest('button,a,input,textarea,select,label,summary,[contenteditable],.grade-wheel,.photo-sticky,.user-note')||
+      e.target.closest('.photo-notes-paper')&&!PhotoNotes.panTarget(e.target,e.pointerType))return;
     e.preventDefault();e.stopPropagation();drag={id:e.pointerId,x:e.clientX,y:e.clientY,px:x,py:y,moved:false};
     stage.setPointerCapture(e.pointerId);stage.classList.add('panning');
   },{signal});
@@ -4247,6 +4249,7 @@ function focusPhotoCamera(layer,prints=[]) {
     for(const p of photos){p.print.dataset.viewerZoom=String(c.zoom);photoSampling(p.print.querySelector('.window img'),c.zoom);
       if(c.zoom>1.001){if(p.side&&!p.pose){p.pose={scale:p.side.style.scale,transition:p.side.style.transition};const scale=getComputedStyle(p.side).scale;p.side.style.transition='none';p.side.style.scale=scale;}sea.stillCard(p.item);}else unfreeze(p);}
     FocusGlow.place(layer,prints,c.zoom);
+    if(prints.includes(PhotoNotes.active?.host))PhotoNotes.position();
     if(c.zoom<=1.001)sea.resumeCards(true);
     clearTimeout(sourceTimer);sourceTimer=setTimeout(()=>{
       if(closed)return;
@@ -4256,7 +4259,7 @@ function focusPhotoCamera(layer,prints=[]) {
     },120);
   };
   const pointer=e=>{
-    if(Toolbelt.tool!=='hand'||e.target.closest(controls))return;
+    if(Toolbelt.tool!=='hand'||e.target.closest(controls)&&!PhotoNotes.panTarget(e.target,e.pointerType))return;
     const pinching=sea.pinch(e);
     if(pinching||e.pointerType==='touch'&&sea.touches.size>1){gestureUntil=performance.now()+600;cancelCarry();e.preventDefault();e.stopImmediatePropagation();return;}
     if(e.type==='pointerdown'&&sea.camera.zoom>1.001&&!e.button){gestureUntil=performance.now()+600;cancelCarry();sea.panStart(e);e.stopImmediatePropagation();}
