@@ -14,6 +14,7 @@ const {BASE,LINK,LIB,OUT}=process.env;
   const before=await page.evaluate(()=>({count:World.photos.size,ids:[...World.sea.items.keys()],votes:S.progress?.votes||0}));
   await page.click('#sea-layout');await page.waitForSelector('.sea-axis-dialog[open]');
   assert.equal(await page.locator('[data-axis]').count(),2);
+  assert.equal(await page.locator('[data-axis-reverse=y]').textContent(),'↑ bright · ↓ dark ⇄');
   for(const key of ['colorfulness','brightness','hue','saturation','date','quality','ranking','sharpness','aspect','faces'])assert(await page.locator(`#sea-axis-x option[value="${key}"]`).count());
   await page.selectOption('#sea-axis-x','date');await page.selectOption('#sea-axis-y','ranking');await page.click('[data-axis-reverse=x]');
   await page.waitForFunction(()=>document.querySelector('.sea-axis-status')?.textContent==='Saved with this library');
@@ -45,6 +46,53 @@ const {BASE,LINK,LIB,OUT}=process.env;
     await page.locator('.sea-axis-date button').click();await page.waitForSelector('.journey');await page.waitForFunction(()=>World.sea.camera.zoom>1);
     assert.equal(await page.locator('.inspect').count(),0,'A date jump returns to the sea and glides to the print');
   }
+  // Hundreds of public-fixture prints cross through one another using the shipped calm tuning, then sleep
+  // without leaving an inverted brightness order or intersecting papers behind.
+  await page.setViewportSize({width:1440,height:900});await page.goto(BASE+'/#home');await page.waitForFunction(()=>World.photos?.size&&!World.loading&&World.sea?.bodies?.length);
+  await page.evaluate(()=>World.sea.resetCamera());
+  await page.click('#sea-layout');await page.click('[data-axis-reset]');await page.locator('[data-axis-close]').last().click();
+  await page.mouse.move(20,15);
+  await page.evaluate(async()=>{
+    clearInterval(World.watch);const sea=World.sea,photos=[...World.photos.values()];sea.resetCamera();sea.hold(null);
+    const sources=new Map();
+    for(const p of photos){
+      let source=sea.sprites?.get(p.id);
+      if(!source||!source.img.complete){
+        const img=new Image();img.src=T(p.id);await img.decode();const canvas=document.createElement('canvas');canvas.width=canvas.height=16;canvas.getContext('2d').drawImage(img,0,0,16,16);
+        source={img:canvas,x:0,y:0,aspect:p.dims[0]/p.dims[1]};
+      }sources.set(p.id,source);
+    }
+    const items=Array.from({length:600},(_,i)=>({id:80000+i,photo:photos[i%photos.length].id,dims:photos[i%photos.length].dims,n:1,tags:['photos'],
+      visual:{colorfulness:((i*7127)%997)/997,brightness:((i*8761)%991)/991},measurements:{date:i*100}}));
+    // Clone the public atlas cells as well as the metadata; invented database IDs have no server thumbnails.
+    sea.sprites=new Map(items.map(it=>[it.id,sources.get(it.photo)]));
+    sea.setVenn([],items);
+    window.axisStats=()=>{
+      const rows=[...sea.items.values()].filter(it=>!it.take).sort((a,b)=>a.visual.brightness-b.visual.brightness),mean=(rows,key)=>rows.reduce((n,it)=>n+it[key],0)/rows.length;
+      let overlaps=0;for(let i=0;i<rows.length;i++)for(let j=0;j<i;j++){const a=rows[i],b=rows[j],edge=(a.size+b.size)/2;
+        if(Math.abs(a.x-b.x)<edge-.1&&Math.abs(a.y-b.y)<edge*4/3-.1)overlaps++;
+      }
+      return {count:rows.length,overlaps,blank:sea.densityStats?.blank||0,palettes:sea.bodyPigments?.size||0,dark:mean(rows.slice(0,60),'y'),bright:mean(rows.slice(-60),'y'),
+        oldest:mean(rows.filter(it=>it.measurements.date<6000),'x'),newest:mean(rows.filter(it=>it.measurements.date>=54000),'x'),width:sea.width,height:sea.height};
+    };
+  });
+  await page.waitForFunction(()=>World.sea.bodies.length===600&&World.sea.settled,{},{timeout:30000});
+  await page.click('#sea-layout');await page.click('[data-axis-reverse=y]');
+  assert.equal(await page.locator('[data-axis-reverse=y]').textContent(),'↑ dark · ↓ bright ⇄');
+  await page.locator('[data-axis-close]').last().click();await page.mouse.move(20,15);
+  await page.waitForFunction(()=>World.sea.settled,{},{timeout:30000});
+  const reversed=await page.evaluate(()=>axisStats());assert.equal(reversed.count,600);assert.equal(reversed.overlaps,0,JSON.stringify(reversed));
+  assert.equal(reversed.blank,0);assert.equal(reversed.palettes,600,'Every fixture print has actual public-photo pixels and colours');
+  assert(reversed.dark<reversed.height*.25&&reversed.bright>reversed.height*.75,JSON.stringify(reversed));
+  await page.screenshot({path:OUT+'/sea-axes-reversed-600.png'});
+  await page.click('#sea-layout');await page.click('[data-axis-reverse=y]');await page.selectOption('#sea-axis-x','date');
+  await page.click('[data-axis-reverse=x]');await page.click('[data-axis-reverse=x]');
+  await page.locator('[data-axis-close]').last().click();await page.mouse.move(20,15);
+  await page.waitForFunction(()=>World.sea.settled,{},{timeout:30000});
+  const rearranged=await page.evaluate(()=>axisStats());assert.equal(rearranged.overlaps,0,JSON.stringify(rearranged));
+  assert(rearranged.bright<rearranged.height*.25&&rearranged.dark>rearranged.height*.75,JSON.stringify(rearranged));
+  assert(rearranged.oldest<rearranged.width*.25&&rearranged.newest>rearranged.width*.75,JSON.stringify(rearranged));
+  await page.screenshot({path:OUT+'/sea-axes-rearranged-600.png'});
   assert.equal(await page.locator('button input,button select,button button').count(),0);assert.deepEqual(edits,[],'Changing arrangement casts no votes or photo edits');assert.deepEqual(problems,[]);
-  console.log(JSON.stringify({before,layout,phone,dated,problems}));await browser.close();
+  console.log(JSON.stringify({before,layout,phone,dated,reversed,rearranged,problems}));await browser.close();
 })().catch(e=>{console.error('FAILED:',e.stack);process.exit(1);});

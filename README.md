@@ -102,6 +102,10 @@ The small axis key below the photo count changes what X and Y mean: colourfulnes
 capture date, photo quality, your ranking, sharpness, aspect ratio or faces in the photo. Either axis can run in
 reverse. Choices stay with the save; Reset axes restores the original layout. A date axis also offers a jump to
 any day in the library. These controls are also under **Menu → Picture & sound → Sea axes**.
+Brightness runs from dark at the bottom to bright at the top. Rearranging lets photos cross to their new homes
+before they settle. In debug mode, **Macro → Top/Right/Bottom/Left margin** tunes each edge independently;
+values are fractions of the viewport (0.04 = 4%). Each edge’s reset follows **All edge margins** again. The
+panel remembers these values in your browser and includes them in Export.
 
 ## Help build it
 

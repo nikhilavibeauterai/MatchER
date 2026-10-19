@@ -4,7 +4,11 @@
 var SEA_TUNING = [
   // macro: the visual geography
   { key: "spread", group: "macro", label: "Rank spread", hint: "0 places homes on absolute colour and brightness curves; 1 spreads them evenly by rank across the canvas", min: 0, max: 1, step: 0.05, value: 1 },
-  { key: "margin", group: "macro", label: "Edge margin", hint: "share of the canvas kept clear at each edge", min: 0, max: 0.25, step: 0.01, value: 0.04 },
+  { key: "margin", group: "macro", label: "All edge margins", hint: "share of the canvas kept clear at every edge, unless that edge has its own value; 0.04 = 4%", min: 0, max: 0.25, step: 0.01, value: 0.04 },
+  { key: "marginTop", group: "macro", label: "Top margin", hint: "share of the height above the homes; reset follows All edge margins", min: 0, max: 0.25, step: 0.005, value: null, inherit: "margin" },
+  { key: "marginRight", group: "macro", label: "Right margin", hint: "share of the width to the right of the homes; reset follows All edge margins", min: 0, max: 0.25, step: 0.005, value: null, inherit: "margin" },
+  { key: "marginBottom", group: "macro", label: "Bottom margin", hint: "share of the height below the homes; reset follows All edge margins", min: 0, max: 0.25, step: 0.005, value: null, inherit: "margin" },
+  { key: "marginLeft", group: "macro", label: "Left margin", hint: "share of the width to the left of the homes; reset follows All edge margins", min: 0, max: 0.25, step: 0.005, value: null, inherit: "margin" },
   { key: "jitter", group: "macro", label: "Home jitter", hint: "each photo's own small offset from its exact home, as a share of the canvas", min: 0, max: 0.1, step: 0.005, value: 0.02 },
   { key: "homeRate", group: "macro", label: "Home pull per px", hint: "acceleration toward home per pixel of distance", min: 0, max: 0.01, step: 0.0002, value: 0.003 },
   { key: "homeMax", group: "macro", label: "Home pull cap", min: 0, max: 0.8, step: 0.01, value: 0.57 },
@@ -59,4 +63,10 @@ var SEA_TUNING = [
   { key: "wheelSpeed", group: "camera", label: "Wheel zoom speed", min: 0.0002, max: 0.004, step: 0.0001, value: 0.0012 },
 ];
 function seaTuningDefaults() { const out = {}; for (const p of SEA_TUNING) out[p.key] = p.value; return out; }
-if (typeof module !== "undefined") module.exports = { SEA_TUNING, seaTuningDefaults };
+function seaTuningMargins(t) {
+  const out={};for(const edge of ['top','right','bottom','left']){
+    const value=t?.[`margin${edge[0].toUpperCase()+edge.slice(1)}`]??t?.margin??.04;
+    out[edge]=Number.isFinite(value)?Math.max(0,Math.min(.45,value)):.04;
+  }return out;
+}
+if (typeof module !== "undefined") module.exports = { SEA_TUNING, seaTuningDefaults, seaTuningMargins };

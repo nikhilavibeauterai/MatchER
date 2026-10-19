@@ -1,6 +1,7 @@
 // The swarm and its tag clustering run away from the UI thread. Thumbnails never enter this worker.
 const contourField = typeof module !== 'undefined' ? require('./sea-contours.js').seaContours : (importScripts('/static/sea-contours.js'), seaContours);
 const tuningDefaults = typeof module !== 'undefined' ? require('./sea-tuning.js').seaTuningDefaults : (importScripts('/static/sea-tuning.js'), seaTuningDefaults);
+const tuningMargins = typeof module !== 'undefined' ? require('./sea-tuning.js').seaTuningMargins : seaTuningMargins;
 const axisSettings = typeof module !== 'undefined' ? require('./sea-axes.js') : (importScripts('/static/sea-axes.js'), SeaAxes);
 const seaHash = (s) => { let h=2166136261; for(const c of String(s))h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0; };
 const seaSimilarity = (a,b) => {
@@ -43,14 +44,14 @@ class SeaField {
     const inside=(it,r)=>!r||(it.x>=r.x0-pad&&it.x<=r.x1+pad&&it.y>=r.y0-pad&&it.y<=r.y1+pad);
     // A rested sea stays at rest as the camera moves over it: only a sea still settling wakes what comes into view
     // (at a deep zoom a sub-pixel settle would be a visible shake).
-    if(!this.settled)for(const it of this.items)if(inside(it,rect)&&!inside(it,old))this.wakeItem(it);
+    for(const it of this.items)if((!this.settled||it.travelling&&!it.anchor&&!it.fixed)&&inside(it,rect)&&!inside(it,old))this.wakeItem(it);
   }
   // A short log of what woke the field, for the developer panel and the suites' probes.
   note(what){(this.log||=[]).push([this.frame||0,what]);if(this.log.length>60)this.log.shift();}
   // A local wake restarts one print's clock; its neighbours follow only through contact.
   wakeItem(it){if(!it)return;it.age=0;it.shoved=0;this.calmFrames=0;this.settled=false;this.note(`wakeItem:${it.id}`);}
   set(message){
-    this.generation=message.generation;this.marginEff=message.margin;
+    this.generation=message.generation;this.marginEff=message.margins??(Number.isFinite(message.margin)?{top:message.margin,right:message.margin,bottom:message.margin,left:message.margin}:null);
     // The host resends its bodies whenever its layout runs. Only a real change (prints, water, focus, tuning or
     // calm) may wake a resting sea; an identical resend leaves every print asleep where it is.
     const axes=axisSettings.normalize(message.axes),axesChanged=!axisSettings.equal(this.axes,axes);this.axes=axes;
@@ -60,7 +61,7 @@ class SeaField {
     if(this.resize(message,false))changed=true;
     const old=this.byId;this.byId=new Map();const vocabulary=new Map(),touched=new Set();let semanticChange=old.size!==message.items.length;
     this.items=message.items.map(x=>{
-      const previous=old.get(x.id), it={...x,fresh:!previous,cluster:previous?.cluster,x:previous?.x??x.x,y:previous?.y??x.y,vx:previous?.vx||0,vy:previous?.vy||0,age:previous?.age||0,heat:previous?.heat||0,push:previous?.push||0,shoved:previous?.shoved||0,home:previous?.home,placed:axesChanged?null:previous?.placed};
+      const previous=old.get(x.id), it={...x,fresh:!previous,cluster:previous?.cluster,x:previous?.x??x.x,y:previous?.y??x.y,vx:previous?.vx||0,vy:previous?.vy||0,age:previous?.age||0,heat:previous?.heat||0,push:previous?.push||0,shoved:previous?.shoved||0,home:previous?.home,placed:axesChanged?null:previous?.placed,travelling:axesChanged&&!!previous||!!previous?.travelling};
       // New arrivals shrink the common footprint slightly. That creates room without waking the whole sea.
       if(!previous||x.baseSize>previous.baseSize+.5||previous.label!==x.label||!seaSameVisual(previous.visual,x.visual)||
         ['x','y'].some(axis=>axisSettings.value(previous,this.axes[axis])!==axisSettings.value(x,this.axes[axis])))touched.add(it.id);
@@ -75,6 +76,7 @@ class SeaField {
     this.clusterDirty||=semanticChange;this.membershipDirty=true;
     const focusKey=JSON.stringify(message.focus||{});if(focusKey!==this.focusKey){this.focusKey=focusKey;changed=true;}
     const homesMoved=this.visualHomes();
+    this.rearranging||=axesChanged&&old.size>0;
     if(changed||!this.calm){if(homesMoved||semanticChange||changed)this.wake(homesMoved?'homes':semanticChange?'tags':'set');}
     else for(const it of this.items){
       const was=old.get(it.id)?.home,now=it.home;
@@ -99,18 +101,21 @@ class SeaField {
   }
   // The macro order spreads the library across the whole canvas: colourfulness by rank left to right, brightness
   // by rank bottom to top. A mostly muted library then fills the width instead of piling into one half.
-  ranks(key){
-    const sorted=this.items.filter(it=>Number.isFinite(key(it))).sort((a,b)=>key(a)-key(b)),q=new Map(),n=sorted.length;
+  ranks(key,ties=null){
+    const sorted=this.items.filter(it=>Number.isFinite(key(it))).sort((a,b)=>key(a)-key(b)||(ties?seaHash(`${a.id}:${ties}`)-seaHash(`${b.id}:${ties}`):0)),q=new Map(),n=sorted.length;
+    // Equal dates, face counts or initial ratings share their rank band's space. Giving every equal rating
+    // the exact same coordinate crushes thousands of otherwise distinct homes into one line.
+    if(ties){for(let i=0;i<n;i++)q.set(sorted[i].id,n>1?i/(n-1):.5);return q;}
     for(let i=0;i<n;i++){let j=i;while(j+1<n&&key(sorted[j+1])===key(sorted[i]))j++;const value=n>1?((i+j)/2)/(n-1):.5;for(let k=i;k<=j;k++)q.set(sorted[k].id,value);i=j;}
     return q;
   }
   visualHomes(){  // returns whether any home moved, so a caller wakes the sea only for a real change
     const T=this.T,colourOf=it=>Number.isFinite(it.visual?.colorfulness)?it.visual.colorfulness:it.visual?.saturation,brightOf=it=>it.visual?.brightness;
-    const spread=Math.max(0,Math.min(1,T.spread)),qx=spread?this.ranks(colourOf):null,qy=spread?this.ranks(brightOf):null,m=this.marginEff??T.margin,span=1-2*m;
+    const spread=Math.max(0,Math.min(1,T.spread)),qx=spread?this.ranks(colourOf):null,qy=spread?this.ranks(brightOf):null,m=this.marginEff??tuningMargins(T),spanX=1-m.left-m.right,spanY=1-m.top-m.bottom;
     const clamp=v=>Math.max(0,Math.min(1,v)),before=this.items.map(it=>it.home);
     const axes=axisSettings.normalize(this.axes),custom=!axisSettings.equal(axes,axisSettings.defaults),coordinates={};
     if(custom)for(const axis of ['x','y']){
-      const key=axes[axis],option=axisSettings.options.find(o=>o.key===key),value=it=>axisSettings.value(it,key),rank=this.ranks(value);
+      const key=axes[axis],option=axisSettings.options.find(o=>o.key===key),value=it=>axisSettings.value(it,key),rank=this.ranks(value,option.unit?null:`${key}:${axis}`);
       coordinates[axis]=it=>{
         const raw=value(it);if(raw==null)return .5;
         const absolute=key==='colorfulness'?Math.sqrt(clamp(raw)):clamp(raw),q=rank.get(it.id)??.5,
@@ -124,11 +129,11 @@ class SeaField {
         // Blend the absolute curves (a known colour always lands in the same place) with the library's rank order.
         const phase=seaHash(it.id)*.0001,cx=clamp(Math.sqrt(clamp(colourOf(it)))),cy=clamp(brightOf(it));
         const ux=qx?.has(it.id)?spread*qx.get(it.id)+(1-spread)*cx:cx,uy=qy?.has(it.id)?spread*qy.get(it.id)+(1-spread)*cy:cy;
-        target={x:this.width*(m+span*ux+Math.cos(phase)*T.jitter),y:this.height*(1-m-span*uy+Math.sin(phase)*T.jitter)};
+        target={x:this.width*(m.left+spanX*ux+Math.cos(phase)*T.jitter),y:this.height*(1-m.bottom-spanY*uy+Math.sin(phase)*T.jitter)};
       }
       if(custom){
         const phase=seaHash(it.id)*.0001;
-        target={x:this.width*(m+span*coordinates.x(it)+Math.cos(phase)*T.jitter),y:this.height*(1-m-span*coordinates.y(it)+Math.sin(phase)*T.jitter)};
+        target={x:this.width*(m.left+spanX*coordinates.x(it)+Math.cos(phase)*T.jitter),y:this.height*(1-m.bottom-spanY*coordinates.y(it)+Math.sin(phase)*T.jitter)};
       }
       const score=this.outcomeScores?.get(it.id),scored=Number.isFinite(score);
       it.outcomeBank=0;
@@ -162,7 +167,13 @@ class SeaField {
       if(best)it.home={x:best.x,y:best.y};
       if(it.placed&&!scored)it.home={...it.placed};  // placed by hand: the geography is only a default
     }
-    return this.items.some((it,i)=>{const was=before[i],now=it.home;return !!was!==!!now||!!(was&&now&&(Math.abs(was.x-now.x)>.5||Math.abs(was.y-now.y)>.5));});
+    let moved=false;
+    for(const [i,it] of this.items.entries()){
+      const was=before[i],now=it.home;
+      if(!!was!==!!now||was&&now&&(Math.abs(was.x-now.x)>.5||Math.abs(was.y-now.y)>.5))moved=true;
+      if(was&&now&&Math.hypot(was.x-now.x,was.y-now.y)>Math.max(12,it.baseSize*2)){it.travelling=true;this.rearranging=true;}
+    }
+    return moved;
   }
   outcomes(flow){
     // A forecast changes soft destinations, never the photos' positions or momentum.
@@ -266,23 +277,44 @@ class SeaField {
     for(const it of this.items)if(before.get(it.id)!==it.cluster)this.wakeItem(it);
     return result;
   }
-  index(cell){
+  index(cell,cycle=false){
+    this.cyclic=cycle;
     this.cell=cell;this.cols=Math.max(1,Math.ceil(this.width/cell));this.rows=Math.max(1,Math.ceil(this.height/cell));
     const n=this.cols*this.rows;if(this.heads?.length!==n)this.heads=new Int32Array(n);this.heads.fill(-1);
+    if(cycle){if(this.counts?.length!==n){this.counts=new Int32Array(n);this.tails=new Int32Array(n);}this.counts.fill(0);}
     if(this.links?.length!==this.items.length)this.links=new Int32Array(this.items.length);
-    const start=this.frame%Math.max(1,this.items.length);
-    for(let k=0;k<this.items.length;k++){const i=(start+k)%this.items.length,it=this.items[i];const x=Math.max(0,Math.min(this.cols-1,Math.floor(it.x/cell))),y=Math.max(0,Math.min(this.rows-1,Math.floor(it.y/cell)));const at=y*this.cols+x;this.links[i]=this.heads[at];this.heads[at]=i;}
+    const start=cycle?0:this.frame%Math.max(1,this.items.length);
+    for(let k=0;k<this.items.length;k++){const i=(start+k)%this.items.length,it=this.items[i];const x=Math.max(0,Math.min(this.cols-1,Math.floor(it.x/cell))),y=Math.max(0,Math.min(this.rows-1,Math.floor(it.y/cell)));const at=y*this.cols+x;
+      if(cycle){if(!this.counts[at])this.tails[at]=i;this.counts[at]++;}this.links[i]=this.heads[at];this.heads[at]=i;
+    }
+    // Rearranging must eventually visit every local contact. A fixed sample of four bucket heads can miss
+    // the same pair for thousands of frames; rotate each bucket's bounded sample instead of scanning it all.
+    if(cycle)for(let at=0;at<n;at++)if(this.counts[at]){
+      this.links[this.tails[at]]=this.heads[at];for(let k=this.frame%this.counts[at];k>0;k--)this.heads[at]=this.links[this.heads[at]];
+    }
   }
   neighbours(it,limit,visit){
     const cx=Math.floor(it.x/this.cell),cy=Math.floor(it.y/this.cell);
     for(let y=Math.max(0,cy-1);y<=Math.min(this.rows-1,cy+1);y++)for(let x=Math.max(0,cx-1);x<=Math.min(this.cols-1,cx+1);x++){
-      let checked=0;for(let j=this.heads[y*this.cols+x];j>=0&&checked<limit;j=this.links[j],checked++)if(this.items[j]!==it)visit(this.items[j],j);
+      const at=y*this.cols+x,count=this.cyclic?this.counts[at]:Infinity;
+      let checked=0;for(let j=this.heads[at];j>=0&&checked<limit&&checked<count;j=this.links[j],checked++)if(this.items[j]!==it)visit(this.items[j],j);
     }
+  }
+  travelHome(it){
+    const home=it.home,o=this.focusZone,margin=it.size*.72;
+    if(!home||!o||home.x<=o.x0-margin||home.x>=o.x1+margin||home.y<=o.y0-margin||home.y>=o.y1+margin)return home;
+    // A focused group borrows water from the geography. Landing beside it finishes the trip; its covered
+    // home cannot keep the sea awake waiting for a destination the print is forbidden to enter.
+    let best=null;for(const r of this.focusWater){
+      if(r.x1-r.x0<margin*2||r.y1-r.y0<margin*2)continue;
+      const x=Math.max(r.x0+margin,Math.min(r.x1-margin,home.x)),y=Math.max(r.y0+margin,Math.min(r.y1-margin,home.y)),d=(x-home.x)**2+(y-home.y)**2;
+      if(!best||d<best.d)best={x,y,d};
+    }return best||home;
   }
   place(it){
     if(it.fixed)return;it.size=Math.min(it.size,it.anchor?this.waterLimit:this.ambientLimit);const margin=it.size*.72;
     it.x=Math.max(margin,Math.min(this.width-margin,it.x));it.y=Math.max(margin,Math.min(this.height-margin,it.y));
-    const focus=this.focusZone,insideFocus=!it.anchor&&focus&&it.x>focus.x0-margin&&it.x<focus.x1+margin&&it.y>focus.y0-margin&&it.y<focus.y1+margin;
+    const focus=this.focusZone,insideFocus=!it.anchor&&!it.travelling&&focus&&it.x>focus.x0-margin&&it.x<focus.x1+margin&&it.y>focus.y0-margin&&it.y<focus.y1+margin;
     if(!insideFocus&&!this.obstacles.some(o=>it.x>o.x0-margin&&it.x<o.x1+margin&&it.y>o.y0-margin&&it.y<o.y1+margin))return;
     let best=null;
     for(const r of it.anchor?this.water:this.focusWater){if(r.x1-r.x0<margin*2||r.y1-r.y0<margin*2)continue;const x=Math.max(r.x0+margin,Math.min(r.x1-margin,it.x)),y=Math.max(r.y0+margin,Math.min(r.y1-margin,it.y)),d=(x-it.x)**2+(y-it.y)**2;if(!best||d<best.d)best={x,y,d};}
@@ -294,6 +326,7 @@ class SeaField {
     const x=it.x+it.vx*6,y=it.y+it.vy*6;
     let ax=0,ay=0;
     for(const o of this.barriers){
+      if(it.travelling&&o===this.focusZone)continue;  // travelling prints pass behind the focused group, then land beside it
       const x0=o.x0-margin,x1=o.x1+margin,y0=o.y0-margin,y1=o.y1+margin;
       if(x<x0-reach||x>x1+reach||y<y0-reach||y>y1+reach)continue;
       let dx=x-Math.max(x0,Math.min(x1,x)),dy=y-Math.max(y0,Math.min(y1,y)),d=Math.hypot(dx,dy);
@@ -337,11 +370,12 @@ class SeaField {
     for(const p of pins){const it=this.byId.get(p.id);if(it){it.x=p.x;it.y=p.y;frozen.add(it.id);}}
     // Steering belongs to the photo, so a tag refresh neither resets its momentum nor keeps deleted photos alive.
     if(this.motionItems!==this.items){for(const id of this.steering.keys())if(!this.byId.has(id))this.steering.delete(id);this.motionItems=this.items;}
-    let maxSize=8;
+    let maxSize=8,ambientSize=8;
     const view=this.view,pad=this.viewPad||60;
     for(const it of this.items){
       it.fixed=frozen.has(it.id);it.lifted=liftedIds.has(it.id);it.dragged=draggedIds.has(it.id);maxSize=Math.max(maxSize,it.size);
       it.off=!!view&&!it.fixed&&!it.anchor&&(it.x<view.x0-pad||it.x>view.x1+pad||it.y<view.y0-pad||it.y>view.y1+pad);
+      if(!it.off&&!it.fixed&&!it.anchor)ambientSize=Math.max(ambientSize,it.size);
       let motion=this.steering.get(it.id);if(!motion){motion={ax:0,ay:0,at:time-dt*16.67,phase:seaHash(it.id)%628/100};this.steering.set(it.id,motion);}it.motion=motion;
     }
     this.viewPad=maxSize*2;
@@ -350,7 +384,7 @@ class SeaField {
     // A calm field cools print by print: full dynamics for a grace period after a print's own wake, then its
     // forces and corrections fade. A disturbance resolves locally while the rest of the sea sleeps on.
     const heatOf=it=>{const age=it.age||0;return this.calm?(age<T.settleGrace?1:Math.max(0,1-(age-T.settleGrace)/Math.max(1,T.coolFrames))):1;};
-    let anyHeat=false;
+    let anyHeat=false,anyTravel=false;
     for(const it of this.items){
       const motion=it.motion;
       // Held, pinned, lifted and gathered prints stay hot: whatever they touch moves out of their way in full.
@@ -361,7 +395,14 @@ class SeaField {
         const dx=(it.anchor.x-it.x)*blend,dy=(it.anchor.y-it.y)*blend;
         it.vx=step?dx/step:0;it.vy=step?dy/step:0;it.x+=dx;it.y+=dy;this.place(it);continue;
       }
-      const heat=it.heat=heatOf(it);it.age=(it.age||0)+dt;
+      // An explicit rearrangement lifts prints over crossing traffic. They land near their new homes before
+      // cooling; otherwise opposite shores jam in the middle and the timer freezes the unfinished journey.
+      const home=it.travelling?this.travelHome(it):it.home;
+      if(it.travelling){
+        if(!home||Math.hypot(home.x-it.x,home.y-it.y)<=Math.max(16,it.size*2)){it.travelling=false;it.age=0;}
+        else {anyTravel=true;this.rearranging=true;}
+      }
+      const heat=it.heat=it.travelling?1:heatOf(it);it.age=(it.age||0)+dt;
       if(!heat){it.vx=it.vy=motion.ax=motion.ay=0;motion.at=time;continue;}
       anyHeat=true;
       const rate=this.items.length>1000&&it.size<8?2:1;
@@ -375,8 +416,8 @@ class SeaField {
       // adds no wander, so a print's home and its neighbours decide where it rests.
       const wander=this.calm?T.wander:.025;
       let ax=Math.cos(a)*wander+avoidance[0],ay=Math.sin(a)*wander+avoidance[1];
-      if(it.home){
-        const dx=it.home.x-it.x,dy=it.home.y-it.y,d=Math.hypot(dx,dy),strength=Math.min(T.homeMax,d*T.homeRate);
+      if(home){
+        const dx=home.x-it.x,dy=home.y-it.y,d=Math.hypot(dx,dy),strength=Math.min(T.homeMax,d*T.homeRate);
         if(d>1){ax+=dx/d*strength;ay+=dy/d*strength;}
       }
       if(it.outcomeBank){
@@ -393,6 +434,7 @@ class SeaField {
       }
       let vx=0,vy=0,weight=0,urgent=Math.hypot(avoidance[0],avoidance[1])>.05;
       this.neighbours(it,4,other=>{
+        if((it.travelling||other.travelling)&&!other.fixed)return;
         let dx=other.x-it.x,dy=other.y-it.y,square=dx*dx+dy*dy;if(square>=reach*reach)return;let d=Math.sqrt(square);
         if(d<.1){const a=(it.id-other.id)*2.399963;dx=Math.cos(a);dy=Math.sin(a);d=1;}
         const similarity=seaSimilarity(it.vector,other.vector),same=it.assignedGroup!=null&&it.assignedGroup===other.assignedGroup;
@@ -416,7 +458,7 @@ class SeaField {
       const force=Math.hypot(ax,ay),limit=urgent?T.urgentLimit:T.forceLimit;if(force>limit){ax*=limit/force;ay*=limit/force;}
       // Far from home a print hurries: extra pull past the limiter, sized so it reaches the hurry speed against the
       // drag; near home the pull fades and the ordinary cap and limiter take over (`hurry` 0 turns it off).
-      if(it.home&&T.hurry){const hx=it.home.x-it.x,hy=it.home.y-it.y,hd=Math.hypot(hx,hy),want=Math.min(8,hd*T.hurry);if(hd>1&&want>T.speedCap){ax+=hx/hd*want*drag;ay+=hy/hd*want*drag;}}
+      if(home&&T.hurry){const hx=home.x-it.x,hy=home.y-it.y,hd=Math.hypot(hx,hy),want=Math.min(8,hd*T.hurry);if(hd>1&&want>T.speedCap){ax+=hx/hd*want*drag;ay+=hy/hd*want*drag;}}
       ax*=heat;ay*=heat;if(heat<1){it.vx*=heat;it.vy*=heat;}
       // Most bodies share one of two elapsed steps. Reuse their exact coefficients instead of repeating exponentials.
       let row=motionCoefficients.get(step),coefficients=row?.[urgent?1:0];
@@ -432,7 +474,7 @@ class SeaField {
       it.vy=it.vy*(1-fade)+ay*travel+(motion.ay-ay)*coupling;
       motion.ax+=(ax-motion.ax)*ease;motion.ay+=(ay-motion.ay)*ease;
       // A print creeps near its home but may hurry while it is far from it (a Filter bank, a new geography).
-      const cap=Math.max(T.speedCap,Math.min(8,(it.home?Math.hypot(it.home.x-it.x,it.home.y-it.y):0)*(T.hurry||0)));
+      const cap=Math.max(T.speedCap,Math.min(8,(home?Math.hypot(home.x-it.x,home.y-it.y):0)*(T.hurry||0)));
       const speed=Math.hypot(it.vx,it.vy);if(speed>cap){it.vx*=cap/speed;it.vy*=cap/speed;}
       const distance=Math.hypot(dx,dy);if(distance>cap*step){dx*=cap*step/distance;dy*=cap*step/distance;}
       it.x+=dx;it.y+=dy;this.place(it);
@@ -443,23 +485,23 @@ class SeaField {
     let anyPush=false;for(const it of this.items){it.push=(it.push||0)*.7;if(it.push<.05)it.push=0;else anyPush=true;}
     let passes=this.items.length<400?4:1;
     for(let pass=0;pass<passes;pass++){
-      this.index(maxSize*2*T.gap*4/3);
+      this.index(maxSize*2*T.gap*4/3,!!this.rearranging);
       this.items.forEach((it,i)=>{if(this.items.length>1000&&it.size<8&&(it.id+this.frame)%2)return;this.neighbours(it,this.items.length>1000?4:8,(other,j)=>{
         const fixed=it.fixed||!!it.anchor||it.off,otherFixed=other.fixed||!!other.anchor||other.off;
         // A print in your hand floats over the others; its neighbours make room when you let go of it.
-        if(j>=i||fixed&&otherFixed||it.dragged||other.dragged)return;const gap=(it.size+other.size)*T.gap;
+        if(j>=i||fixed&&otherFixed||it.dragged||other.dragged||!it.fixed&&!other.fixed&&(it.travelling||other.travelling))return;const gap=(it.size+other.size)*T.gap;
         // Contact measures the whole 3:4 card. A square footprint let portrait chins overlap, especially where
         // similar dark photos meet the bottom edge. Work in card-width units and convert vertical pushes back.
         let dx=it.x-other.x,dy=(it.y-other.y)*.75,square=dx*dx+dy*dy;if(square>=gap*gap)return;
         if(square<.001){const angle=(it.id-other.id)*2.399963;dx=Math.cos(angle)*.01;dy=Math.sin(angle)*.01;square=.0001;}
         // Awake prints resolve their contacts in full, so a rested sea holds no latent overlaps. A shove into
         // sleeping prints loses half its strength at every print it passes through, so it stays in the neighbourhood.
-        const hi=it.heat>0?1:it.push||0,ho=other.heat>0?1:other.push||0,strength=Math.max(hi,ho);if(!strength)return;
+        const hi=it.heat>0||this.rearranging?1:it.push||0,ho=other.heat>0||this.rearranging?1:other.push||0,strength=Math.max(hi,ho);if(!strength)return;
         const d=Math.sqrt(square),amount=(gap-d+.05)*strength,first=fixed?0:otherFixed?1:.5,second=otherFixed?0:fixed?1:.5;
         let a=amount*first,b=amount*second;
         // A resting print gives way only a little (`yield` of its size) to a print dropped on it; the rest overlaps.
-        if(a&&!it.heat){const room=Math.max(0,it.size*(T.yield??.3)-(it.shoved||0));a=Math.min(a,room);it.shoved=(it.shoved||0)+a;}
-        if(b&&!other.heat){const room=Math.max(0,other.size*(T.yield??.3)-(other.shoved||0));b=Math.min(b,room);other.shoved=(other.shoved||0)+b;}
+        if(a&&!it.heat&&!this.rearranging){const room=Math.max(0,it.size*(T.yield??.3)-(it.shoved||0));a=Math.min(a,room);it.shoved=(it.shoved||0)+a;}
+        if(b&&!other.heat&&!this.rearranging){const room=Math.max(0,other.size*(T.yield??.3)-(other.shoved||0));b=Math.min(b,room);other.shoved=(other.shoved||0)+b;}
         it.x+=dx/d*a;it.y+=dy/d*a/.75;other.x-=dx/d*b;other.y-=dy/d*b/.75;
         if(a>.2&&hi<ho){it.push=Math.max(it.push||0,ho*.35);anyPush=true;}
         if(b>.2&&ho<hi){other.push=Math.max(other.push||0,hi*.35);anyPush=true;}
@@ -480,14 +522,28 @@ class SeaField {
         }
         if(overlap)passes+=2;
       }
-      if(!anyHeat&&!anyPush)break;
+      if(!anyHeat&&!anyPush&&!this.rearranging)break;
     }
     if(this.calm){
       // Settled means every print rests. Cooling stops an oscillating pair, so the fastest mover decides.
       let moved=0;for(const it of this.items)if(!it.off)moved=Math.max(moved,Math.abs(it.x-it.px),Math.abs(it.y-it.py));
-      this.calmFrames=moved<T.settleMove&&!dragged.length?this.calmFrames+1:0;this.settled=this.calmFrames>=T.settleFrames;
+      let ready=moved<T.settleMove&&!dragged.length&&!anyTravel;
+      // Cooling may stop steering, but a changed arrangement still has to make room for the whole paper.
+      // Only check a candidate rest; the spatial index keeps this local even in a large library.
+      if(ready&&this.rearranging){
+        this.index(ambientSize*2*T.gap*4/3);
+        for(let i=0;i<this.items.length&&ready;i++){
+          const it=this.items[i];if(it.off||it.fixed||it.anchor)continue;
+          this.neighbours(it,Infinity,(other,j)=>{
+            if(j>=i||other.off||other.fixed||other.anchor)return;
+            const edge=(it.size+other.size)*Math.min(.5,T.gap/Math.SQRT2);
+            if(Math.abs(it.x-other.x)<edge-.1&&Math.abs(it.y-other.y)<edge*4/3-.1)ready=false;
+          });
+        }
+      }
+      this.calmFrames=ready?this.calmFrames+1:0;this.settled=this.calmFrames>=T.settleFrames;
       // Settled means asleep: a print still cooling would otherwise resume its residual drift at the next local wake.
-      if(this.settled)for(const it of this.items){it.age=Math.max(it.age||0,T.settleGrace+T.coolFrames);it.heat=0;it.push=0;}
+      if(this.settled){this.rearranging=false;for(const it of this.items){it.age=Math.max(it.age||0,T.settleGrace+T.coolFrames);it.heat=0;it.push=0;}}
     }
     this.ms=performance.now()-start;
   }

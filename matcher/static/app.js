@@ -1304,8 +1304,9 @@ function openSeaAxes(){
     for(const axis of ['x','y']){
       const option=SeaAxes.options.find(o=>o.key===axes[axis]),reverse=axes[axis==='x'?'reverseX':'reverseY'],button=$(`[data-axis-reverse="${axis}"]`,modal);
       $(`[data-axis="${axis}"]`,modal).value=axes[axis];button.setAttribute('aria-pressed',String(reverse));
-      button.textContent=`${reverse?option.high:option.low} ${axis==='x'?'→':'↑'} ${reverse?option.low:option.high} ⇄`;
-      button.setAttribute('aria-label',`Reverse ${axis.toUpperCase()} axis`);
+      const low=reverse?option.high:option.low,high=reverse?option.low:option.high;
+      button.textContent=axis==='x'?`${low} → ${high} ⇄`:`↑ ${high} · ↓ ${low} ⇄`;
+      button.setAttribute('aria-label',`Reverse ${axis.toUpperCase()} axis; ${axis==='x'?`${low} at the left, ${high} at the right`:`${high} at the top, ${low} at the bottom`}`);
     }
     dateForm.hidden=!(axes.x==='date'||axes.y==='date')||!dates.length;
     $('.sea-axis-hint',modal).textContent=[axes.x,axes.y].includes('ranking')?'Your ranking learns from comparisons. Photos without a measurement sit near the middle.':

@@ -216,7 +216,7 @@ test('explicit Filter endpoints retain their side at either threshold limit',()=
   }
 });
 test('the shared sea ignores UI and catalogue obstacles without changing standalone fields',()=>{
-  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype');
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype',{seaTuningMargins:require('../matcher/static/sea-tuning.js').seaTuningMargins});
   const sea=Object.assign(Object.create(proto),{el:{id:'world'},width:1200,height:750,obstacles:[{x0:200,y0:0,x1:800,y1:750}],catalogRect:{x0:0,y0:650,x1:1200,y1:750}});
   sea.water=sea.openWater(1200,750,[sea.catalogRect]);
   assert.equal(sea.water.length,1);assert.equal(sea.water[0].x0,3);assert.equal(sea.water[0].x1,1197);
@@ -694,6 +694,113 @@ test('custom sea axes keep Filter admission on X, preserve manual placement unti
   set({x:'hue',y:'date'});assert.equal(f.items[0].placed,null,'A new arrangement releases hand-placed overrides from the old axes');
   f.outcomes({scores:{1:.8},threshold:.5});assert(Math.abs(f.items[0].home.x-902.4)<.01,'Filter still places admission fit along X');
   f.settled=true;set({x:'hue',y:'date'});assert(f.settled,'Sending the same axes and measurements again cannot restart the sea');
+});
+
+test('changing axes finishes crossing the sea and separating papers before the shipped calm tuning rests',()=>{
+  const f=new SeaField(),width=1600,height=900,count=600,items=Array.from({length:count},(_,i)=>({id:i+1,x:800,y:450,baseSize:20,tags:['photos'],
+    visual:{colorfulness:((i*7127)%997)/997,brightness:((i*8761)%991)/991,hue:((i*761)%953)/953},measurements:{date:i*100,ranking:25}}));
+  let frame=0,generation=0;
+  const set=axes=>f.set({generation:++generation,width,height,calm:true,items,axes});
+  const rest=()=>{for(let n=0;n<900&&!f.settled;n++)f.step({time:frame++*16.67});assert(f.settled,'A rearranged sea still goes to sleep');};
+  const separated=()=>{
+    let overlaps=0;
+    for(let i=0;i<count;i++)for(let j=0;j<i;j++){const a=f.items[i],b=f.items[j],edge=(a.size+b.size)/2;
+      if(Math.abs(a.x-b.x)<edge-.1&&Math.abs(a.y-b.y)<edge*4/3-.1)overlaps++;
+    }
+    assert.equal(overlaps,0,'Settling must not preserve intersecting polaroids');
+  };
+  const brightnessOrder=reverse=>{
+    const sorted=[...f.items].sort((a,b)=>a.visual.brightness-b.visual.brightness),mean=rows=>rows.reduce((sum,it)=>sum+it.y,0)/rows.length,
+      dark=mean(sorted.slice(0,60)),bright=mean(sorted.slice(-60));
+    assert(reverse?dark<height*.25&&bright>height*.75:bright<height*.25&&dark>height*.75,JSON.stringify({reverse,dark,bright}));
+  };
+  set();rest();brightnessOrder(false);separated();
+  set({reverseY:true});rest();brightnessOrder(true);separated();
+  // Change direction again before the previous arrangement has had time to finish.
+  set({reverseX:true,reverseY:true});for(let n=0;n<20;n++)f.step({time:frame++*16.67});
+  set({x:'date',y:'brightness'});rest();brightnessOrder(false);separated();
+  const old=f.items.filter(it=>it.measurements.date<6000),recent=f.items.filter(it=>it.measurements.date>=54000),meanX=rows=>rows.reduce((sum,it)=>sum+it.x,0)/rows.length;
+  assert(meanX(old)<width*.25&&meanX(recent)>width*.75,'Dates reach their new sides after crossing the old order');
+  // A wholly tied measurement is a crowded destination, not a reason to leave papers in a pile.
+  set({x:'date',y:'ranking'});rest();separated();
+  const before=f.items.map(it=>[it.x,it.y]);set({x:'date',y:'ranking'});assert(f.settled,'A layout resend does not restart a completed arrangement');
+  for(let n=0;n<60;n++)f.step({time:frame++*16.67});assert.deepEqual(f.items.map(it=>[it.x,it.y]),before,'The result stays at rest');
+});
+
+test('independent edge margins keep brightness upright, support zero, and inherit older shared tuning',()=>{
+  const {seaTuningDefaults,seaTuningMargins}=require('../matcher/static/sea-tuning.js'),tuning={...seaTuningDefaults(),margin:.08,jitter:0};
+  assert.deepEqual(seaTuningMargins(tuning),{top:.08,right:.08,bottom:.08,left:.08},'An existing tuning retains its shared margin');
+  Object.assign(tuning,{marginTop:.2,marginRight:.15,marginBottom:.05,marginLeft:.12});
+  const f=new SeaField(),items=Array.from({length:3},(_,i)=>({id:i+1,x:300,y:300,baseSize:10,tags:[],visual:{colorfulness:i/2,brightness:i/2},measurements:{date:i,quality:i}}));
+  const send=axes=>f.set({generation:1,width:1200,height:800,calm:true,tuning,items,axes});
+  send();const points=f.items.map(it=>({...it.visualPoint}));
+  for(const [i,p] of points.entries()){
+    assert(Math.abs(p.x-(.12+.73*i/2))<1e-9,'Left and right use the width independently');
+    assert(Math.abs(p.y-(.95-.75*i/2))<1e-9,'Top and bottom use the height, with bright photos above');
+  }
+  send({x:'date',y:'quality'});assert.deepEqual(f.items.map(it=>it.visualPoint),points,'Custom axes respect the same four edges');
+  tuning.marginLeft=0;send();assert.equal(f.byId.get(1).visualPoint.x,0,'Zero is a real override, not an inherited value');
+  tuning.marginLeft=null;send();assert.equal(f.byId.get(1).visualPoint.x,.08,'Resetting one edge follows the shared margin again');
+  assert.equal(f.T.homeRate,tuning.homeRate,'Margins do not rewrite other hand-tuned parameters');
+});
+
+test('an unfinished rearrangement holds off screen and resumes when those photos come back into view',()=>{
+  const f=new SeaField(),items=Array.from({length:8},(_,i)=>({id:i+1,x:600,y:400,baseSize:15,tags:[],visual:{colorfulness:(i%2)*.9,brightness:Math.floor(i/2)/3}}));
+  let frame=0;const rest=()=>{for(let n=0;n<900&&!f.settled;n++)f.step({time:frame++*16.67});assert(f.settled);};
+  f.set({generation:1,width:1200,height:800,calm:true,items});rest();
+  f.set({generation:2,width:1200,height:800,calm:true,items,axes:{reverseX:true}});
+  f.setView({x0:0,y0:0,x1:300,y1:800});rest();
+  const waiting=f.items.filter(it=>it.travelling);assert(waiting.length>0,'Culling can pause a trip before it is finished');
+  const before=f.items.map(it=>[it.x,it.y]);for(let n=0;n<100;n++)f.step({time:frame++*16.67});
+  assert.deepEqual(f.items.map(it=>[it.x,it.y]),before,'Culled photos consume no physics and remain still');
+  f.setView({x0:0,y0:0,x1:1200,y1:800});assert(!f.settled,'Returning to unfinished photos wakes their own trip');rest();
+  assert(f.items.every(it=>!it.travelling&&Math.hypot(it.x-it.home.x,it.y-it.home.y)<50));
+  const positions=f.items.map(it=>[it.x,it.y]);f.setView({x0:0,y0:0,x1:300,y1:800});f.setView({x0:0,y0:0,x1:1200,y1:800});
+  assert(f.settled);assert.deepEqual(f.items.map(it=>[it.x,it.y]),positions,'Camera moves over a completed arrangement never wake it');
+});
+
+test('an arrangement lands beside a focused group without waiting for its covered homes',()=>{
+  const f=new SeaField(),items=Array.from({length:40},(_,i)=>({id:i+1,x:600,y:400,baseSize:20,tags:['photos'],visual:{colorfulness:(i*37%41)/41,brightness:(i*71%43)/43}}));
+  let frame=0;const send=axes=>f.set({generation:1,width:1200,height:800,calm:true,items,focus:{ids:[1,2,3]},axes});
+  send();for(;frame<400;frame++)f.step({time:frame*16.67});send({reverseY:true});
+  for(let n=0;n<900&&!f.settled;n++)f.step({time:frame++*16.67});
+  assert(f.settled,'A focus can reserve the middle without preventing the rest of the sea from resting');
+  assert(f.items.filter(it=>!it.anchor).every(it=>!it.travelling));
+  const o=f.focusZone;
+  assert(f.items.filter(it=>!it.anchor).every(it=>it.x<=o.x0||it.x>=o.x1||it.y<=o.y0||it.y>=o.y1),'Landed prints leave the focused group clear');
+});
+
+test('equal measurements share their rank band instead of crushing a custom axis into one line',()=>{
+  const f=new SeaField(),items=Array.from({length:80},(_,i)=>({id:i+1,x:600,y:400,baseSize:10,tags:[],measurements:{date:i,ranking:25,faces:Math.floor(i/40)}}));
+  const send=()=>f.set({generation:1,width:1200,height:800,items,axes:{x:'date',y:'ranking'},tuning:{jitter:0}});send();
+  assert(new Set(f.items.map(it=>it.home.y)).size===items.length,'Equal starting ratings do not leave all homes on one line');
+  const positions=f.items.map(it=>({...it.home}));items.reverse();send();
+  for(const it of f.items)assert.deepEqual(it.home,positions[it.id-1],'Tie placement belongs to the photo, not the incoming order');
+  f.set({generation:2,width:1200,height:800,items,axes:{x:'date',y:'faces'},tuning:{jitter:0}});
+  const noFaces=f.items.filter(it=>it.measurements.faces===0),faces=f.items.filter(it=>it.measurements.faces===1);
+  assert(Math.min(...noFaces.map(it=>it.home.y))>Math.max(...faces.map(it=>it.home.y)),'Higher measurements keep their order above a lower tied band');
+});
+
+test('bounded collision samples rotate through every crowded neighbour, including a single full bucket',()=>{
+  const f=field(Array.from({length:80},()=>({x:300,y:300,baseSize:10,tags:[]}))),seen=new Set();
+  for(let frame=0;frame<80;frame++){
+    f.frame=frame;f.index(60,true);let visits=0;f.neighbours(f.items[0],4,other=>{seen.add(other.id);visits++;});
+    assert(visits<=4,'A crowded cell still has bounded work per sample');
+  }
+  assert.equal(seen.size,79,'No pair can remain permanently outside the sampled contacts');
+  const all=[];f.neighbours(f.items[0],Infinity,other=>all.push(other.id));assert.equal(all.length,79,'An exact rest check visits each neighbour once');
+});
+
+test('dense libraries borrow all four margins proportionally without changing saved values',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),{seaTuningDefaults,seaTuningMargins}=require('../matcher/static/sea-tuning.js'),
+    proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype',{seaTuningMargins}),
+    sea=Object.assign(Object.create(proto),{tuning:{...seaTuningDefaults(),marginTop:.2,marginRight:.15,marginBottom:.05,marginLeft:0}}),before=JSON.stringify(sea.tuning);
+  assert.deepEqual({...sea.marginsFor(20,900000)},seaTuningMargins(sea.tuning));
+  const m=sea.marginsFor(4500,900000);
+  assert(m.top>0&&m.top<.2);assert.equal(m.left,0);assert(Math.abs(m.top/m.bottom-4)<1e-9&&Math.abs(m.right/m.bottom-3)<1e-9);
+  const needed=4500*(2*sea.tuning.gap*7)**2/.7;
+  assert(900000*(1-m.left-m.right)*(1-m.top-m.bottom)>=needed,'Sizing and homes share enough open space');
+  assert.equal(JSON.stringify(sea.tuning),before,'The density accommodation is never saved over the owner’s margins');
 });
 
 test('contour cache keys change when equal shores move in opposite directions',()=>{

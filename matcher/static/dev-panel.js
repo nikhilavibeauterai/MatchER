@@ -23,13 +23,13 @@ const DevPanel = {
     const v = this.values();
     const row = (p) => `<label class="dev-row" data-key="${p.key}" title="${esc(p.hint || "")}">
         <span class="dev-label">${esc(p.label)}</span>
-        <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${v[p.key]}" aria-label="${esc(p.label)}">
-        <input type="number" class="dev-num" min="${p.min}" max="${p.max}" step="${p.step}" value="${v[p.key]}" aria-label="${esc(p.label)} value">
-        <button type="button" class="dev-reset" title="Back to the default (${p.value})" aria-label="Reset ${esc(p.label)}">↺</button></label>`;
+        <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${v[p.key]??v[p.inherit]}" aria-label="${esc(p.label)}">
+        <input type="number" class="dev-num" min="${p.min}" max="${p.max}" step="${p.step}" value="${v[p.key]??v[p.inherit]}" aria-label="${esc(p.label)} value">
+        <button type="button" class="dev-reset" title="${p.inherit?'Follow All edge margins':`Back to the default (${p.value})`}" aria-label="Reset ${esc(p.label)}">↺</button></label>`;
     this.el.innerHTML = `<header class="dev-head"><button type="button" class="dev-toggle" aria-label="Collapse or expand the developer panel">DEV</button>
         <span class="dev-stats" aria-live="off"></span></header>
       <div class="dev-body">
-        <p class="dev-note">Live on the sea. Values stay in this browser until Reset. <b>Export</b> copies JSON to the clipboard and downloads it.</p>
+        <p class="dev-note">Live on the sea. Values stay in this browser until Reset. <b>Export</b> copies JSON to the clipboard and downloads it. Margins are fractions (0.04 = 4%); each edge’s ↺ follows All edge margins.</p>
         <div class="dev-actions"><button type="button" class="btn primary" data-dev="export">Export</button><button type="button" class="btn" data-dev="import">Import</button><button type="button" class="btn ghost" data-dev="reset">Reset all</button><button type="button" class="btn ghost" data-dev="settle">Wake sea</button></div>
         ${groups.map(([g, title]) => `<details open class="dev-group" data-group="${g}"><summary>${title}</summary>${SEA_TUNING.filter((p) => p.group === g).map(row).join("")}</details>`).join("")}
         <textarea class="dev-import" hidden rows="6" placeholder='Paste exported JSON, then press Apply' aria-label="Tuning JSON"></textarea>
@@ -39,9 +39,10 @@ const DevPanel = {
     this.el.querySelector(".dev-toggle").onclick = () => this.toggle();
     for (const label of this.el.querySelectorAll(".dev-row")) {
       const key = label.dataset.key, range = label.querySelector("input[type=range]"), num = label.querySelector(".dev-num");
-      const apply = (value) => { const n = Number(value); if (!Number.isFinite(n)) return; range.value = n; num.value = n; this.set(key, n); };
+      const p=SEA_TUNING.find(p=>p.key===key);
+      const apply = (value) => { const n = p.inherit&&(value==null||value==='')?null:Number(value); if(n!==null&&!Number.isFinite(n))return;this.set(key,n);this.refresh(); };
       range.oninput = () => apply(range.value); num.onchange = () => apply(num.value);
-      label.querySelector(".dev-reset").onclick = () => apply(SEA_TUNING.find((p) => p.key === key).value);
+      label.querySelector(".dev-reset").onclick = () => apply(p.value);
     }
     this.el.querySelector("[data-dev=export]").onclick = () => this.export();
     this.el.querySelector("[data-dev=reset]").onclick = () => { this.sea()?.tuneReset(); this.refresh(); toast("Tuning back to the defaults."); };
@@ -56,11 +57,12 @@ const DevPanel = {
     // The panel's own keys never reach the game.
     this.el.addEventListener("keydown", (e) => e.stopPropagation());
     this.el.addEventListener("wheel", (e) => e.stopPropagation());
+    this.refresh();
   },
   set(key, value) { const sea = this.sea(); if (sea) sea.tune({ [key]: value }); },
   refresh() {
     const v = this.values();
-    for (const label of this.el.querySelectorAll(".dev-row")) { const k = label.dataset.key; label.querySelector("input[type=range]").value = v[k]; label.querySelector(".dev-num").value = v[k]; }
+    for (const label of this.el.querySelectorAll(".dev-row")) { const k = label.dataset.key,p=SEA_TUNING.find(p=>p.key===k),value=v[k]??v[p.inherit];label.querySelector("input[type=range]").value=value;label.querySelector(".dev-num").value=value;label.classList.toggle('inherited',!!p.inherit&&v[k]==null); }
   },
   stats() {
     const sea = this.sea(), out = this.el?.querySelector(".dev-stats"); if (!out) return;

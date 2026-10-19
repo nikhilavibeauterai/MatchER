@@ -57,7 +57,7 @@ Everything they create (data dirs, server logs, results, screenshots in `shots/`
 | sea_motion | actual wheel and drag gestures on a stack and a single: the same visible photo, crop, enhancement, opacity, shadow and paper persist during movement; deep zoom holds its angle without a low-resolution animation surface, focused controls follow the camera without rebuilding, and overview photo and water drags keep the same appearance |
 | sea_waves | drifting, deforming pocket currents across live paper, GPU sprites and the canvas fallback; geography stays fixed, stacks move together, pointer targets track the displayed paper, hover pauses the clock, close-ups and reduced motion stay still, textures and instance buffers are reused, and switching waves off restores sleep |
 | sea_splotches | local palettes preserve sampled dark purples amongst shadows and highlights, even with warm photos in the same group; tucked takes have less influence than the cover and distant photos cannot bleach the local tint; colour fills the entire sea without a separate background, even during camera movement and without groups, and shares the foam motion without rebuilding fields or uploading textures |
-| sea_axes | independent X/Y measurement choices, direction switches, save/reload, unchanged photos and votes, menu access, phone layout, date jump and reset |
+| sea_axes | independent X/Y measurement choices, explicit top/bottom directions, save/reload, unchanged photos and votes, menu access, phone layout, date jump and reset; 600 public-fixture prints finish reversals and rapid axis changes with the correct brightness/date order and no intersecting papers at rest |
 | paper_layout | desktop/phone map, Groups, Stacks, Leaderboard and duels; floating tools do not cover actions or the chart key, group rosters and stats stay on their paper, and help matches its screen |
 | stack_clip | the shared metal paperclip and handwritten count slip stay above the picture window, survive camera gestures, pull up every take with one click or Enter from the sea and focused notes layer without selecting, panning or editing, return the pile on Escape, open stack tiles on desktop and mobile, fit four-digit counts and never appear on singles |
 | sea_originals | actual decoded and displayed original pixels, including two-pixel fine detail, against a visible screen-space reference at DPR 1/2, with and without an initial hover; fractional sizes at the exact 80% threshold, recovery after repeated failures without another gesture, one pending upgrade through camera changes, retained visible preview during loading, detailed partial-photo zoom and stale-response rejection after zooming out |
@@ -99,8 +99,9 @@ qualifier changes and match deferral without invented winners or votes.
 
 `sea_map` reproduces a 1,879-photo / 755-shot map with heavily shared tags learned after arrival. It checks that
 photos occupy the open centre, settle and stay put, and retain every take.
-`dev_panel` checks debug mode on the bundled sample: the panel on every screen, a knob reaching the worker and
-surviving a reload, Export's JSON, Reset and collapse, and `?debug=0` forgetting it.
+`dev_panel` checks debug mode on the bundled sample: the panel on every screen, independent top/right/bottom/left
+margins reaching layout, inherited shared margins from older tuning, zero values, individual resets, reload,
+Export's JSON, Reset and collapse, and `?debug=0` forgetting it.
 `sea_camera` checks the calm, explorable sea on public fixtures: a settled field that stays put, colour running
 left to right and brightness bottom to top, wheel zoom about the pointer, panning by dragging open water, the
 double-click reset, a dragged print leaving far prints alone, and comparisons showing the whole sea at rest.

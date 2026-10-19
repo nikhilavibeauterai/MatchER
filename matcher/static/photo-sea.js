@@ -1066,8 +1066,8 @@ class VennSea extends PhotoSea {
     // footprints fit the water inside the edge margin (a small library of big prints keeps its geography).
     // The edge margin gives way, only as far as needed, when the library is too big to fit inside it at a
     // readable print size (seven pixels), so five thousand prints spread across the water instead of piling up.
-    const T=this.tuning;this.marginEff=this.marginFor(count,area);
-    const inner=area*Math.max(.25,1-2*this.marginEff)**2;
+    const T=this.tuning;this.marginEff=this.marginsFor(count,area);
+    const m=this.marginEff,inner=area*Math.max(.1,1-m.left-m.right)*Math.max(.1,1-m.top-m.bottom);
     // Footprints may fill about 70% of that water: packed edge to edge, every drop would shove the whole sea.
     const share=Math.sqrt(area*T.sizeShare/Math.max(1,count))/T.sizeDivisor,fits=Math.sqrt(inner*.7/Math.max(1,count))/(2*(T.gap||.74));
     const before=this.s;this.s=Math.max(2,Math.min(T.sizeMax,room/2,share,fits));
@@ -1100,8 +1100,15 @@ class VennSea extends PhotoSea {
     this.ready=true;this.kick();
   }
   // Analysis discoveries use the same settling as the world; other embedded seas can choose their motion.
-  bounds(){return {width:this.width||this.el.clientWidth,height:this.height||this.el.clientHeight,water:this.water,calm:this.calm,margin:this.marginEff??this.tuning?.margin,obstacles:this.el.id==='world'?[]:[...(this.obstacles||[]),...(this.catalogRect?[this.catalogRect]:[])]};}
-  marginFor(count,area){const T=this.tuning,base=T.margin||0,needed=count*(2*(T.gap||.74)*7)**2/.7;return Math.max(.02,Math.min(base,(1-Math.sqrt(Math.min(1,needed/Math.max(1,area))))/2));}
+  bounds(){return {width:this.width||this.el.clientWidth,height:this.height||this.el.clientHeight,water:this.water,calm:this.calm,margins:this.marginEff??seaTuningMargins(this.tuning),obstacles:this.el.id==='world'?[]:[...(this.obstacles||[]),...(this.catalogRect?[this.catalogRect]:[])]};}
+  marginsFor(count,area){
+    const T=this.tuning,m=seaTuningMargins(T),x=m.left+m.right,y=m.top+m.bottom,needed=Math.min(1,count*(2*(T.gap||.74)*7)**2/.7/Math.max(1,area));
+    // A dense library can borrow margin to keep its prints readable. Scale every edge together so an
+    // asymmetric tuning retains its balance; a deliberately empty margin stays empty.
+    if((1-x)*(1-y)>=needed)return m;
+    let lo=0,hi=1;for(let i=0;i<16;i++){const k=(lo+hi)/2;if((1-x*k)*(1-y*k)>=needed)lo=k;else hi=k;}
+    for(const edge of Object.keys(m))m[edge]*=lo;return m;
+  }
   labelOf(it){const actual=it.group!=null?`g${it.group}`:null;return actual&&this.lassos.has(actual)&&!String(it.group).startsWith('cup:')?actual:it.cluster||null;}
   stir(){this.kick();}
   setOutcomeFlow(flow){
