@@ -62,6 +62,9 @@ afterward, the game runs offline. Your photos, face data and choices stay on you
 
 Keep what catches your eye, set aside what doesn't, and teach the filter with Love and Hate. Crown one take
 from each stack. Give the contenders a home, play their groups and follow the bracket to your winners.
+In **Quick sort** and **Find more**, scroll or pinch over the dealt photo to zoom, then drag to pan around its
+detail. Double-click to reset. At the normal size, drag the photo into a group as usual; the next take starts at
+the normal size too. Zooming never files or sets aside a photo.
 There are no required voting marathons: move on when you're ready, skip a hard choice, and return later.
 Every folder has its own saved progress, trophies and leaderboard.
 The save picker notices when you plug in or unplug a drive. Disconnected saves stay on the list and become

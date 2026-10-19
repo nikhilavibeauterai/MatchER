@@ -228,7 +228,7 @@ class PhotoSea {
     this.densityDirty=true;this.paintSoon();
     // Zoomed in until one print fills the view, the sea is a picture: physics and wobble stop, the chrome hides
     // (the wheel and a drag still work), everything returns on the way out.
-    const deep=z>=3&&this.cameraOn&&this.oneInView(W,H);
+    const deep=z>=3&&this.cameraOn&&!this.externalFocus?.isConnected&&this.oneInView(W,H);
     if(deep!==!!this.deep){this.deep=deep;if(this.el.id==='world')document.body.classList.toggle('sea-deep',deep);this.el.dataset.deep=deep?'1':'';
       if(deep){for(const it of this.moving)this.stillCard(it);this.deepSource();}else{this.resumeCards(true);this.kick();}}
     this.worker?.postMessage({kind:'view',rect:z===1?null:{x0:-c.tx/z,y0:-c.ty/z,x1:(W-c.tx)/z,y1:(H-c.ty)/z}});  // physics only for what is on screen
@@ -313,6 +313,7 @@ class PhotoSea {
   // Scrollable panels, controls and prints keep their own wheel and clicks; only open water takes the camera.
   uiTarget(target,overPrints=false){
     if(!target||!(target instanceof Element))return false;
+    if(this.externalFocus?.contains(target))return !overPrints||!!target.closest('button,a,input,select,textarea,.photo-notes-paper,.photo-sticky,.user-note,.twin-ask');
     if(overPrints&&target.closest('.ps-item')&&!target.closest('.inspect,dialog'))return false;
     if(target.closest('button,a,input,select,textarea,dialog,.side,.tile,.pop-card,.screen-head,.screen-bar,.screen-rail,.vn-catalog,[data-solid],.ps-item,.inspect,.menu-list,.gt-rows,.bins,.sections,.lookgrid,.filter-review-controls,.filter-catalogue,.filter-line,.filter-boundary,.filter-spotlight'))return true;
     for(let el=target;el&&el!==document.body;el=el.parentElement){const o=getComputedStyle(el).overflowY;if((o==='auto'||o==='scroll')&&el.scrollHeight>el.clientHeight+1)return true;}
@@ -588,6 +589,7 @@ class VennSea extends PhotoSea {
       if(e.type==='pointerup'||e.type==='pointercancel'){this.pinch(e);this.panEnd(e);return;}
       if(this.pinch(e))return;
       if(e.type==='pointermove'&&this.panMove(e))return;
+      if(this.externalFocus?.contains(e.target))return;
       if(inside){if(!world&&this.cameraOn&&e.type==='pointerdown'&&!this.drag&&!this.uiTarget(e.target))this.panStart(e);return;}
       if(e.target.closest('button,a,input,select,textarea,dialog,.side,.tile,.pop-card,.screen-head,.screen-bar,.screen-rail,.vn-catalog,[data-solid]'))return;
       const [x,y]=this.localWorld(e);if((this.obstacles||[]).some(o=>x>o.x0&&x<o.x1&&y>o.y0&&y<o.y1))return;

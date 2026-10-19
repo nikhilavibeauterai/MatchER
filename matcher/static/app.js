@@ -4435,6 +4435,56 @@ async function drawUndo(after) {
   finally { drawUndoing = false; }
 }
 
+// A dealt print stays on the shared sea camera. The deck carries its paper, notes and underprints together;
+// the group list stays on screen, and a close-up drag pans instead of making a filing decision.
+function draftPhotoCamera(card) {
+  World.draftCamera?.close();
+  if(!card||!World.sea)return;
+  const sea=World.sea,deck=card.closest('.deck'),print=$('.print',card),img=$('img',print),events=new AbortController(),{signal}=events,viewSignal=S.events.signal;
+  const controls='button,a,input,textarea,select,.photo-notes-paper,.photo-sticky,.user-note,.twin-ask';
+  let base,sourceTimer,pending=null,wanted=img.getAttribute('src'),closed=false;
+  sea.enableCamera(true);sea.hold(null);sea.externalFocus=card;deck.classList.add('camera-deck');
+  base=deck.getBoundingClientRect();
+  const item={el:card,size:print.getBoundingClientRect().width};
+  const cancelCarry=()=>{if(card.classList.contains('held'))card.dispatchEvent(new Event('pointercancel'));};
+  const load=()=>{
+    if(closed||pending||img.getAttribute('src')===wanted)return;
+    const source=wanted,next=new Image();pending=next;next.src=source;
+    next.decode().then(()=>{if(!closed&&source===wanted){img.src=source;photoSampling(img,sea.camera.zoom);}}).catch(()=>{/* Keep the last decoded picture; the next gesture can retry. */}).finally(()=>{
+      if(pending===next)pending=null;if(!closed&&source!==wanted)load();
+    });
+  };
+  const paint=()=>{
+    if(closed||!card.isConnected)return;
+    cancelCarry();
+    const c=sea.camera,r=sea.el.getBoundingClientRect(),x=c.tx+(base.left-r.left)*(c.zoom-1),y=c.ty+(base.top-r.top)*(c.zoom-1);
+    deck.style.transform=c.zoom===1?'':`translate(${x}px,${y}px) scale(${c.zoom})`;
+    deck.classList.toggle('zoomed',c.zoom>1.001);card.dataset.cameraZoom=String(c.zoom);photoSampling(img,c.zoom);
+    if(c.zoom>1.001)sea.stillCard(item);else sea.resumeCards(true);
+    clearTimeout(sourceTimer);sourceTimer=setTimeout(()=>{
+      if(closed)return;const r=print.getBoundingClientRect(),picture=img.getBoundingClientRect();
+      wanted=M(Number(card.dataset.photo),Math.max(picture.width,picture.height),r.height>=innerHeight*.8);load();
+    },120);
+  };
+  const pointer=e=>{
+    if(Toolbelt.tool!=='hand'||e.target.closest(controls))return;
+    const pinching=sea.pinch(e);
+    if(pinching||e.pointerType==='touch'&&sea.touches.size>1){cancelCarry();e.preventDefault();e.stopImmediatePropagation();return;}
+    if(e.type==='pointerdown'&&sea.camera.zoom>1.001&&!e.button){cancelCarry();sea.panStart(e);e.stopImmediatePropagation();}
+  };
+  for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])card.addEventListener(type,pointer,{capture:true,signal});
+  card.addEventListener('dblclick',e=>{if(Toolbelt.tool==='hand'&&!e.target.closest(controls)){e.preventDefault();e.stopPropagation();sea.resetCamera();}},{signal});
+  window.addEventListener('sea-camera',e=>{if(e.detail.sea===sea)paint();},{signal});
+  window.addEventListener('resize',()=>{sea.resetCamera();base=deck.getBoundingClientRect();item.size=print.getBoundingClientRect().width;},{signal});
+  const focus=World.draftCamera={card,close(){
+    if(closed)return;closed=true;cancelCarry();events.abort();viewSignal.removeEventListener('abort',focus.close);clearTimeout(sourceTimer);
+    if(pending)pending.src='';deck.style.transform='';deck.classList.remove('camera-deck','zoomed');
+    if(sea.externalFocus===card)sea.externalFocus=null;sea.panEnd();sea.touches.clear();sea.resumeCards(true);sea.resetCamera();
+    if(World.draftCamera===focus)World.draftCamera=null;
+  }};
+  viewSignal.addEventListener('abort',focus.close,{once:true});paint();
+}
+
 // A card you can fling or carry: let go over a group bin and it drops there; otherwise a fling past a third of its
 // width counts (right / left), or up when `up` is given.
 function carryable(el, { right, left, up, drop }) {
@@ -5626,6 +5676,7 @@ async function drawPlay(main, tid) {
   function done() { location.hash = `#draw?g=${tid}`; }
   function showCard() {
     if (left(view)) return;
+    draftPhotoCamera(null);
     const box = $("#ddeck");
     if (!box) return;
     if (deck.bulk.length) {
@@ -5670,6 +5721,7 @@ async function drawPlay(main, tid) {
       "Every photo gets a group: → or Enter for this one, ← to pick another (or its key, or a drag), N for a new one. Esc opens the pause menu.");
     paintBins();
     paintFilters();
+    draftPhotoCamera($('#dtop',main));
     shownAt = playTime();
   }
   let pcur = 0;
@@ -5909,6 +5961,7 @@ async function drawQuickSort(main) {
   }
   function paintCard(selected) {
     const c = cards[0];
+    draftPhotoCamera(null);
     World.calm(false); setForward(null);
     if (!c) {
       main.innerHTML = `
@@ -5968,6 +6021,7 @@ async function drawQuickSort(main) {
     sortableBins($("#bins", main), bins.map((b) => b.id), (ids) => { bins.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)); paint(); });
     paintCursor();
     paintFilters();
+    draftPhotoCamera($('#dtop',main));
   }
   async function skip() {
     if (busy || !cards[0]) return;
@@ -6555,6 +6609,7 @@ const World = {
   // ambient: the sea is the map; focus: a screen is showing you photos; dim: a page of its own. In every mode the sea's
   // photos continue behind its translucent controls.
   setMode(mode) {
+    this.draftCamera?.close();
     if (this.handlers && mode !== "live") {  // the Groups page let go of the sea: back to the plain world
       this.handlers = null;
       Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null, onSelectMatches:null }, this.plain);

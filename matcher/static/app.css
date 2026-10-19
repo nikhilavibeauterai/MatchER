@@ -1934,6 +1934,8 @@ code.path { word-break: normal; overflow-wrap: anywhere; }
 .bins .bin { min-width: 0; }
 /* One focus scale: the Quick sort print matches a duel print instead of filling the whole screen. */
 .draw-play .screen-body > .deck { max-height: min(66vh, 720px); margin: auto 0; }
+.draw-play .camera-deck { transform-origin:0 0;touch-action:none; }
+body.sea-panning .camera-deck .swipe-card.top { cursor:grabbing; }
 .swipe-card .stamp.toss { font-size: 22px; }
 @media (max-width: 760px) {
   .action-bar .dpad, .action-bar .tools { display: contents; }
