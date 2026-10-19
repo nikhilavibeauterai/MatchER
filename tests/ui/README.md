@@ -10,6 +10,10 @@ server on its own data dir. They only ever use the public-domain test libraries 
 Everything they create (data dirs, server logs, results, screenshots in `shots/`) lives in `$MATCHER_UI_TMP`
 (default `/tmp/matcher-ui`). A suite fails if it exits non-zero or its result lists `problems` (page or console errors).
 
+`tests/ui/setup.sh --sample-only` prepares the bundled public sample and browser dependencies without fetching
+the larger Commons libraries. The release workflow uses it in a fresh temporary directory for its seven
+campaign, editing, storage and performance suites. The full suite also needs the default setup's portrait library.
+
 Documentation captures use a separate collection of 320 distinct public-domain photographs. Prepare it with
 `tests/ui/setup.sh --showcase`, then run `tests/ui/run.sh docs_screenshots`.
 See the [credits and capture instructions](../../docs/images/README.md). `MATCHER_UI_REUSE=1` preserves this suite's
