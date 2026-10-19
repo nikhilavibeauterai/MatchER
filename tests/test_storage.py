@@ -37,6 +37,7 @@ def test_disconnected_saves_survive_startup_and_follow_reconnection(tmp_path, mo
 def test_browser_shortcuts_and_current_folder_follow_media(tmp_path, monkeypatch):
     monkeypatch.setattr(server.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(server.sys, "platform", "linux")
+    monkeypatch.setattr(server.os, "getuid", lambda: 1000, raising=False)
     monkeypatch.setattr(server.Path, "glob", lambda *a: [])  # No real phone mounts in this test.
     roots = []
     monkeypatch.setattr(server, "mounted_folders", lambda: list(roots))

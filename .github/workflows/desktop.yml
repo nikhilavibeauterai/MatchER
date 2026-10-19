@@ -74,6 +74,24 @@ jobs:
           npm ci --prefix desktop
           npm ci --prefix tests/ui
           npm test --prefix desktop
+      - name: Browser release checks
+        if: runner.os == 'Linux'
+        env:
+          MATCHER_UI_TMP: ${{ runner.temp }}/matcher-ui
+          MATCHER_MODELS: ${{ runner.temp }}/matcher-ui/models
+        run: |
+          tests/ui/setup.sh
+          tests/ui/run_all.sh experience_flow storage_media stacks_layout group_zoom auto_look photo_notes_camera performance
+      - name: Save browser results
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Browser-release-checks
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/matcher-ui/*_result.json
+            ${{ runner.temp }}/matcher-ui/shots/*.png
       - name: Build installers
         run: npm run dist --prefix desktop
         env:

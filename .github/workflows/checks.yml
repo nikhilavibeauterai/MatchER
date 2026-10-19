@@ -34,6 +34,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
       - name: Linux native libraries
         if: runner.os == 'Linux'
         run: |
@@ -46,4 +48,8 @@ jobs:
       - name: Python and browser-engine logic
         run: python -m pytest -q
       - name: Desktop logic
-        run: node --test desktop/test/*.test.cjs
+        run: |
+          npm ci --prefix desktop
+          npm test --prefix desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'

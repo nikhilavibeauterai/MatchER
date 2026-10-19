@@ -77,7 +77,7 @@ def test_linux_media_roots_come_from_mount_metadata(monkeypatch):
 incomplete
 """
     def read(path):
-        assert str(path) == "/proc/self/mountinfo"
+        assert path.as_posix() == "/proc/self/mountinfo"
         return lines
     monkeypatch.setattr(platforms.Path, "read_text", read)
     assert platforms.mounted_folders() == ["/media/test/Photo card", "/mnt/archive", "/run/media/test/0123-4567"]

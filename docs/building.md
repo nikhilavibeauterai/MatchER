@@ -55,7 +55,9 @@ and a display (Linux CI supplies Xvfb). It checks the preload, isolated renderer
 2. Run the Python, JS and relevant browser suites. Keep test photos public domain and data directories disposable.
 3. Push a `v<version>` tag or dispatch **Desktop release**. CI builds and smoke-tests on both operating systems.
    Its artifacts include installers and SHA-256 checksums. Tagged builds create a **draft** release only after
-   both platforms pass; a maintainer reviews the results before publishing.
+   both platforms pass, including Linux browser checks of the journey, editing, media changes and large libraries;
+   a maintainer reviews the results before publishing. A dispatch without **Create a draft preview release**
+   validates the current source without publishing or tagging it.
 4. Download and manually install each package, check first launch, choosing a Unicode folder, sample analysis,
    export, quit and reopening the saved game. Check the Windows install/uninstall flow and a clean Linux desktop.
 5. Publish the draft with honest preview notes, minimum OS versions and any remaining limitations.
@@ -77,6 +79,9 @@ uv pip compile --universal --python-version 3.13 --generate-hashes packaging/req
 
 Review changes and run both native builds; a Linux-only install is not proof that Windows works.
 Electron's npm lock is committed, and `npm ci` verifies registry integrity values.
+The `global-agent` override removes an obsolete logging dependency from the builder's downloader;
+the desktop tests verify that its HTTP proxy support still works. Run `npm audit --prefix desktop`
+when changing this lock.
 
 Python wheels and source distributions include the static UI, fonts and public demo. Inspect package contents
 before release. Private data directories, model caches, local captures and planning transcripts must remain excluded.
