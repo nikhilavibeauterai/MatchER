@@ -8,7 +8,7 @@ TMP="${MATCHER_UI_TMP:-${TMPDIR:-/tmp}/matcher-ui}"
 t="${1:?Usage: tests/ui/run.sh <suite> [library]}"; lib="${2:-}"
 [[ "$t" =~ ^[a-z0-9_]+$ && -f "$HERE/suites/$t.js" ]] || { echo "Unknown browser suite: $t" >&2; exit 2; }
 if [ -z "$lib" ]; then  # the "photos of me" suites play on the me-photos library, the rest on the gallery samples
-  case "$t" in me_e2e|analysis_peek|toggles_peek|an_mid|details_peek) lib="$TMP/work/me-photos" ;; filter_stage|filter_crossing|sea_geography) lib="$TMP/work/geography-photos" ;; *) lib="$TMP/work/sample-photos" ;; esac
+  case "$t" in me_e2e|analysis_peek|toggles_peek|an_mid|details_peek) lib="$TMP/work/me-photos" ;; filter_stage|filter_teaching|filter_bias|filter_crossing|sea_geography) lib="$TMP/work/geography-photos" ;; *) lib="$TMP/work/sample-photos" ;; esac
 fi
 mkdir -p "$TMP/shots"; rm -rf "$TMP/data-$t"; mkdir -p "$TMP/data-$t"
 cd "$ROOT"

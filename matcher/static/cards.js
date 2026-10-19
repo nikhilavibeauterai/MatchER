@@ -71,6 +71,7 @@ const Cards = {
     span.className = "polaroid";
     img.replaceWith(span);
     span.append(img);
+    img.dataset.box??='null';queueMicrotask(()=>frameTileImage(img));
   },
   // Every focused picture gets the same paper and clipped window, including the large Stacks viewer, Tag check,
   // the inspector and the sorting games. Their marks and sticky notes stay on the outer card.

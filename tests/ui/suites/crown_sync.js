@@ -48,6 +48,13 @@ let page;const problems=[],res={};
   const imageId=img=>Number(new URL(img.getAttribute('src'),location.href).pathname.match(/\/(\d+)\.jpg$/)[1]);
   const cover=async(rep,kind)=>{
     await go(kind==='stacks'?'stacks':'draw',kind==='stacks'?'.stacker':'.sorter:not(.sea-view)');
+    if(kind==='stacks'){
+      await page.waitForFunction(()=>World.sea.arrangement&&World.sea.settled);
+      const tile=page.locator(`.stack-field .ps-item[data-id="${rep}"]`);assert.equal(await tile.locator('.pile-cover').evaluate(imageId),rep);
+      await tile.locator('.stack-clip').click();await page.mouse.move(5,180);await page.waitForFunction(()=>World.sea.el.dataset.stackFan&&World.sea.settled&&!World.sea.cameraGlide);
+      assert.deepEqual((await page.locator('.stack-fan-take').evaluateAll(es=>es.map(e=>Number(e.dataset.photo)))).sort((a,b)=>a-b),[...target.members].sort((a,b)=>a-b));
+      await page.screenshot({path:`${OUT}/R-crown-${kind}-${rep}.png`});return;
+    }
     const selector=kind==='stacks'?`[data-drag-shot="${rep}"]`:`[data-sel="${rep}"]`;
     const tile=page.locator(`.tile${selector}`);await tile.waitFor();
     assert.equal(await tile.locator('.shot-select > .pile-cover').evaluate(imageId),rep);
@@ -63,6 +70,13 @@ let page;const problems=[],res={};
   assert(duplicate,'The fixture also has a duplicate-only stack');
   for(const kind of ['stacks','groups']){
     await go(kind==='stacks'?'stacks':'draw',kind==='stacks'?'.stacker':'.sorter:not(.sea-view)');
+    if(kind==='stacks'){
+      await page.waitForFunction(()=>World.sea.arrangement&&World.sea.settled);
+      await page.locator(`.stack-field [data-open-stack="${duplicate.rep}"]`).click();
+      await page.mouse.move(5,180);
+      await page.waitForFunction(()=>World.sea.el.dataset.stackFan&&World.sea.settled);
+      assert.equal(await page.locator('.stack-tools .crown-btn').count(),0,'Identical takes do not offer an unusable Crown match');continue;
+    }
     await page.locator(`[data-expand="${duplicate.rep}"]`).click();await page.waitForSelector('.tile.open .photo-fan');
     assert.equal(await page.locator('.tile.open .crown-btn').count(),0,'Identical takes do not offer an unusable Crown match');
   }

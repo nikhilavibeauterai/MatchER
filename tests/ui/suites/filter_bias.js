@@ -41,7 +41,7 @@ let page;const problems=[],result={};
   await menuAction('filter-catalogue');await page.waitForSelector(`[data-review-photo="${source}"]`);await page.click(`[data-review-photo="${source}"]`);await ready();
   assert.equal(await photo(),source);await verifyScores(baseline);assert.equal(await page.locator('.filter-round-progress,.filter-round-done').count(),0);
   const learned=[];
-  for(const [key,direction,sign] of [['ArrowUp','toward',1],['s','away',-1]]){
+  for(const [key,direction,sign] of [['ArrowUp','toward',1],['ArrowDown','away',-1]]){
     const response=nextPreview(),tune=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/filter/tune');
     await press(key);const call=await(await tune).json(),preview=await(await response).json();await ready();
     assert.notEqual(await photo(),source,'Love and Hate decide the take: the next one comes to the table');

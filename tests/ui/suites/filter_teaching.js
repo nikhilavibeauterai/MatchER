@@ -52,7 +52,7 @@ let page;const problems=[],result={};
 
   // Teaching decides the focused take (it leaves for its side and the next one comes) and undoes both the call and its wider lesson.
   const teaching=[];
-  for(const [key,direction] of [['ArrowUp','toward'],['w','toward'],['ArrowDown','away'],['s','away']]){
+  for(const [key,direction] of [['ArrowUp','toward'],['ArrowDown','away']]){
     const id=await photo(),before=(await api(`/api/filter?photo=${id}`)).photos[0];
     const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/filter/tune');
     await press(key);const reply=await response,body=reply.request().postDataJSON(),data=await reply.json();
@@ -131,7 +131,7 @@ let page;const problems=[],result={};
   }
   page.off('request',recordWrite);result.previewFailures=previewFailures;
   const laterPreview=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/filter/preview'&&response.request().method()==='POST');
-  await press('w');const later=await(await laterPreview).json();await ready();assert(later.scores[peer]>cohortBefore.scores[peer]+.01);
+  await press('ArrowUp');const later=await(await laterPreview).json();await ready();assert(later.scores[peer]>cohortBefore.scores[peer]+.01);
   assert.notEqual(await photo(),quickId,'Love decides the take and brings the next one');await press('z');await page.waitForFunction(()=>document.querySelector('#filter-status')?.textContent==='Undone');await ready();
 
   // A failed read after Undo must not lose the already-undone question.
@@ -164,7 +164,7 @@ let page;const problems=[],result={};
   for(let i=0;i<8;i++){const id=await photo();visited.push(id);await press('Space');await advanced(id);await ready();assert.equal(await page.locator('.filter-round-done').count(),0);}
   assert(new Set(visited).size>6,`Play continues beyond an internal batch without a round screen: ${visited}`);
   const last=await photo(),beforeLast=(await api(`/api/filter?photo=${last}`)).photos[0];
-  await press('d');await advanced(last);await ready();await press('z');
+  await press('ArrowRight');await advanced(last);await ready();await press('z');
   await page.waitForFunction(id=>Number(document.querySelector('.filter-shot')?.dataset.photo)===id&&document.querySelector('#filter-status')?.textContent==='Undone',last);await ready();
   assert.equal((await api(`/api/filter?photo=${last}`)).photos[0].override,beforeLast.override);
   await shotSave('FT-continuous-phone');
@@ -178,7 +178,7 @@ let page;const problems=[],result={};
   const proposeNow=async()=>{
     beforeProposal=(await api('/api/filter/learn',{policy:initial.policy})).learning;
     propose=true;const id=await photo(),reply=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/filter/preview'&&r.request().method()==='POST');
-    await press('w');const preview=await(await reply).json();await ready();assert.notEqual(await photo(),id,'Love decides the take and brings the next one');await previewReady();
+    await press('ArrowUp');const preview=await(await reply).json();await ready();assert.notEqual(await photo(),id,'Love decides the take and brings the next one');await previewReady();
     assert(preview.counts.changed>0);assert.equal(preview.policy.min_pixels,10000);await flow(preview.ids);
     assert.equal((await api('/api/filter?per=1')).policy.min_pixels,initial.policy.min_pixels,'Learning only previews broad effects');
     return preview;
@@ -233,7 +233,7 @@ let page;const problems=[],result={};
   // A committed decision remains undoable even if the subsequent summary request fails.
   const committed=await photo(),before=(await api(`/api/filter?photo=${committed}`)).photos[0];
   await page.route(url=>url.pathname==='/api/filter'&&url.search==='?per=24',route=>route.fulfill({status:503,json:{error:'Fixture refresh failure'}}),{times:1});
-  await press(before.override==='toss'?'d':'a');await advanced(committed);await ready();
+  await press(before.override==='toss'?'ArrowRight':'ArrowLeft');await advanced(committed);await ready();
   assert.equal((await api(`/api/filter?photo=${committed}`)).photos[0].override,before.override==='toss'?'keep':'toss');
   await press('z');await page.waitForFunction(id=>Number(document.querySelector('.filter-shot')?.dataset.photo)===id&&document.querySelector('#filter-status')?.textContent==='Undone',committed);await ready();
   assert.equal((await api(`/api/filter?photo=${committed}`)).photos[0].override,before.override);

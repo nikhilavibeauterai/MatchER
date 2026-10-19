@@ -1,0 +1,30 @@
+.stack-stage { position:relative;z-index:6;height:100%;pointer-events:none; }
+.stack-toolbar { position:absolute;left:18px;right:18px;top:42px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;pointer-events:none; }
+.stack-toolbar > * { pointer-events:auto; }
+.stack-closeup :is(.stack-toolbar,.stack-bottom) { visibility:hidden; }
+.stack-census { font:19px var(--hand);color:var(--ink);padding:6px 12px;background:#f6f0e6dd;border-radius:8px; }
+.stack-toolbar .help-btn { display:none; }
+.stack-tools { position:absolute;bottom:62px;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;max-width:calc(100vw - 32px);width:max-content;padding:10px 14px;background:var(--paper);color:var(--ink);box-shadow:0 6px 24px #0003;border-radius:6px;pointer-events:auto; }
+.stack-tools[hidden] { display:none; }
+.stack-tools > span { font:18px var(--hand);margin-right:8px; }
+.stack-bottom { position:absolute;left:18px;right:58px;bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;pointer-events:none; }
+.stack-bottom > a { pointer-events:auto; }
+.stack-bottom > span { font:17px var(--hand);color:var(--ink);padding:6px 10px;background:#f6f0e6dd;border-radius:8px; }
+.stack-empty { position:absolute;top:45%;left:50%;transform:translateX(-50%);max-width:85%;padding:20px;background:var(--paper);color:var(--ink);border-radius:6px;text-align:center; }
+.stack-field.stack-fan-open .ps-item:not(.stack-fan-take) { opacity:.36; }
+.stack-field .stack-fan-take { z-index:20000!important; }
+#world.stack-field .stack-fan-take .under { display:none; }
+.stack-field .stack-fan-take > .copy-path { position:absolute;right:3%;bottom:2%;z-index:15;font-size:0;width:16cqw;height:13cqw;min-height:0;padding:0;opacity:0; }
+.stack-field .stack-fan-take > .copy-path::before { content:'⧉';font-size:9cqw; }
+.stack-field .stack-fan-take:is(:hover,:focus-within) > .copy-path { opacity:1; }
+@media(max-width:600px){
+  .stack-toolbar { left:8px;right:8px;top:36px;gap:6px; }
+  .stack-toolbar .btn,.stack-toolbar .chip,.stack-toolbar .seg-btn { min-height:36px;padding:6px 9px; }
+  .stack-census { font-size:16px;padding:4px 6px; }
+  .stack-dates { flex-basis:100%;display:flex;justify-content:center; }
+  .stack-tools { bottom:58px;padding:8px;gap:5px; }
+  .stack-tools .btn { min-height:36px;padding:5px 8px;font-size:13px; }
+  .stack-tools > span { flex-basis:100%;text-align:center;font-size:16px; }
+  .stack-bottom { left:8px;right:48px;bottom:12px;gap:5px; }
+  .stack-bottom > span { font-size:14px;padding:4px 6px; }
+}

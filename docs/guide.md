@@ -64,8 +64,8 @@ screens use it too). **Enter** presses it. **Home** is the open sea. The menu ho
 board, leaderboard, Rescue, Tag lab, Open arena and its 60-second challenge, plus People in profile mode.
 
 1. 🎛️ **Filter**: play for as long as you want, then press **Enter** to continue to Stacks.
-   The D-pad has **← / A / X** Toss on the left, **→ / D** Keep on the right, **↑ / W** Love above,
-   **↓ / S** Hate below, and **Space** Skip in the middle. Keep/Toss changes only that take.
+   The D-pad has **← / X** Toss on the left, **→** Keep on the right, **↑** Love above,
+   **↓** Hate below, and **Space** Skip in the middle. Keep/Toss changes only that take.
    Love keeps that take and teaches the filter to keep its kin; Hate sets it aside and teaches the filter to set
    aside its kin. You can also throw any print across the line in the sea: right of it keeps, left of it tosses. Related changes appear in
    a **preview**. **Z** reverses both parts of a teaching call.
@@ -88,14 +88,15 @@ board, leaderboard, Rescue, Tag lab, Open arena and its 60-second challenge, plu
 2. 🧩 **Stacks**: the same picture (a crop, a copy) or a burst of nearly the same shot belongs in one stack,
    so it competes as one. The obvious ones are stacked already; the **Twin check** minigame shows the pairs
    that look like the same shot but weren't stacked (`→` same shot, `←` different). The Stacks page shows
-   loose photos alongside every stack as a pile of actual prints, each slightly offset and rotated. **Stacks only**
-   hides the loose photos and remembers your preference. Choose **By date** for day headings and a **Jump to**
-   picker grouped by month. The picker follows the date you are scrolling through; its arrows jump to the
-   previous or next date. Any date loads directly, including **No date**, and scrolling upward from a jump brings
-   earlier photos back into view.
-   Open a stack to fan out its takes, keep a different take, split one out or split it all; drag one onto another
-   to merge, and drag past the top or bottom of the list to scroll it. **X** (or the open stack's Set aside button)
-   sets a whole stack aside with every take. **Similar** puts look-alike stacks together.
+   loose photos alongside every stack in the same sea. **Similar** arranges look-alike stacks together;
+   **By date** orders the field chronologically. **Jump to** and its arrows move the camera to any capture date,
+   including **No date**. Wheel or pinch to zoom and drag open water to pan; **Overview** fits everything again.
+   **Stacks only** hides loose photos and remembers your preference.
+   The paperclip opens a stack’s actual takes into a fan in place. Click a take to bring it closer, choose
+   **Use this take**, play **Crown this stack**, split it out or split all the takes apart. Drag one photo or stack onto another to combine
+   them; an individual take in an open fan can be moved into another stack. Right-click for the photo’s notes.
+   **X** sets the selected stack aside with every take, and **Z** undoes. Photos keep their paper, writing,
+   stickies and progressive image resolution throughout; there is no second thumbnail catalogue.
 3. 👑 **Crown**: each stack's takes duel for the one that plays on: the current best defends against each
    of the others (`←` `→`, `Space` defers the challenger). A half-played Crown resumes after restarting.
    The two takes stay above the sea, with a compact roster and *Left wins* / Skip / *Right wins* controls. Enter
@@ -167,29 +168,38 @@ When the last winner returns in the next comparison, it stays on the same side a
 
 | Key | |
 |---|---|
-| `←` `→` (or `A` `D`, or click) | *Left wins* / *Right wins* (top / bottom on a phone) |
-| `↑` / `W` | both great (open/group duels) |
-| `↓` / `S` | both meh (open/group duels) |
+| `←` `→` (or click) | *Left wins* / *Right wins* (top / bottom on a phone) |
+| `↑` | both great (open/group duels) |
+| `↓` | both meh (open/group duels) |
 | `Space` | defer without choosing a winner |
 | `X` | toss the hovered or keyboard-focused photo; single-photo activities use the current take |
 | `Q` / `E` | set aside left / right (recoverable in Filter) |
 | `Z` | undo (as many steps back as you like) |
 | `C` | auto-crop: best (the crop that uses the most of the window; focus subject when it ties), focus subject, fill height, fill width, off (on every screen with photos, stack tiles and fans included; also in ☰) |
+| `A` | Auto-align on / off (manual straightening takes priority; also in ☰) |
 | `F` | Enhance on / off (on every screen with photos; also in ☰) |
 
 - After each pick a chip shows where your pick now sits on the leaderboard (`#7 ▲3`).
 - ⚡ **Lightning round**: 60 seconds, as many calls as you can, bonus XP for each; beat your record.
-- **Enhance** uses a saved baseline measured once during analysis. Light, colour balance, scene colour,
-  restrained detail correction and a small backlit-subject lift respond to the photo’s own light. Night scenes
+- **Enhance** uses a saved baseline measured once during analysis. A smooth tone curve corrects dim or bright
+  midtones, restores washed-out black and white points, and balances shadows and highlights separately. Neutral
+  evidence guides white balance; muted colour gets more help than already vivid colour, with a clipping check.
+  Detail correction and a measured backlit-subject lift respond to the photo’s own light. Night scenes
   stay dark, coloured lighting retains its hue, monochrome stays neutral, and flat pictures are not stretched
   into harsh black and white. Existing saves prepare these recipes from cached previews in the background,
-  without reading the originals or restarting analysis. The same recipe follows the photo through thumbnail,
+  without reading the originals or restarting analysis. Finished corrections appear as they are ready, without
+  rebuilding the sea or waiting for the whole collection. The same recipe follows the photo through thumbnail,
   preview, original and edited export. `F` flips the preview; a photo’s own Enhance choice takes priority.
   New browsers start with Enhance on; an existing saved on/off preference is respected.
   In **Notes → Look**, **Amount** runs from 0–150% and each automatic component can be switched off.
   **Auto** restores that baseline without clearing your own light knobs, colour wheels, masks or framing.
-  A confident horizon estimate appears as a suggestion you can apply. A backlit-subject mask can be copied into
-  the mask painter for editing. Geometry is never silently applied. All your adjustments are undoable.
+  A backlit-subject mask can be copied into the mask painter for editing. All your adjustments are undoable.
+- **Auto-align** looks for agreement between long, independent horizontal and vertical references across the
+  picture, or a single clear horizon. Repeated detections of one edge count once, tiny texture is excluded, and
+  conflicting angles leave the original angle intact. `A` toggles the preview separately
+  from Enhance and Crop. **Notes → Look → Alignment** offers a per-photo switch, manual slider and return to
+  the automatic angle. Manual zero also overrides the automatic correction. Alignment turns and trims only the
+  picture inside its paper; the same correction reaches thumbnails, full-size viewing and edited exports.
 - **Auto-crop** (on by default for profile pics) frames every photo the same way around the face, in a
   4:5 window with the overflow fading inside its own pane. A photo without a face gets its frame around whatever
   stands out in it instead (a dog, a flower, a car, someone seen from behind: the analysis keeps the salient region;
@@ -202,7 +212,7 @@ When the last winner returns in the next comparison, it stays on the same side a
 - The leaderboard is your top 40 (Settings), or a quarter of the shots in a smaller cup. In the current
   600-shot simulation, 450 open duels reached 86% of ideal shortlist value while the meter estimated 84%;
   at 600 calls it was 90% against 87%. `scripts/simulate.py` reproduces the comparison.
-- The **Leaderboard** page shows one shot at a time, as big as the screen allows: `←` / `→` (or `A` / `D`) walk
+- The **Leaderboard** page shows one shot at a time, as big as the screen allows: `←` / `→` walk
   the ranks and then *On the bubble*, the next ones in line. A square sticky note on each card carries everything
   the sorter knows about it: rank, how sure it is, duels, appeal, takes (click to swap which one stands in), date,
   tags and looks; drag it wherever you like (it remembers). The file name, group and date are handwritten on the

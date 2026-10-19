@@ -33,7 +33,7 @@ def test_finishing_is_one_atomic_undoable_edit(client):
                 {'masks': [{'id': 'a', 'strokes': [{'mode': 'paint', 'r': .1, 'p': [[-1, .5]]}]}]}):
         assert post(client, '/api/edit', {'photo': pid, **bad}).status_code == 400
         assert read() == saved
-    assert post(client, '/api/edit', {'photo': pid, 'grade': None, 'masks': [], 'straighten': 0}).get_json()['edits'] == {}
+    assert post(client, '/api/edit', {'photo': pid, 'grade': None, 'masks': [], 'straighten': None}).get_json()['edits'] == {}
 
 
 def test_colour_curves_match_the_browser_and_identity_is_exact():

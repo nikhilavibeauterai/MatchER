@@ -52,6 +52,9 @@ dialog.photo-viewer { width:100vw;height:100dvh;max-width:none;max-height:none;i
 /* The card and the hanging sticky share the pane's height, leaving the photo window untouched. */
 :is(.board-fit,.side,.filter-shot) > .print.has-photo-sticky { height:min(calc(94cqh / var(--sticky-ratio,1.2775)),124cqw);margin-bottom:calc(var(--sticky-tail,37) * var(--note-unit,1px)); }
 .photo-viewer .viewer .print.has-photo-sticky { height:min(calc(94cqh / var(--sticky-ratio,1.2775)),calc((100vw - 64px) * 4 / 3));margin-bottom:calc(var(--sticky-tail,37) * var(--note-unit,1px)); }
+/* Comparing photos keeps the original paper size. The hanging notes choose space around it after loading. */
+:is(#stage,#f-arena,.twin-arena) .side > .print.has-photo-sticky { height:min(96cqh,128cqw);margin-bottom:0; }
+:is(#stage,#f-arena,.twin-arena) .slot { overflow:visible; }
 .photo-viewer .viewer-actions { justify-content:center;flex-wrap:wrap;max-width:100%;position:relative;z-index:60;justify-self:center;padding:0 8px;background:var(--paper);color:var(--ink);border-radius:var(--scrap-round); }
 /* Four actual paper backs carry handwritten corners; the current sheet's writing stays on its face. */
 .photo-notes-paper.photo-note-sheet { display:block;width:var(--notes-width,100%);height:var(--notes-height,100%);overflow:visible;cursor:auto;padding:0;background:none;color:var(--ink);border:0;box-shadow:none;line-height:1.45; }

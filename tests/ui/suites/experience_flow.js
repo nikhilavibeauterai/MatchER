@@ -34,7 +34,7 @@ let page;const problems=[],steps=[],calls={filter:0,twins:0,crown:0,groups:0,kno
   await forward();
   await page.waitForSelector('.stacker');await capture('07-stacks',true);
   const twins=page.locator('a[href="#stacks?check=1"]');
-  if(await twins.count()){
+  if(await twins.first().isVisible()){
     await twins.first().click();await page.waitForSelector('.twin-arena,.big-emoji');await capture('08-twins',true);
     while(await page.locator('.twin-arena').count()&&calls.twins<50){await page.keyboard.press('ArrowLeft');calls.twins++;await page.waitForTimeout(650);}
     assert.equal(await page.locator('.twin-arena').count(),0,'Twin check ends');await capture('09-stacks-done');

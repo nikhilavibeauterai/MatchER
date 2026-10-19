@@ -52,6 +52,9 @@ class SeaField {
   // A local wake restarts one print's clock; its neighbours follow only through contact.
   wakeItem(it){if(!it)return;it.age=0;it.shoved=0;this.calmFrames=0;this.settled=false;this.note(`wakeItem:${it.id}`);}
   set(message){
+    const ordered=message.arrangement||null,wasOrdered=!!this.arrangement;
+    if(ordered&&!wasOrdered)this.geography=new Map(this.items.map(it=>[it.id,{x:it.x/this.width,y:it.y/this.height}]));
+    this.arrangement=ordered?new Map(ordered.map(p=>[p.id,p])):null;
     this.generation=message.generation;this.marginEff=message.margins??(Number.isFinite(message.margin)?{top:message.margin,right:message.margin,bottom:message.margin,left:message.margin}:null);
     // The host resends its bodies whenever its layout runs. Only a real change (prints, water, focus, tuning or
     // calm) may wake a resting sea; an identical resend leaves every print asleep where it is.
@@ -63,6 +66,7 @@ class SeaField {
     const old=this.byId;this.byId=new Map();const vocabulary=new Map(),touched=new Set();let semanticChange=old.size!==message.items.length;
     this.items=message.items.map(x=>{
       const previous=old.get(x.id), it={...x,fresh:!previous,cluster:previous?.cluster,x:previous?.x??x.x,y:previous?.y??x.y,vx:previous?.vx||0,vy:previous?.vy||0,age:previous?.age||0,heat:previous?.heat||0,push:previous?.push||0,shoved:previous?.shoved||0,home:previous?.home,placed:axesChanged?null:previous?.placed,travelling:axesChanged&&!!previous||!!previous?.travelling};
+      if(wasOrdered&&!ordered){const home=this.geography?.get(it.id);if(home)it.placed={x:home.x*this.width,y:home.y*this.height};it.travelling=true;}
       // New arrivals shrink the common footprint slightly. That creates room without waking the whole sea.
       if(!previous||x.baseSize>previous.baseSize+.5||previous.label!==x.label||!seaSameVisual(previous.visual,x.visual)||
         ['x','y'].some(axis=>axisSettings.value(previous,this.axes[axis])!==axisSettings.value(x,this.axes[axis])))touched.add(it.id);
@@ -356,6 +360,22 @@ class SeaField {
     const liftedIds=new Set(lifted),draggedIds=new Set(dragged),frozen=new Set(liftedIds);if(held!=null)frozen.add(held);
     // A new hold, pin, drag or lift is a change worth moving for; the same ones frame after frame are not.
     const stateKey=`${held}|${pins.map(p=>`${p.id}:${Math.round(p.x)}:${Math.round(p.y)}`).join(',')}|${dragged.join(',')}|${lifted.join(',')}`;
+    if(this.arrangement){
+      let moving=false;
+      const pinned=new Map(pins.map(p=>[p.id,p])),view=this.view,pad=this.viewPad||60;
+      for(const it of this.items){
+        const p=this.arrangement.get(it.id);if(!p)continue;
+        const target={x:p.x*this.width,y:p.y*this.height},size=p.size*Math.min(this.width,this.height),pin=pinned.get(it.id);
+        it.size=size;it.anchor=null;it.vx=it.vy=0;
+        if(pin){it.x=pin.x;it.y=pin.y;moving=true;continue;}
+        if(it.id===held||draggedIds.has(it.id)||liftedIds.has(it.id)){moving=true;continue;}
+        const off=v=>view&&(v.x<view.x0-pad||v.x>view.x1+pad||v.y<view.y0-pad||v.y>view.y1+pad);
+        if(off(it)&&off(target)){it.x=target.x;it.y=target.y;continue;}
+        const distance=Math.hypot(target.x-it.x,target.y-it.y),blend=1-Math.pow(.8,dt);
+        if(distance<.025){it.x=target.x;it.y=target.y;}else{it.x+=(target.x-it.x)*blend;it.y+=(target.y-it.y)*blend;moving=true;}
+      }
+      this.settled=!moving;this.stateKey=stateKey;this.ms=performance.now()-start;return;
+    }
     if(stateKey!==this.stateKey){
       // The prints concerned (and the ones just released) wake; their neighbours follow through contact.
       this.stateKey=stateKey;const touched=new Set([held,...pins.map(p=>p.id),...dragged,...lifted].filter(id=>id!=null));

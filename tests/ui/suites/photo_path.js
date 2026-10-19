@@ -40,24 +40,24 @@ let page;const problems=[],result={};
     await button.focus();await page.waitForTimeout(220);
     const before=await page.evaluate(()=>pathCopies.length);
     const r=await button.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+r.height/2);await page.waitForTimeout(120);
-    const hit=await button.boundingBox();await page.mouse.click(hit.x+hit.width/2,hit.y+hit.height/2);await page.waitForFunction(n=>pathCopies.length===n+1,before);
+    const hit=await button.boundingBox();await page.mouse.click(hit.x+hit.width/2,hit.y+hit.height/2);try{await page.waitForFunction(n=>pathCopies.length===n+1,before,{timeout:5000});}catch(error){console.error(JSON.stringify(await button.evaluate(e=>{const r=e.getBoundingClientRect();return {button:e.outerHTML,box:r.toJSON(),hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML.slice(0,350)};})));await page.screenshot({path:OUT+'/path-failure.png'});throw error;}
     const path=await page.evaluate(()=>pathCopies.at(-1));assert.equal(path,synthetic(id),'Clipboard receives the exact original path, including spaces and Unicode');
     assert(!path.includes('/img/'),'A thumbnail or preview URL is never copied');return path;
   };
-  await page.evaluate(()=>location.hash='#stacks');await page.waitForSelector('.stacker');
-  await page.locator(`[data-expand="${stack.rep}"]`).click();await page.waitForSelector('.tile.open .photo-fan');
-  const takeCard=page.locator(`.tile.open [data-drag-frame="${take}"]`);
+  await page.evaluate(()=>location.hash='#stacks');await page.waitForFunction(()=>World.sea.arrangement&&World.sea.settled);
+  await page.evaluate(id=>World.openStack(id),stack.rep);await page.waitForFunction(()=>World.sea.settled&&World.sea.camera.zoom>1&&!World.sea.cameraGlide);
+  const takeCard=page.locator(`#world .ps-item[data-id="${take}"]`);
   await copied(copyButton(takeCard),take);
-  assert.equal(await page.locator('.tile.open').getAttribute('data-drag-shot'),String(stack.rep),'Copying a non-cover path never changes the kept take');
+  assert.equal(await page.locator('#world').getAttribute('data-stack-fan'),String(stack.rep),'Copying a non-cover path never changes the kept take');
   await page.screenshot({path:OUT+'/P-path-stack-desktop.png'});
 
-  await clickPrint(takeCard.locator(`img[data-view="${take}"]`));await page.waitForSelector('#modal[open] .viewer');
+  await page.evaluate(id=>openViewer(id),take);await page.waitForSelector('#modal[open] .viewer');
   await copied(copyButton(page.locator('#modal')),take);
   assert(await page.locator('#modal').evaluate(el=>el.open),'Copy remains inside the open viewer');
   await page.screenshot({path:OUT+'/P-path-viewer-desktop.png'});
   await page.keyboard.press('Escape');await page.waitForSelector('#modal[open]',{state:'hidden'});
 
-  await clickPrint(takeCard.locator(`img[data-view="${take}"]`),'right');await page.waitForSelector('#modal[open] .viewer');
+  await clickPrint(takeCard.locator(".pile-cover"),'right');await page.waitForSelector('#modal[open] .viewer');
   assert.equal(await page.locator('#modal [data-copy-path]').getAttribute('data-copy-path'),String(take),'Right-click keeps the original take identity');
   const beforeClose=await page.evaluate(()=>{rejectPathCopy=true;return pathCopies.length;});
   let releaseClosed;const closedLookup=new Promise(done=>{releaseClosed=done;});

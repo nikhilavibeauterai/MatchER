@@ -56,6 +56,6 @@ test('holding the original is a reversible preview and preserves the saved finis
   const preview=PhotoNotes.preview;PhotoNotes.preview=(host,p,edits)=>calls.push(edits);
   try{PhotoNotes.compare(true,active);PhotoNotes.compare(false,active);}
   finally{PhotoNotes.preview=preview;}
-  assert.deepEqual(calls[0],{crop:'off',rotate:0,enhance:false});
+  assert.deepEqual(calls[0],{crop:'off',rotate:0,straighten:0,auto_align:false,enhance:false});
   assert.equal(calls[1],saved);assert.equal(active.data.edits,saved);
 });

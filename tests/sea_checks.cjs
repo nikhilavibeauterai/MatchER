@@ -4,12 +4,38 @@ const {SeaField,seaSimilarity,seaForce}=require('../matcher/static/sea-worker.js
 // These checks exercise the engine's mechanics under one known tuning; the shipped defaults (sea-tuning.js) are the owner's feel.
 const MECHANICS={...require('../matcher/static/sea-tuning.js').seaTuningDefaults(),marginTop:null,speedCap:2.2,drag:.1,calmDrag:.18,repel:.8,groupCohesion:1,groupSeparation:.5,homeMax:.3,margin:.06,settleMove:.06,domLimit:160,hurry:0};
 const field=(items)=>{const f=new SeaField();f.set({generation:1,tuning:MECHANICS,width:1200,height:750,items:items.map((it,i)=>({id:i+1,x:100+(i*317%1000),y:100+(i*179%550),baseSize:35,...it}))});return f;};
+test('Stacks arranges the same bodies in a non-overlapping field and restores their sea geography',()=>{
+  const {StackLayout}=require('../matcher/static/stack-stage.js'),f=field(Array.from({length:720},()=>({tags:['same tag']})));
+  const items=f.items.map(it=>({...it})),before=new Map(items.map(it=>[it.id,{x:it.x,y:it.y}])),shots=items.map(it=>({rep:it.id,members:[it.id]})),
+    arrangement=StackLayout.arrange(shots,1200,750),send=homes=>f.set({generation:2,width:1200,height:750,calm:true,tuning:MECHANICS,items,arrangement:homes});
+  send(arrangement);for(let i=0;i<110;i++)f.step({time:i*16.67});
+  assert(f.settled,'Ordered paper reaches its actual destination before resting');
+  for(const p of arrangement){const it=f.byId.get(p.id);assert(Math.abs(it.x-p.x*1200)<.03&&Math.abs(it.y-p.y*750)<.03);}
+  for(let i=0;i<f.items.length;i++)for(let j=0;j<i;j++){
+    const a=f.items[i],b=f.items[j];assert(Math.abs(a.x-b.x)>(a.size+b.size)/2||Math.abs(a.y-b.y)>(a.size+b.size)*2/3,'Whole papers have room');
+  }
+  send(null);for(const it of f.items)assert(Math.hypot(it.placed.x-before.get(it.id).x,it.placed.y-before.get(it.id).y)<1e-8,'The sea keeps the homes from before Stacks');
+});
+test('An open stack uses the same ordered positions on desktop and phone, including every take',()=>{
+  const {StackLayout}=require('../matcher/static/stack-stage.js'),shots=Array.from({length:50},(_,i)=>({rep:i*8+1,members:Array.from({length:8},(_,j)=>i*8+j+1)}));
+  for(const [w,h]of [[1440,900],[390,844],[320,568]]){
+    const open=shots.at(-1),homes=StackLayout.arrange(shots,w,h,open),fan=homes.filter(p=>open.members.includes(p.id));
+    assert.equal(fan.length,open.members.length);
+    for(const p of fan){assert(p.x*w-p.size*Math.min(w,h)/2>=0);assert(p.x*w+p.size*Math.min(w,h)/2<=w);assert(p.y*h+p.size*Math.min(w,h)*2/3<=h);}
+  }
+});
 test('an old worker reply cannot put newly discovered photos back to sleep',()=>{
   const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype');
   let kicked=false;
   const sea=Object.assign(Object.create(proto),{alive:true,generation:2,busy:true,settled:false,kick(){kicked=true;}});
   sea.receive({generation:1,settled:true});
   assert.equal(sea.settled,false);assert.equal(sea.busy,false);assert(kicked,'The current generation still needs a worker step');
+});
+test('queued layout changes invalidate worker replies before the debounced body send',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),proto=vm.runInNewContext(fs.readFileSync('matcher/static/photo-sea.js','utf8')+';VennSea.prototype',{setTimeout:()=>42});
+  const sea=Object.assign(Object.create(proto),{alive:true,generation:8,ready:true,settled:true,kick(){}});
+  sea.scheduleBodies();assert.equal(sea.generation,9);assert(!sea.ready&&!sea.settled);
+  sea.receive({generation:8,settled:true});assert(!sea.settled,'A camera cannot focus against a stale resting size or location');
 });
 test('streaming discoveries wake their photos while unrelated prints finish settling',()=>{
   const f=new SeaField(),tuning={...require('../matcher/static/sea-tuning.js').seaTuningDefaults(),spread:0};

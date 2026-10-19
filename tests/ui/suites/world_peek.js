@@ -103,7 +103,7 @@ const { BASE, LINK, LIB, OUT } = process.env;
   await page.evaluate(pid=>{World.inspect(pid);},shapes.portrait);
   await page.waitForSelector('.world-fly[data-flight-kind="inspect-rise"]');
   await page.evaluate(()=>{location.hash='#stacks';});
-  await page.waitForSelector('.screen.stacker');await page.waitForTimeout(1300);
+  await page.waitForSelector('.stacker');await page.waitForTimeout(1300);
   assert.equal(await page.locator('.inspect, .world-fly').count(),0,'Navigation cancels inspector flights without leaving ghosts');
   assert(await page.evaluate(()=>[...document.querySelectorAll('#main img')].every(img=>img.style.opacity!=='0')),
     'An old flight cannot leave recycled images hidden');

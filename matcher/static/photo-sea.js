@@ -130,11 +130,12 @@ class PhotoSea {
     if((it.focused||this.fullSize(it))&&typeof FocusGlow!=='undefined')FocusGlow.attach(it.el,img);
     if(time!=null){const motion=paper.getAnimations().find(a=>a.animationName==='cardwobble');if(motion)motion.currentTime=time;}
     const edits=this.presentation?.item===it&&this.presentation.previewEdits||
-      (typeof Toolbelt!=='undefined'&&Toolbelt.source===S.lib?.source?Toolbelt.current(it.photo):{});
+      (typeof Toolbelt!=='undefined'&&Toolbelt.source===S.lib?.source&&Toolbelt.edits.has(it.photo)?Toolbelt.current(it.photo):World.photos?.get(it.photo)?.render_edits||{});
     const size=(it.size||this.s)*this.camera.zoom;it.el.classList.toggle('is-tiny',size<this.tuning.tinyMax);it.el.classList.toggle('is-small',size<this.tuning.badgeMin);
     Object.assign(it.el.dataset,{frame:'own',box:JSON.stringify(it.box||null),crop:edits.crop??'',cropDefault:'global',
       rotate:String(edits.rotate||0),enhance:edits.enhance==null?'':edits.enhance?'on':'off',look:JSON.stringify(edits.look||null),cropBox:JSON.stringify(edits.crop_box||null),
-      straighten:String(edits.straighten||0),finishing:JSON.stringify({grade:edits.grade,masks:edits.masks})});
+      straighten:String(edits.straighten??''),autoAlign:edits.auto_align==null?'':edits.auto_align?'on':'off',finishing:JSON.stringify({grade:edits.grade,masks:edits.masks,auto_amount:edits.auto_amount,auto_parts:edits.auto_parts})});
+    if(it.el.classList.contains('stack-fan-take')&&!it.el.querySelector('[data-copy-path]'))it.el.insertAdjacentHTML('beforeend',photoPathButton(it.photo));
     const dims=it.dims?.[0]>0&&it.dims?.[1]>0?it.dims:[img.naturalWidth,img.naturalHeight];
     framePhoto(it.el,{dims,box:it.box},
       {crop:edits.crop??S.crop,rotate:edits.rotate||0,enhance:edits.enhance??S.filter,knobs:edits.look?knobsOf(edits.look):null,
@@ -248,7 +249,7 @@ class PhotoSea {
   // Whether at most one print's card touches the view (sea coordinates).
   oneInView(W,H){
     const c=this.camera,x0=-c.tx/c.zoom,y0=-c.ty/c.zoom,x1=x0+W/c.zoom,y1=y0+H/c.zoom;let n=0;
-    for(const it of this.items.values()){if(it.take)continue;const s=it.size||this.s;
+    for(const it of this.items.values()){if(it.take||it.hidden)continue;const s=it.size||this.s;
       if(it.x+s/2>x0&&it.x-s/2<x1&&it.y+s*2/3>y0&&it.y-s*2/3<y1&&++n>1)return false;}
     return n<=1;
   }
@@ -277,15 +278,18 @@ class PhotoSea {
     }
   }
   // Whether a print's card reaches into the view (sea coordinates) widened by pad.
-  inView(it,x0,y0,x1,y1,pad){const s=it.size||this.s,[wx,wy]=this.waveOffset(it),x=it.x+wx,y=it.y+wy;return x+s/2>x0-pad&&x-s/2<x1+pad&&y+s*2/3>y0-pad&&y-s*2/3<y1+pad;}
+  inView(it,x0,y0,x1,y1,pad){if(it.hidden)return false;const s=it.size||this.s,[wx,wy]=this.waveOffset(it),x=it.x+wx,y=it.y+wy;return x+s/2>x0-pad&&x-s/2<x1+pad&&y+s*2/3>y0-pad&&y-s*2/3<y1+pad;}
   // A drag on an over-zoomed print pans the camera, like dragging the water (a print that fills the screen is not
   // being rearranged); the middle button pans at any zoom.
   panAnywhere(e){return this.cameraOn&&(e.button===1||this.overZoomed(e.target))&&!e.target.closest('button,a,input,textarea,.ps-badge,.ps-stack');}
   // A click on a print zooms in until its card fills four fifths of the height, centred; a short glide there.
   zoomToPrint(it){
-    const token={};this.cameraGlide=token;
     const W=this.el.clientWidth,H=this.el.clientHeight,size=(it.size||this.s)*4/3,z=Math.max(1,Math.min(this.tuning.zoomMax,.8*H/size));
-    const from={...this.camera},to={zoom:z,tx:W/2-it.x*z,ty:H/2-it.y*z},start=performance.now(),ms=reduceMotion?0:320;
+    this.glideCamera({zoom:z,tx:W/2-it.x*z,ty:H/2-it.y*z});
+  }
+  glideCamera(to){
+    const token={};this.cameraGlide=token;
+    const from={...this.camera},start=performance.now(),ms=reduceMotion?0:320;
     const step=now=>{if(this.cameraGlide!==token||!this.alive||!this.cameraOn)return;const t=ms?Math.min(1,(now-start)/ms):1,k=1-Math.pow(1-t,3);
       // Zoom blends geometrically so the glide feels even from 1× to 100×; the pan follows linearly.
       const zoom=from.zoom*Math.pow(to.zoom/from.zoom,k);this.setCamera(zoom,from.tx+(to.tx-from.tx)*k,from.ty+(to.ty-from.ty)*k);
@@ -293,6 +297,7 @@ class PhotoSea {
     requestAnimationFrame(step);
   }
   clickPrint(it,event){
+    this.onFocus?.(it,event);
     if(this.cameraOn&&this.clickToZoom!==false)this.zoomToPrint(it);
     else this.onSelect?.(it,event);
   }
@@ -337,8 +342,8 @@ class PhotoSea {
     const x0=-c.tx/c.zoom,y0=-c.ty/c.zoom,x1=x0+W/c.zoom,y1=y0+H/c.zoom,pad=0;
     const keep=it=>it.focused||it.selected||!it.density&&(it.id===this.held||!!this.drag?.members.has(it)||it.el.classList.contains('lifted'));
     const liveMin=this.tuning.liveMin??22;
-    const visible=[...this.items.values()].filter(it=>!it.take&&this.inView(it,x0,y0,x1,y1,pad)&&(keep(it)||(it.size||this.s)*c.zoom>=liveMin*(it.density?1:.85))).sort((a,b)=>Number(keep(b))-Number(keep(a))||Number(this.inView(b,x0,y0,x1,y1,0))-Number(this.inView(a,x0,y0,x1,y1,0))||Number(a.density)-Number(b.density)||(b.size||0)-(a.size||0));
-    const wanted=new Set(visible.slice(0,this.domLimit).map(it=>it.id));for(const it of this.items.values())if(keep(it))wanted.add(it.id);
+    const visible=[...this.items.values()].filter(it=>!it.take&&!it.hidden&&this.inView(it,x0,y0,x1,y1,pad)&&(keep(it)||(it.size||this.s)*c.zoom>=liveMin*(it.density?1:.85))).sort((a,b)=>Number(keep(b))-Number(keep(a))||Number(this.inView(b,x0,y0,x1,y1,0))-Number(this.inView(a,x0,y0,x1,y1,0))||Number(a.density)-Number(b.density)||(b.size||0)-(a.size||0));
+    const wanted=new Set(visible.slice(0,this.domLimit).map(it=>it.id));for(const it of this.items.values())if(!it.hidden&&keep(it))wanted.add(it.id);
     let changed=false,more=false,budget=this.tuning.promoteBudget??80;
     for(const it of this.items.values()){
       if(it.take)continue;
@@ -383,6 +388,7 @@ class PhotoSea {
   }
   down(e, photo) {
     if(this.drag)return;
+    if(e.target.closest('button,a,input,select,textarea,.photo-notes-paper,.photo-sticky,.user-note'))return;
     if(this.panAnywhere(e)){this.panStart(e);return;}  // over-zoomed (or the middle button): the drag pans the camera instead
     const el = photo || e.target.closest(".ps-item");
     if (!el || e.button > 0) return;
@@ -454,7 +460,7 @@ class PhotoSea {
         it.el.dataset.id = x.id;
         it.el.tabIndex = -1;
         it.el.setAttribute("role", "button");
-        it.el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.onSelect?.(it, e); } };
+        it.el.onkeydown = (e) => { if (e.target===it.el&&(e.key === "Enter" || e.key === " ")) { e.preventDefault(); this.onSelect?.(it, e); } };
         setTimeout(() => it.el.classList.remove("entering"), 30);
         this.items.set(x.id, it);
       }
@@ -477,15 +483,15 @@ class PhotoSea {
     // A stack's takes stay under its cover even when their atlas sheets differ or its cover becomes live.
     this.paintOrder=all;all.forEach((it,i)=>{it.order=i+1;});
     const limit = this.items.size > 400 ? this.bigCap() : this.domLimit;
-    for (const it of all) if (!it.take && dom.size < limit && (it.focused || !it.density &&
+    for (const it of all) if (!it.take && !it.hidden && dom.size < limit && (it.focused || !it.density &&
       (it.selected || it.id === this.held || dragged.has(it) || it.el.classList.contains('lifted')))) dom.add(it.id);
     // A partial update keeps the live set as it is; only what just arrived may come up live (it is what you watch).
     if (partial) { const zoom = this.camera?.zoom || 1, liveMin = this.tuning.liveMin ?? 22;
-      for (const it of all) if (!it.take && onScreen(it) && dom.size < limit && (fresh.has(it.id) && (it.size || this.s) * zoom >= liveMin || (!it.density && it.el.isConnected))) dom.add(it.id); }
+      for (const it of all) if (!it.take && !it.hidden && onScreen(it) && dom.size < limit && (fresh.has(it.id) && (it.size || this.s) * zoom >= liveMin || (!it.density && it.el.isConnected))) dom.add(it.id); }
     // Otherwise the prints big enough on screen to need a real picture, largest first, up to the cap. Smaller ones
     // are atlas sprites (a thumbnail at any size, free on the GPU), so a big sea at rest has no live cards at all.
     else { const zoom = this.camera?.zoom || 1, liveMin = this.tuning.liveMin ?? 22;
-      for (const it of all.filter((it) => !it.take && !dom.has(it.id) && onScreen(it) && (it.size || this.s) * zoom >= liveMin).sort((a, b) => (b.size || this.s) - (a.size || this.s))) { if (dom.size >= limit) break; dom.add(it.id); } }
+      for (const it of all.filter((it) => !it.take && !it.hidden && !dom.has(it.id) && onScreen(it) && (it.size || this.s) * zoom >= liveMin).sort((a, b) => (b.size || this.s) - (a.size || this.s))) { if (dom.size >= limit) break; dom.add(it.id); } }
     this.moving = [];
     for (const it of all) {
       const density = !dom.has(it.id);
@@ -690,7 +696,7 @@ class VennSea extends PhotoSea {
     it.visual=x.visual||null;
     it.dims=x.dims||it.dims||null;
     it.box=x.box||null;
-    it.members = x.members || [x.photo]; it.stack = x.rep || x.id; it.take = !!x.take; it.cut = !!x.cut; it.category = x.category;
+    it.members = x.members || [x.photo]; it.stack = x.rep || x.id; it.take = !!x.take; it.cut = !!x.cut; it.category = x.category; it.hidden=!!x.hidden;
     if(!it.take&&it.pileLifted){it.pileLifted=false;it.el.classList.remove('pile-lifted');}
     this.freshTags = this.freshTags || new Map(); this.spawnHomes = this.spawnHomes || new Map();
     for (const t of it.tags) { if (!this.freshTags.has(t)) this.freshTags.set(t, performance.now()); this.spawnHomes.set(t, it); }
@@ -777,7 +783,7 @@ class VennSea extends PhotoSea {
     else for(const cell of this.hitGrid.values())cell.length=0;
     this.hitCols=cols;this.hitRows=rows;
     let alpha=1,max=0;
-    for (const it of this.paintOrder||this.items.values()) if (it.density||it.imagePending) {
+    for (const it of this.paintOrder||this.items.values()) if (!it.hidden&&(it.density||it.imagePending)) {
       if(it.lifted||it.pileLifted)continue;
       const size = (it.size || this.densitySize || 4)*(it.density?1:it.renderScale||1);if(size>max)max=size;
       const hit=Math.floor(it.y/16)*this.hitCols+Math.floor(it.x/16);let cell=this.hitGrid.get(hit);
@@ -838,7 +844,7 @@ class VennSea extends PhotoSea {
       if(!this.hitGrid||this.hitCols!==cols||this.hitRows!==rows)this.hitGrid=new Map();else for(const cell of this.hitGrid.values())cell.length=0;
       this.hitCols=cols;this.hitRows=rows;
       const previous=new Map((this.glBatches||[]).map(b=>[b.image,b])),batches=new Map(),S=SpriteLayer.STRIDE;let max=0;
-      for(const it of this.paintOrder||this.items.values())if(it.density||it.imagePending){
+      for(const it of this.paintOrder||this.items.values())if(!it.hidden&&(it.density||it.imagePending)){
         if(it.lifted||it.pileLifted)continue;
         const size=(it.size||this.densitySize||4)*(it.density?1:it.renderScale||1);
         const pad=this.waveHeight(),half=size*zoom/2+pad,tall=size*zoom*2/3+pad,sx=it.x*zoom+tx,sy=it.y*zoom+ty;
@@ -996,7 +1002,7 @@ class VennSea extends PhotoSea {
     const cx=Math.floor(x/16),cy=Math.floor(y/16),radius=8/(this.camera?.zoom||1),reach=Math.max(1,Math.ceil((radius+this.waveHeight())/16));let near=null,distance=radius*radius;
     for(let a=cx-reach;a<=cx+reach;a++)for(let b=cy-reach;b<=cy+reach;b++)for(let it of this.hitGrid?.get(b*this.hitCols+a)||[]){
       if(it.take)it=this.items.get(it.stack)||it;
-      if(it.lifted||it.pileLifted||it.el?.classList.contains('lifted'))continue;
+      if(it.hidden||it.lifted||it.pileLifted||it.el?.classList.contains('lifted'))continue;
       const [wx,wy]=this.waveOffset(it),d=(it.x+wx-x)**2+(it.y+wy-y)**2;if(d<distance){near=it;distance=d;}}
     return near;
   }
@@ -1007,7 +1013,7 @@ class VennSea extends PhotoSea {
     let near=null,top=-Infinity,distance=Infinity;
     const check=it=>{
       if(it.take)it=this.items.get(it.stack);
-      if(!it||skip.has(it.stack||it.id)||it.lifted||it.pileLifted||it.el.classList.contains('lifted'))return;
+      if(!it||it.hidden||skip.has(it.stack||it.id)||it.lifted||it.pileLifted||it.el.classList.contains('lifted'))return;
       const size=(it.size||this.s)*(it.id===this.held?1.15:1),[wx,wy]=this.waveOffset(it),dx=(x-it.x-wx)/size,dy=(y-it.y-wy)/size;
       if(Math.abs(dx)>.5||Math.abs(dy)>2/3)return;
       const z=it.density?0:100+(it.id===this.held?19:it.focused?8:it.dropped?5:0),d=dx*dx+dy*dy;
@@ -1084,13 +1090,17 @@ class VennSea extends PhotoSea {
     this.scheduleBodies();
   }
   scheduleBodies() {
+    this.settled=false;this.ready=false;
     if(this.bodyTimer)return;
+    // A reply from the previous arrangement must not announce rest while the new body list is still queued.
+    this.generation=(this.generation||0)+1;
     this.bodyTimer=setTimeout(()=>{this.bodyTimer=null;this.sendBodies();},100);
   }
   sendBodies() {
     if(!this.alive)return;
     const groups=new Map();
     for(const it of this.items.values()){
+      if(it.hidden)continue;
       const rep=this.items.get(it.stack)||it;
       let body=groups.get(rep.id);if(!body){body={it:rep,tags:new Set()};groups.set(rep.id,body);}
       for(const t of it.tags)body.tags.add(t);
@@ -1102,7 +1112,7 @@ class VennSea extends PhotoSea {
     this.takes=[...this.items.values()].filter(it=>it.take);
     this.focusMatches();
     this.generation=(this.generation||0)+1;this.ready=false;this.settled=false;
-    this.worker.postMessage({kind:'set',generation:this.generation,items:this.bodies,axes:this.axes,focus:this.focusState(),tuning:this.tuning,...this.bounds()});
+    this.worker.postMessage({kind:'set',generation:this.generation,items:this.bodies,arrangement:this.arrangement,axes:this.axes,focus:this.focusState(),tuning:this.tuning,...this.bounds()});
     this.ready=true;this.kick();
   }
   // Analysis discoveries use the same settling as the world; other embedded seas can choose their motion.
@@ -1162,7 +1172,7 @@ class VennSea extends PhotoSea {
     this.settled=false;this.worker.postMessage({kind:'focus',focus:this.focusState()});this.kick();
   }
   focusMatches(){
-    const f=this.focusState(),active=f.keys.length||f.cluster,ids=new Set(f.ids);
+    const f=this.focusState(),ids=new Set(f.ids),active=f.keys.length||f.cluster||ids.size;
     const hits=(this.bodies||[]).filter(b=>active&&(ids.size?ids.has(b.id):f.cluster?this.items.get(b.id)?.cluster===f.cluster:f.any?f.keys.some(t=>b.tags.includes(t)):f.keys.every(t=>b.tags.includes(t)))).map(b=>b.id);
     this.focusPrimary=new Set(hits.slice(0,12));
     const signature=`${f.keys.join('|')}:${f.any}:${f.cluster}:${hits.join(',')}`;if(signature===this.focusSignature)return;this.focusSignature=signature;

@@ -172,6 +172,7 @@ function route() {
   if (!bare) paintTrack();
   S.onKey = null; S.pauseActivity = null; S.historyActions = null; S.forward = null;
   S.filter = filterPref();
+  S.align = alignPref();
   S.crop = cropPref();
   S.view = (S.view || 0) + 1;
   const main = $("#main");
@@ -188,16 +189,6 @@ function route() {
   if (!bare && v !== "home") refreshHud();
 }
 
-// Keep native typing intact; game screens receive one shared directional vocabulary.
-function gameInput(e) {
-  const key = {w:"ArrowUp",a:"ArrowLeft",s:"ArrowDown",d:"ArrowRight"}[e.key.toLowerCase()];
-  if (!key) return e;
-  return new Proxy(e, {get(event, prop) {
-    if (prop === "key") return key;
-    const value = Reflect.get(event, prop, event);
-    return typeof value === "function" ? value.bind(event) : value;
-  }});
-}
 const gamePhotoTarget = (root = document) => root && ($(".side[data-photo]:focus-within", root) || $(".side[data-photo]:hover", root));
 
 window.addEventListener("hashchange", route);
@@ -210,6 +201,7 @@ document.addEventListener("keydown", (e) => {  // each activity gives the shared
     if(reason){e.preventDefault();e.stopImmediatePropagation();reason.click();reason.focus({preventScroll:true});return;}
     // A selection or focused group is a local layer: dismiss it before pausing the activity.
     const [name,query]=location.hash.slice(1).split('?'),params=new URLSearchParams(query||'');
+    if(name==='stacks'&&!params.has('check')){S.onKey?.(e);if(e.defaultPrevented){e.stopImmediatePropagation();return;}}
     if(['draw','groups'].includes(name)&&!params.has('play')&&!params.has('sort')&&
       ($('[data-sel-act="clear"]')||World.sea?.focusCluster||World.sea?.focusKeys.size)){S.onKey?.(e);if(e.defaultPrevented){e.stopImmediatePropagation();return;}}
     if(!e.target.closest('input,select,textarea,.island-pop,.emoji-pop,.bin-editor')){
@@ -219,10 +211,10 @@ document.addEventListener("keydown", (e) => {  // each activity gives the shared
   if (e.defaultPrevented || e.target.isContentEditable || e.target.closest("input, select, textarea, dialog, .vn-catalog, .vn-tag, .vn-lasso-tag, .island-pop, .sea-tag-pop") || e.ctrlKey || e.metaKey || (e.altKey && !/^Digit/.test(e.code))
     || $("dialog[open]")) return;
   if (["Enter", " "].includes(e.key) && e.target.closest("button, a, summary, [role=button]")) return;
-  e = gameInput(e);
-  if (e.repeat && [" ","z","x","c","f","enter","arrowleft","arrowright","arrowup","arrowdown"].includes(e.key.toLowerCase())) { e.preventDefault(); return; }
+  if (e.repeat && [" ","z","x","a","c","f","enter","arrowleft","arrowright","arrowup","arrowdown"].includes(e.key.toLowerCase())) { e.preventDefault(); return; }
   if(e.key.toLowerCase()==='z'&&S.lib&&typeof HistoryHUD!=='undefined') { e.preventDefault();HistoryHUD.act('undo');return; }
   if (S.onKey) S.onKey(e);
+  if(!e.defaultPrevented&&!e.repeat&&e.key.toLowerCase()==='a'&&S.lib){e.preventDefault();toggleAlign();return;}
   if (e.defaultPrevented || e.repeat || location.hash.startsWith("#duel") || !S.lib) return;
   if (e.key === "f" || e.key === "F") { e.preventDefault(); toggleFilter(); }  // the auto-filter and auto-crop, anywhere
   else if (e.key === "c" || e.key === "C") { e.preventDefault(); toggleCrop(); }
@@ -1248,7 +1240,7 @@ function openMenu() {
       view:`<button data-m="sound">${Sound.on?'🔊':'🔇'} <span>Sound ${Sound.on?'on':'off'}</span></button>
         <button data-m="sea">🌊 <span>Colour wash ${Sea.on?'on':'off'}</span></button>
         ${ready?'<button data-m="axes">↔ <span>Sea axes</span></button>':''}
-        ${ready?`<button data-m="filter">🎨 <span>Enhance ${S.filter?'on':'off'}</span><kbd>F</kbd></button>
+        ${ready?`<button data-m="align">📐 <span>Auto-align ${S.align?'on':'off'}</span><kbd>A</kbd></button><button data-m="filter">🎨 <span>Enhance ${S.filter?'on':'off'}</span><kbd>F</kbd></button>
         <button data-m="crop">🔲 <span>Auto-crop ${CROP_MENU[normCrop(S.crop)]}</span><kbd>C</kbd></button>`:''}`,
       library:`${S.lib||S.recent.length?'<a href="#saves">💾 <span>Switch save</span></a>':''}${ready?'<button data-m="settings">⚙️ <span>Settings</span></button>':''}`
     };
@@ -1271,6 +1263,7 @@ function openMenu() {
       if(b.dataset.m==='settings'){openSettings();return;}
       if(b.dataset.m==='axes'){closeMenu();openSeaAxes();return;}
       if(b.dataset.m==='sea'){Sea.toggle();b.innerHTML=`🌊 <span>Colour wash ${Sea.on?'on':'off'}</span>`;}
+      else if(b.dataset.m==='align'){toggleAlign();b.querySelector('span').textContent=`Auto-align ${S.align?'on':'off'}`;}
       else if(b.dataset.m==='filter'){toggleFilter();b.querySelector('span').textContent=`Enhance ${S.filter?'on':'off'}`;}
       else if(b.dataset.m==='crop'){toggleCrop();b.querySelector('span').textContent=`Auto-crop ${CROP_MENU[normCrop(S.crop)]}`;}
       else {Sound.toggle();paintSound();b.innerHTML=`${Sound.on?'🔊':'🔇'} <span>Sound ${Sound.on?'on':'off'}</span>`;}
@@ -1419,12 +1412,12 @@ function viewDuel(main, params) {
             <span id="m-votes"></span><div class="bar"><i id="m-bar"></i></div><span id="m-conf"></span>
           </div>
           <button class="icon" id="hud-sound" title="Sound effects" aria-label="Sound effects"></button>
-          ${helpBtn(crown ? `Choose the better take: click it, or use <b>←</b> / <b>→</b> (<b>A</b> / <b>D</b>).
+          ${helpBtn(crown ? `Choose the better take: click it, or use <b>←</b> / <b>→</b>.
             <b>Space</b> saves the challenger for later; <b>Z</b> undoes. Point at a take and press <b>X</b> to set it aside.
             <b>C</b> toggles crop; <b>F</b> toggles enhancement. <b>Enter</b> continues to the group stage.
             Picture controls and keeping the remaining best guesses are in the menu.` : `Two photos, one gut call: click the better one, or <b>←</b> / <b>→</b>. <b>↑</b> both great, <b>↓</b> both meh,
             <b>Space</b> skips, <b>X</b> tosses the photo you point at, <b>Z</b> undoes. Set-aside photos stay recoverable in Filter.
-            <b>WASD</b> also works. <b>C</b> crops to the face, <b>F</b> toggles photo enhancement. Calls under 4 s build your streak; ⚡ starts a 60-second lightning round.`)}
+            <b>A</b> auto-aligns. <b>C</b> crops to the face, <b>F</b> toggles photo enhancement. Calls under 4 s build your streak; ⚡ starts a 60-second lightning round.`)}
         </div>
       </div>
       <div id="lr-slot"></div>
@@ -1679,7 +1672,9 @@ function framePhoto(side, info, opts = {}) {
   const style=win&&getComputedStyle(win),W=parseFloat(style?.width),H=parseFloat(style?.height);
   if (!img || !W || !H) return;
   const rotate = (((opts.rotate || 0) % 360) + 360) % 360, enhance = opts.enhance ?? S.filter, mode = normCrop(opts.crop ?? S.crop);
-  const straighten=Number(opts.straighten??side.dataset.straighten)||0;
+  const manualAngle=opts.straighten??(side.dataset.straighten!==''?side.dataset.straighten:undefined),
+    straighten=AutoLook.angle(AutoLook.recipes.get(Number(side.dataset.photo)),{straighten:manualAngle==null?null:Number(manualAngle),
+      auto_align:opts.autoAlign??(side.dataset.autoAlign?side.dataset.autoAlign==='on':S.align)});
   let finishing=opts.finishing;
   if(!finishing){try{finishing=JSON.parse(side.dataset.finishing||'null');}catch(_){/* no local adjustments */}}
   let manual=null;try{manual=mode==='custom'?(opts.cropBox??JSON.parse(side.dataset.cropBox||'null')):null;}catch(_){/* no saved rectangle */}
@@ -1773,6 +1768,9 @@ let filterCanvas = null, filterSource = null, filterSerial = 0;
 function filterPref() {
   try { return localStorage.getItem(`matcher-filter-${MODE()}`) !== "off"; } catch (_) { return true; }
 }
+function alignPref() {
+  try { return localStorage.getItem(`matcher-align-${MODE()}`) !== 'off'; } catch (_) { return true; }
+}
 
 // The Leaderboard's knobs on the auto look, name: [low, high, default]; matcher/touchup.py KNOBS agrees.
 const KNOBS = { levels: [0, 2, 1], light: [-1, 1, 0], contrast: [-1, 1, 0], colour: [0, 2, 1], warmth: [-1, 1, 0] };
@@ -1825,12 +1823,14 @@ function measureLook(img) {
 function tunedLook(look, knobs) {
   const k = knobsOf(knobs), slope = 1 + 0.6 * k.contrast;
   return { lin: look.lin.map(([a, b]) => [1 + (a - 1) * k.levels, b * k.levels]), gamma: Math.min(2.2, Math.max(0.4, look.gamma * (1 - 0.45 * k.light))),
+    curve:AutoLook.mixCurve(look.curve,k.levels),
     contrast: [slope, (1 - slope) / 2], sat: Math.max(0, look.sat * k.colour), warmth: k.warmth };
 }
 function filterMarkup(t) {
   const fn = (attrs) => ["R", "G", "B"].map((c, k) => `<feFunc${c} ${attrs(k)}/>`).join("");
   const r = 1 + 0.12 * t.warmth, b = 1 - 0.12 * t.warmth;
   return `<feComponentTransfer>${fn((k) => `type="linear" slope="${t.lin[k][0].toFixed(4)}" intercept="${t.lin[k][1].toFixed(4)}"`)}</feComponentTransfer>
+    ${t.curve?`<feComponentTransfer>${fn(()=>`type="table" tableValues="${t.curve.map(v=>v.toFixed(6)).join(' ')}"`)}</feComponentTransfer>`:''}
     <feComponentTransfer>${fn(() => `type="gamma" amplitude="1" exponent="${t.gamma.toFixed(4)}" offset="0"`)}</feComponentTransfer>
     ${t.contrast[0] !== 1 ? `<feComponentTransfer>${fn(() => `type="linear" slope="${t.contrast[0].toFixed(4)}" intercept="${t.contrast[1].toFixed(4)}"`)}</feComponentTransfer>` : ""}
     <feColorMatrix type="saturate" values="${t.sat.toFixed(4)}"/>
@@ -1935,6 +1935,15 @@ function frameTileImage(img) {
   const apply = () => {
     const iw = img.naturalWidth, ih = img.naturalHeight, mode = normCrop(S.crop);
     if (!iw || !ih || !img.isConnected) return;
+    const pid=Number(/\/img\/[pt]\/(\d+)\.jpg/.exec(img.getAttribute('src')||'')?.[1]),
+      host=img.closest('.polaroid,.shot-select,.ftile'),edits=Toolbelt.edits.get(pid)||World.photos?.get(pid)?.render_edits||{},
+      angle=AutoLook.angle(AutoLook.recipes.get(pid),{...edits,auto_align:edits.auto_align??S.align});
+    if(host&&(angle||host.querySelector(':scope > .paper'))){
+      let box=null;try{box=JSON.parse(img.dataset.box||'null');}catch(_){/* no subject */}
+      img.style.objectViewBox='';host.dataset.photo=pid;Cards.focus(host);
+      framePhoto(host,{dims:World.photos?.get(pid)?.dims||[iw,ih],box},{crop:edits.crop??S.crop,rotate:edits.rotate||0,straighten:angle,
+        enhance:edits.enhance??S.filter,knobs:edits.look?knobsOf(edits.look):null,finishing:edits});return;
+    }
     const refresh=()=>{const id=Number(/\/img\/[pt]\/(\d+)\.jpg/.exec(img.getAttribute('src')||'')?.[1]);if(id)paintFilter(img,id);};
     if (mode === "off") { img.style.objectFit = ""; img.style.objectPosition = ""; img.style.objectViewBox = ""; refresh();return; }
     let box = null; try { box = JSON.parse(img.dataset.box || "null"); } catch (_) { /* no subject */ }
@@ -1966,7 +1975,7 @@ function paintCrops() {
   // Finals panes frame their picture inside the card's window exactly like a duel: contained whole, or zoomed to
   // the subject when auto-crop is on.
   $$("#f-arena .side[data-photo]").forEach((side) => {
-    const img = side.querySelector(".window > img");
+    const img = side.querySelector(".window img");
     if (!img) return;
     let box = null;
     try { box = JSON.parse(side.dataset.box || "null"); } catch (_) { /* no subject */ }
@@ -1983,6 +1992,14 @@ function toggleFilter() {
   paintFilters();
   window.dispatchEvent(new Event('photo-render-change'));
   toast(S.filter ? "Enhance on" : "Enhance off", 1000);
+}
+function toggleAlign() {
+  S.align=!S.align;
+  try { localStorage.setItem(`matcher-align-${MODE()}`,S.align?'on':'off'); } catch (_) { /* private mode */ }
+  $$('.align-btn span').forEach(l=>l.textContent=`Auto-align ${S.align?'on':'off'}`);
+  layoutStage();paintCrops();
+  window.dispatchEvent(new Event('photo-render-change'));
+  toast(`Auto-align ${S.align?'on':'off'}`,1000);
 }
 
 function layoutStage() {
@@ -2290,8 +2307,10 @@ function renderDuelTable(title, status, content, qualify=false) {
   $(".gt-toggle",box).onclick=()=>{
     S.tableExpanded=!S.tableExpanded;box.classList.toggle("expanded",S.tableExpanded);
     $(".gt-toggle",box).setAttribute("aria-expanded",S.tableExpanded);
+    $$('#stage .print').forEach(placeNote);
   };
   const choose=$("#group-qualify",box);if(choose)choose.onclick=qualifyGroups;
+  $$('#stage .print').forEach(placeNote);
 }
 function renderTable(t) {
   const box = $("#group-table");
@@ -2448,7 +2467,7 @@ document.addEventListener("keydown", (e) => {
   if (["Enter", " "].includes(e.key) && e.target.closest("button, a, summary, [role=button]")) return;
   if ($("dialog[open]") || $(".inspect")) return;  // (a photo grabbed out of the sea has the keys)
   const c = S.current;
-  const k = gameInput(e).key;
+  const k = e.key;
   if (e.target.isContentEditable) return;
   if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); if (!e.repeat) undo(); return; }
   if (k === "c" || k === "C") { e.preventDefault(); if (!e.repeat) toggleCrop(); return; }
@@ -2472,12 +2491,12 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (c.type === "mini") {
-    const m = { ArrowLeft: "a", a: "a", A: "a", ArrowRight: "b", d: "b", D: "b", " ": "skip" }[k];
+    const m = { ArrowLeft: "a", ArrowRight: "b", " ": "skip" }[k];
     if (m) { e.preventDefault(); if (!e.repeat) { pressed(m); decide(m); } }
     return;
   }
-  const map = { ArrowLeft: "a", a: "a", A: "a", ArrowRight: "b", d: "b", D: "b", ArrowUp: "great", w: "great", W: "great",
-    ArrowDown: "meh", s: "meh", S: "meh", " ": "skip", q: "toss_a", Q: "toss_a", e: "toss_b", E: "toss_b" };
+  const map = { ArrowLeft: "a", ArrowRight: "b", ArrowUp: "great",
+    ArrowDown: "meh", " ": "skip", q: "toss_a", Q: "toss_a", e: "toss_b", E: "toss_b" };
   if (map[k]) { e.preventDefault(); if (!e.repeat) { pressed(map[k]); decide(map[k]); } }
 });
 
@@ -2958,7 +2977,7 @@ async function viewSweep(main) {
   S.onKey = (e) => {
     const k = e.key;
     if (k === "Escape" || (k === "Enter" && i >= cards.length)) { e.preventDefault(); location.hash = "home"; }
-    else if (k === "ArrowRight" || k === "Enter" || k === "d" || k === "D") { e.preventDefault(); if (!e.repeat) decide(true); }
+    else if (k === "ArrowRight" || k === "Enter") { e.preventDefault(); if (!e.repeat) decide(true); }
     else if (k === "ArrowLeft" || k.toLowerCase() === "x") { e.preventDefault(); if (!e.repeat) decide(false); }
     else if (k === " ") { e.preventDefault(); if (!e.repeat) skip(); }
     else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); if (!e.repeat) undoOne(); }
@@ -3195,8 +3214,8 @@ function renderBracket(main, d) {
   };
   S.onKey = (e) => {
     const k = e.key;
-    if (["ArrowLeft", "a", "A"].includes(k)) { e.preventDefault(); if (!e.repeat) pick("a"); }
-    else if (["ArrowRight", "d", "D"].includes(k)) { e.preventDefault(); if (!e.repeat) pick("b"); }
+    if (["ArrowLeft"].includes(k)) { e.preventDefault(); if (!e.repeat) pick("a"); }
+    else if (["ArrowRight"].includes(k)) { e.preventDefault(); if (!e.repeat) pick("b"); }
     else if (["z", "Z", "Backspace"].includes(k)) { e.preventDefault(); if (!e.repeat) undoPick(); }
     else if (k === "f" || k === "F") { e.preventDefault(); toggleFilter(); }
     else if ((k === "c" || k === "C") && card) { e.preventDefault(); toggleCrop(); }
@@ -3478,8 +3497,8 @@ function photoSticky(it, tagsOn, {change = "", controls = false} = {}) {
     ${it.flags?.length?`<div class="flags">${flagHtml(it.flags)}</div>`:""}
     ${controls&&it.bubble?`<div class="actions">${it.added?`<button class="btn" data-unpick="${it.photo}">Added ✓</button>`:`<button class="btn" data-pick="${it.photo}" title="It rides along in the export without a rank">+ Add</button>`}</div>`:""}`;
 }
-// Hang the adhesive edge from the bottom of the paper, leaving the picture and its handwriting clear. Focused
-// panes reserve space for the loose end; a sea print keeps its camera size and uses a side edge if needed.
+// Hang the adhesive edge from the paper. A comparison keeps its full-size prints and finds room for the notes;
+// other reading panes can reserve space for the loose end.
 function placeNote(card) {
   const note=card?.querySelector(":scope > .photo-sticky");
   if(!note||note.classList.contains("dragging"))return;
@@ -3509,6 +3528,42 @@ function placeNote(card) {
     if(size<78)size+=4;else if(font>1.3)font=Math.round((font-.2)*10)/10;else break;
     place();
   }
+  if(!saved&&card.closest('#stage,#f-arena,.twin-arena'))placePairNote(card,note,size);
+}
+function placePairNote(card,note,size){
+  const arena=card.closest('#stage,#f-arena,.twin-arena'),picture=card.querySelector('.window img');
+  const panels=$$('#group-table:not([hidden])',arena.closest('#view-duel,.screen')||document).map(el=>el.getBoundingClientRect()).filter(r=>r.width&&r.height);
+  const key=[card.clientWidth,card.clientHeight,innerWidth,innerHeight,size,note.textContent,picture?.style.width,picture?.style.height,picture?.style.transform,...panels.map(r=>[r.x,r.y,r.width,r.height])].join('|');
+  const old=note.pairPose;
+  // A mip arriving during zoom keeps the note's physical position. Only a new layout or new writing refits it.
+  if(old&&(old.key===key||World.draftCamera&&World.sea.camera.zoom>1.001)){
+    note.style.setProperty('--note-x',old.x);note.style.setProperty('--note-y',old.y);return;
+  }
+  const r=card.getBoundingClientRect(),nr=note.getBoundingClientRect(),w=nr.width,h=nr.height;
+  if(!r.width||!w||!h)return;
+  const overlap=(a,b)=>Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));
+  const photos=$$('.side .window img',arena).map(img=>{
+    const p=img.getBoundingClientRect(),win=img.closest('.window').getBoundingClientRect();
+    return {left:Math.max(p.left,win.left),top:Math.max(p.top,win.top),right:Math.min(p.right,win.right),bottom:Math.min(p.bottom,win.bottom)};
+  });
+  const others=$$('.side .print',arena).filter(p=>p!==card).map(p=>p.getBoundingClientRect()),
+    notes=$$('.photo-sticky',arena).filter(n=>n!==note).map(n=>n.getBoundingClientRect()),
+    controls=$$('.controls .btn,.controls .toggle,.screen-bar',arena.closest('#view-duel,.screen')||document).map(el=>el.getBoundingClientRect()).filter(r=>r.width&&r.height),
+    top=($('#journey-dock')?.getBoundingClientRect().bottom||0)+10,bottom=innerHeight-14;
+  const desired={x:r.left+r.width*.08,y:r.bottom-r.width*.04},candidates=[desired,
+    {x:r.left+(r.width-w)/2,y:desired.y},
+    {x:r.right-w+r.width*.02,y:desired.y},
+    {x:r.left-w+r.width*.10,y:r.bottom-h},{x:r.right-r.width*.10,y:r.bottom-h},
+    {x:r.left+r.width*.04,y:r.bottom-h-r.width*.025},{x:r.right-w-r.width*.04,y:r.bottom-h-r.width*.025},
+    {x:r.left-w+r.width*.04,y:r.top+r.height*.48-h/2},{x:r.right-r.width*.04,y:r.top+r.height*.48-h/2}];
+  let best=null;
+  for(const p of candidates){
+    const x=Math.max(12,Math.min(innerWidth-w-12,p.x)),y=Math.max(top,Math.min(bottom-h,p.y)),box={left:x,top:y,right:x+w,bottom:y+h},
+      score=[...panels,...controls,...others].reduce((n,r)=>n+overlap(box,r)*1000,0)+photos.reduce((n,r)=>n+overlap(box,r)*100,0)+notes.reduce((n,r)=>n+overlap(box,r)*20,0)
+        +(overlap(box,r)?0:w*h*100)+Math.hypot(x-desired.x,y-desired.y);
+    if(!best||score<best.score)best={x,y,score};
+  }
+  if(best){note.pairPose={key,x:(best.x-r.left)/r.width*100,y:(best.y-r.top)/r.width*100};note.style.setProperty('--note-x',note.pairPose.x);note.style.setProperty('--note-y',note.pairPose.y);}
 }
 async function viewShortlist(main) {
   main.innerHTML = LOADING();
@@ -3610,7 +3665,7 @@ async function viewShortlist(main) {
     at = boardPos.at = Math.max(0, Math.min(i, entries.length - 1));
     const it = entries[at], old = $$(".board-card", fit), holder = document.createElement("div");
     holder.innerHTML = card(it);
-    const el = holder.firstElementChild, img = el.querySelector(".window > img");
+    const el = holder.firstElementChild, img = el.querySelector(".window img");
     el.style.visibility = "hidden";  // framed before it is seen: no landing and then snapping into its crop
     fit.append(el);
     const leaving = slide && !reduceMotion && old.length;
@@ -3661,10 +3716,11 @@ async function viewShortlist(main) {
   S.onKey = (e) => {
     if (e.repeat || e.target.closest("input, select, textarea")) return;  // a knob or a note keeps its own keys
     const k = e.key;
-    if (k === "ArrowRight" || k === "d" || k === "D") { e.preventDefault(); show(at + 1); }
-    else if (k === "ArrowLeft" || k === "a" || k === "A") { e.preventDefault(); show(at - 1); }
+    if (k === "ArrowRight") { e.preventDefault(); show(at + 1); }
+    else if (k === "ArrowLeft") { e.preventDefault(); show(at - 1); }
     else if (k === "Home") { e.preventDefault(); show(0); }
     else if (k === "End") { e.preventDefault(); show(entries.length - 1); }
+    else if (k === "a" || k === "A") { e.preventDefault(); edit({ auto_align: !(entries[at]?.edits?.auto_align??S.align) }); }
     else if (k === "f" || k === "F") { e.preventDefault(); edit({ enhance: (entries[at]?.edits || {}).enhance === false }); }
     else if (k === "c" || k === "C") { e.preventDefault(); edit({ crop: nextCrop(entries[at]) }); }
     else if (k === "r" || k === "R") { e.preventDefault(); edit({ rotate: (((entries[at]?.edits || {}).rotate || 0) + 90) % 360 }); }
@@ -3676,7 +3732,7 @@ async function viewShortlist(main) {
 function cardData(it, global = false) {
   const e = it?.edits || {}, crop = e.crop!=null?normCrop(e.crop):"";
   return `data-frame="own" data-photo="${it.photo}" data-box="${esc(JSON.stringify(it.box || null))}" data-crop="${crop}" data-crop-default="${global ? "global" : "off"}"
-    data-enhance="${e.enhance === false ? "off" : e.enhance === true ? "on" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}" data-crop-box="${esc(JSON.stringify(e.crop_box||null))}" data-straighten="${e.straighten||0}" data-finishing="${esc(JSON.stringify({grade:e.grade,masks:e.masks}))}"`;
+    data-enhance="${e.enhance === false ? "off" : e.enhance === true ? "on" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}" data-crop-box="${esc(JSON.stringify(e.crop_box||null))}" data-straighten="${e.straighten??''}" data-auto-align="${e.auto_align==null?'':e.auto_align?'on':'off'}" data-finishing="${esc(JSON.stringify({grade:e.grade,masks:e.masks,auto_amount:e.auto_amount,auto_parts:e.auto_parts}))}"`;
 }
 // A card frames its picture by its own data attributes (see cardData), falling back to the global toggles.
 function frameBoardCard(card) {
@@ -3882,316 +3938,6 @@ function viewStacks(main, params) {
 const shotDate = shot => (shot.taken||'').slice(0,10)||'undated';
 const dateWord = day => day==='undated'?'No date':new Date(`${day}T12:00:00`).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
 
-async function stacksPage(main) {
-  const view = S.view;
-  let shots = [], boxes = {}, twins = 0, undo = null, pairs = [], total = 0, nextPage = 1, pages = 0, paging = false;
-  let order = (() => { try { return localStorage.getItem("matcher-stacks-order") === "time" ? "time" : "look"; } catch (_) { return "look"; } })();
-  let firstPage=0,dates=[],dateRaf=0;
-  let stacksOnly = (() => { try { return localStorage.getItem('matcher-stacks-only') === '1'; } catch (_) { return false; } })();
-  const byRep = new Map();
-  let cardObserver = null;
-  const observed = new Set(), mounted = new Set();
-  let loadEpoch = 0, shownPairs = '';
-  const query = () => `/api/groups?view=${stacksOnly?'stacks':'all'}&order=${order}&per=120`;
-  function mountCard(tile) {
-    if(!tile?.classList.contains('sleeping'))return;
-    const shot=byRep.get(Number(tile.dataset.dragShot));if(!shot)return;
-    tile.innerHTML=shotTileContents(shot,null,boxes);tile.classList.remove('sleeping');mounted.add(tile);
-  }
-  function restCard(tile) {
-    if(tile.near||tile.classList.contains('open')||tile.contains(document.activeElement)||tile.matches(':active')||tile.contains(Toolbelt.gesture?.print))return;
-    tile.replaceChildren();tile.classList.add('sleeping');delete tile.dataset.belt;mounted.delete(tile);
-  }
-  // Keep each card's place in the grid; only nearby cards carry pictures, notes and drawing surfaces.
-  function watchCards() {
-    const body=$('.stacker .screen-body',main);if(!body)return;
-    if(cardObserver?.root!==body){
-      cardObserver?.disconnect();observed.clear();mounted.clear();
-      cardObserver=new IntersectionObserver(entries=>{if(left(view))return;for(const {target,isIntersecting} of entries){
-        if(!target.isConnected)continue;target.near=isIntersecting;if(isIntersecting)mountCard(target);else restCard(target);
-      }dateNow();},{root:body,rootMargin:'300px 0px'});
-      body.addEventListener('focusout',()=>queueMicrotask(()=>{for(const tile of mounted)restCard(tile);}));
-    }
-    for(const tile of observed)if(!tile.isConnected){cardObserver.unobserve(tile);observed.delete(tile);mounted.delete(tile);}
-    for(const tile of $$('[data-drag-shot]',body))if(!observed.has(tile)){observed.add(tile);cardObserver.observe(tile);}
-  }
-  S.events.signal.addEventListener('abort',()=>cardObserver?.disconnect(),{once:true});
-  function dateNow(){
-    if(order!=='time'||dateRaf)return;
-    dateRaf=requestAnimationFrame(()=>{
-      dateRaf=0;if(left(view))return;
-      const body=$('.stacker .screen-body',main),select=$('[data-date-jump]',main);if(!body||!select)return;
-      const edge=body.getBoundingClientRect(),near=[...mounted].filter(t=>t.isConnected&&t.near).map(tile=>({tile,r:tile.getBoundingClientRect()}))
-        .filter(x=>x.r.bottom>edge.top&&x.r.top<edge.bottom).sort((a,b)=>a.r.top-b.r.top||a.r.left-b.r.left)[0];
-      if(near&&document.activeElement!==select)select.value=shotDate(byRep.get(Number(near.tile.dataset.dragShot))||{});
-      const i=dates.findIndex(d=>d.date===select.value);
-      $('[data-date-step="-1"]',main)?.classList.toggle('invisible',i<=0);
-      $('[data-date-step="1"]',main)?.classList.toggle('invisible',i<0||i>=dates.length-1);
-    });
-  }
-  function dateMarkers(){
-    const grid=$('.lookgrid',main);if(!grid)return;
-    for(const h of $$(':scope > .date-divider',grid))h.remove();
-    if(order!=='time')return;
-    let last=null;
-    for(const tile of $$(':scope > .tile[data-drag-shot]',grid)){
-      const day=shotDate(byRep.get(Number(tile.dataset.dragShot))||{});if(day===last)continue;last=day;
-      const h=document.createElement('h3');h.className='date-divider';h.dataset.date=day;h.textContent=dateWord(day);grid.insertBefore(h,tile);
-    }
-    dateTail();dateNow();
-  }
-  function dateTail(){
-    const grid=$('.lookgrid',main),last=$$('.date-divider',grid||main).at(-1),tile=$$('[data-drag-shot]',grid||main).at(-1),body=$('.stacker .screen-body',main);
-    if(grid&&body)grid.style.setProperty('--date-tail',`${order==='time'&&nextPage>=pages&&last&&tile?Math.max(0,body.clientHeight-(tile.getBoundingClientRect().bottom-last.getBoundingClientRect().top)):0}px`);
-  }
-  function dateJump(){
-    if(order!=='time'||!dates.length)return '';
-    let month=null;
-    const options=dates.map(d=>{
-      const key=d.date.slice(0,7),label=d.date==='undated'?'No date':new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined,{month:'long',year:'numeric'});
-      const group=key!==month?`${month===null?'':'</optgroup>'}<optgroup label="${esc(label)}">`:'';month=key;
-      return `${group}<option value="${d.date}">${esc(dateWord(d.date))} · ${plural(d.count,'shot')}</option>`;
-    }).join('')+'</optgroup>';
-    return `<div class="date-jump" role="group" aria-label="Browse dates"><button class="btn ghost" data-date-step="-1" aria-label="Previous date">‹</button><label><span>Jump to</span><select data-date-jump aria-label="Jump to date">${options}</select></label><button class="btn ghost" data-date-step="1" aria-label="Next date">›</button></div>`;
-  }
-  function sizeFamilies() {
-    const grid = $(".stacker .lookgrid", main);if(!grid)return;
-    const columns = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).length;
-    $$(":scope > .fam-tiles",grid).forEach(f=>{
-      const n=Math.min(columns,f.children.length);
-      f.style.gridColumn=`span ${n}`;f.style.gridTemplateColumns=`repeat(${n},minmax(0,1fr))`;
-    });
-    if(order==='time')dateTail();
-  }
-  window.addEventListener('resize',sizeFamilies,{signal:S.events.signal});
-  async function load(keep, reorder = false, day = null) {
-    if (left(view)) return;
-    const request = ++loadEpoch;
-    paging = false;
-    const body = $(".screen-body", main), y = body?.scrollTop || 0, loadedPages = keep ? nextPage-firstPage : 1;
-    if(!keep)firstPage=0;
-    const expanded = keep && byRep.get(Number($(".tile.open", main)?.dataset.dragShot));
-    const edge = body?.getBoundingClientRect(), visible = keep && edge ? $$(".tile[data-drag-shot]", body)
-      .map(el=>({shot:byRep.get(Number(el.dataset.dragShot)),box:el.getBoundingClientRect()}))
-      .filter(x=>x.shot&&x.box.bottom>edge.top&&x.box.top<edge.bottom)
-      .sort((a,b)=>Number(b.shot===expanded)-Number(a.shot===expanded)||Math.abs(a.box.top-edge.top)-Math.abs(b.box.top-edge.top))[0] : null;
-    const anchor = visible && {members:visible.shot.members,offset:visible.box.top-edge.top};
-    let jump=null;
-    try {
-      const url = query();
-      const [sug, first] = await Promise.all([api("/api/groups?view=suggest"), api(`${url}&page=${firstPage}${reorder?'&reorder=1':''}${order==='time'?'&dates=1':''}${day?`&date=${encodeURIComponent(day)}`:''}${keep&&order==='time'&&anchor?`&at=${anchor.members[0]}`:''}`)]);
-      if (left(view) || request !== loadEpoch) return;
-      firstPage=first.page;
-      if(first.dates)dates=first.dates;
-      jump=first.jump;
-      const batches = [first, ...await Promise.all(Array.from({length:Math.max(0,Math.min(loadedPages,first.pages-firstPage)-1)},(_,i)=>api(`${url}&page=${firstPage+i+1}`)))];
-      // Splitting at a page boundary can move the reached-for stack onto the next page.
-      while(anchor && firstPage+batches.length<first.pages && !batches.some(b=>b.shots.some(x=>x.members.some(m=>anchor.members.includes(m))))) {
-        batches.push(await api(`${url}&page=${firstPage+batches.length}`));
-        if(left(view)||request!==loadEpoch)return;
-      }
-      if (left(view) || request !== loadEpoch) return;
-      twins = sug.suggestions.length;
-      pairs = sug.suggestions;
-      shots = batches.flatMap(b=>b.shots); boxes = Object.assign({},...batches.map(b=>b.boxes)); undo = first.undo; total = first.total;
-      nextPage = firstPage+batches.length; pages = first.pages;
-    } catch (e) { if (!left(view) && request === loadEpoch) main.innerHTML = FAILED(e.message); return; }
-    if (left(view)) return;
-    byRep.clear();
-    shots.forEach((x) => byRep.set(x.rep, x));
-    render(keep);
-    if (expanded) {
-      const members = new Set(expanded.members), match = shots.map(x=>({shot:x,n:x.members.filter(m=>members.has(m)).length})).sort((a,b)=>b.n-a.n)[0];
-      if(match?.n && match.shot.members.length>1){mountCard($(`[data-drag-shot="${match.shot.rep}"]`,main));const button=$(`[data-expand="${match.shot.rep}"]`,main);if(button&&!button.closest('.tile.open'))expandStack(main,match.shot,button,boxes,false);}
-    }
-    if (keep) {
-      // Reattach the shared tag shelf before restoring scroll; its height changes the bottom scroll limit.
-      World.sea?.layout();
-      const body = $(".screen-body", main), match = anchor && shots.find(x=>x.members.some(m=>anchor.members.includes(m)));
-      const tile = match && $(`[data-drag-shot="${match.rep}"]`,main);
-      body.scrollTop = tile ? tile.getBoundingClientRect().top-body.getBoundingClientRect().top+body.scrollTop-anchor.offset : y;
-    }
-    if(jump)requestAnimationFrame(()=>{
-      if(left(view)||request!==loadEpoch)return;
-      const tile=$(`[data-drag-shot="${jump.photo}"]`,main),body=$('.screen-body',main);if(!tile||!body)return;
-      const header=tile.previousElementSibling?.matches('.date-divider')?tile.previousElementSibling:tile;
-      body.scrollTop+=header.getBoundingClientRect().top-body.getBoundingClientRect().top;
-      const select=$('[data-date-jump]',main);if(select)select.value=jump.date;dateNow();
-    });
-    dateNow();
-  }
-  async function moreStacks() {
-    if (paging || nextPage >= pages || left(view)) return;
-    paging = true;
-    const request = loadEpoch;
-    try {
-      const r = await api(`${query()}&page=${nextPage}`);
-      if (left(view) || request !== loadEpoch) return;
-      nextPage++;
-      shots.push(...r.shots); Object.assign(boxes, r.boxes);
-      for (const x of r.shots) byRep.set(x.rep, x);
-      const grid = $(".lookgrid", main); if (grid) { patchShotTiles(grid,shots,null,boxes,true);dateMarkers();sizeFamilies();watchCards(); }
-    } catch (e) { if (!left(view) && request === loadEpoch) toast(e.message); }
-    finally { if (request === loadEpoch) paging = false; }
-  }
-  async function earlierStacks(){
-    if(paging||firstPage<=0||left(view))return;
-    paging=true;const request=loadEpoch,body=$('.screen-body',main),edge=body.getBoundingClientRect();
-    const anchor=$$('[data-drag-shot]',body).find(tile=>tile.getBoundingClientRect().bottom>edge.top),offset=anchor?.getBoundingClientRect().top-edge.top;
-    try{
-      const r=await api(`${query()}&page=${firstPage-1}`);if(left(view)||request!==loadEpoch)return;
-      firstPage--;shots.unshift(...r.shots);Object.assign(boxes,r.boxes);for(const shot of r.shots)byRep.set(shot.rep,shot);
-      patchShotTiles($('.lookgrid',main),shots,null,boxes,true);dateMarkers();sizeFamilies();watchCards();
-      if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-body.getBoundingClientRect().top-offset;
-    }catch(e){if(!left(view))toast(e.message);}finally{if(request===loadEpoch)paging=false;}
-  }
-  function render(keep = false) {
-    const current=keep&&$('.stacker',main);
-    if(current&&shots.length&&$('.lookgrid',current)){
-      patchShotTiles($('.lookgrid',current),shots,null,boxes,true);
-      dateMarkers();
-      if(order==='time'){
-        const old=$('.date-jump',current),markup=dateJump();if(old)old.outerHTML=markup;
-        bindDates();
-      }
-      $('[data-stack-total]',current).textContent=fmt(total||shots.length);
-      $('[data-stack-word]',current).textContent=stacksOnly?((total||shots.length)===1?'stack':'stacks'):((total||shots.length)===1?'shot':'shots');
-      $('[data-stack-twins]',current).innerHTML=twins?`🧐 <b>${fmt(twins)}</b> possible ${twins===1?'twin':'twins'} to check`:'✅ all checked';
-      const button=$('#g-undo',current);button.hidden=!undo;
-      $('.desktop-label',button).textContent=undo?`Undo ${DRAW_WORD[undo]||undo}`:'Undo';
-      const pairKey=JSON.stringify(pairs);
-      if(pairKey!==shownPairs){
-        const oldRail=$('.screen-rail',current),rail=twinsRail();
-        if(rail){if(oldRail)oldRail.outerHTML=rail;else $('.screen-bar',current).insertAdjacentHTML('beforebegin',rail);}else oldRail?.remove();
-        shownPairs=pairKey;
-      }
-      current.classList.toggle('no-rail',!pairs.length);
-      $('.bar-right',current).innerHTML=twinsAction();
-      setForward(twins?null:{label:'Next: Crown →',name:'Crown',href:'#duel?stage=stacks'});
-      sizeFamilies();watchCards();
-      return;
-    }
-    main.innerHTML = `
-      <div class="screen sorter stacker ${order==='time'?'by-date':''} ${pairs.length ? '' : 'no-rail'}">
-        <div class="screen-head">
-          <h1>🧩 Stacks</h1>
-          <span class="stat-chip"><b data-stack-total>${fmt(total || shots.length)}</b> <span data-stack-word>${stacksOnly?((total||shots.length)===1?'stack':'stacks'):((total||shots.length)===1?'shot':'shots')}</span></span>
-          <span class="stat-chip" data-stack-twins>${twins ? `🧐 <b>${fmt(twins)}</b> possible ${twins === 1 ? "twin" : "twins"} to check` : "✅ all checked"}</span>
-          <span class="grow"></span>
-          <button class="chip ${stacksOnly?'on':''}" data-stacks-only aria-pressed="${stacksOnly}">Stacks only</button>
-          <span class="seg" role="group" aria-label="Stack order">
-            <button class="seg-btn ${order === "look" ? "on" : ""}" data-stack-order="look" title="Put similar stacks next to each other">Similar</button>
-            <button class="seg-btn ${order === "time" ? "on" : ""}" data-stack-order="time" title="Sort stacks by capture time">By date</button>
-          </span>
-          ${dateJump()}
-          ${helpBtn(`The same picture (a crop, a copy) or a burst of nearly the same shot belongs in <b>one stack</b>, so it competes
-            as one shot showing its best take. The obvious ones are stacked already.<br><br><b>Twin check</b> shows the pairs that look
-            like the same shot but weren't stacked. Here, the <b>paperclip</b> opens a stack (keep a different take, split one out, split it
-            all), and dragging one photo or stack onto another combines them. Loose photos are stacks of one;
-            <b>Stacks only</b> hides them. <b>Z</b> undoes.`)}
-        </div>
-        <div class="screen-body">
-          ${shots.length ? `<div class="lookgrid gsec-tiles">${shotTiles(shots, null, boxes,true)}</div>` : `<div class="empty">${stacksOnly?'No stacks yet. Turn off Stacks only to combine loose photos.':'No shots to stack yet.'}</div>`}
-        </div>
-        ${twinsRail()}
-        <div class="screen-bar action-bar">
-          <div class="bar-left"><a class="btn ghost" href="#filter">← Filter</a></div>
-          <div class="bar-mid"><button class="btn ghost" id="g-undo" ${undo ? "" : "hidden"} title="Take back your last change (Z)"><kbd>Z</kbd> <span class="desktop-label">${undo ? `Undo ${DRAW_WORD[undo] || undo}` : "Undo"}</span><span class="phone-label">Undo</span></button></div>
-          <div class="bar-right">${twinsAction()}</div>
-        </div>
-      </div>`;
-    setForward(twins ? null : { label: "Next: Crown →", name: "Crown", href: "#duel?stage=stacks" });
-    shownPairs=JSON.stringify(pairs);
-    $("#g-undo").onclick = () => drawUndo(() => load(true));
-    $('[data-stacks-only]',main).onclick=async()=>{
-      stacksOnly=!stacksOnly;
-      try{localStorage.setItem('matcher-stacks-only',stacksOnly?'1':'0');}catch(_){ /* private mode */ }
-      main.innerHTML=LOADING();await load(false);$('[data-stacks-only]',main)?.focus();
-    };
-    $$("[data-stack-order]", main).forEach((b) => (b.onclick = async () => {
-      if (b.dataset.stackOrder === order) return;
-      order = b.dataset.stackOrder;
-      try { localStorage.setItem("matcher-stacks-order", order); } catch (_) { /* private mode */ }
-      main.innerHTML = LOADING();
-      await load(false,true);
-    }));
-    const body = $(".screen-body", main);
-    rememberShotTiles($('.lookgrid',main),shots,boxes);
-    sizeFamilies();
-    dateMarkers();bindDates();
-    watchCards();
-    body.onscroll = () => { dateNow();if(body.scrollTop<250&&firstPage>0)earlierStacks();else if (body.scrollHeight-body.scrollTop-body.clientHeight < 500) moreStacks(); };
-    const page = $(".stacker", main);
-    page.onclick = (e) => {
-      const t = e.target.closest("[data-expand],[data-keep],[data-split],[data-unstack],[data-reset],[data-view]");
-      if (!t) return;
-      e.stopPropagation();
-      if (t.dataset.expand) return expandStack(main, byRep.get(Number(t.dataset.expand)), t, boxes);
-      if (t.dataset.keep) return act("/api/frame", { photo: Number(t.dataset.keep) }, "That take now stands in for the stack.");
-      if (t.dataset.split) return act("/api/groups/split", { photo: Number(t.dataset.split) }, "Split out; it's its own shot now.");
-      if (t.dataset.unstack) return act("/api/groups/unstack", { photo: Number(t.dataset.unstack) }, "Split apart into separate shots.");
-      if (t.dataset.reset) return act("/api/groups/reset", { photos: [Number(t.dataset.reset)] }, "Back to automatic stacking.");
-      if (t.dataset.asideStack) return setAsideStack(Number(t.dataset.asideStack));
-      if (t.dataset.view) return openViewer(Number(t.dataset.view));
-    };
-    // X, or the bar's button, sets a whole stack aside with every take (the Set aside page can bring it back).
-    const setAsideStack = (rep) => { const x = byRep.get(rep); if (!x) return; act("/api/filter/decision", { photos: x.members, action: "aside" }, x.members.length===1?'Set aside.':`Set aside with all ${x.members.length} takes.`); };
-    S.onKey = (e) => {
-      if (e.repeat) return;
-      if (["z", "Z", "Backspace"].includes(e.key)) { e.preventDefault(); drawUndo(() => load(true)); return; }
-      if (e.key !== "x" && e.key !== "X") return;
-      const t = $(".tile.open", page) || document.activeElement?.closest?.(".tile") || $(".tile.picked", page);
-      if (!t?.dataset.sel) return;
-      e.preventDefault(); setAsideStack(Number(t.dataset.sel));
-    };
-    let drag = null;
-    page.ondragstart = (e) => {
-      const el = e.target.closest("[data-drag-frame],[data-drag-shot]");
-      if (!el) return;
-      drag = el.dataset.dragFrame ? { kind: "frame", id: Number(el.dataset.dragFrame) } : { kind: "shot", id: Number(el.dataset.dragShot) };
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", String(drag.id));
-    };
-    page.ondragover = (e) => {
-      // Dragging above or below the list scrolls it, from anywhere outside, not only a thin band at its edge.
-      const body = $(".screen-body", page);
-      if (drag && body) { const r = body.getBoundingClientRect(), edge = 48, up = r.top + edge - e.clientY, down = e.clientY - (r.bottom - edge); if (up > 0) body.scrollTop -= Math.min(36, up * .4); else if (down > 0) body.scrollTop += Math.min(36, down * .4); }
-      const z = e.target.closest("[data-drop]");
-      if (!z || !drag || (drag.kind === "shot" && Number(z.dataset.drop) === drag.id)) return;
-      e.preventDefault();
-      $$(".drop-hot", page).forEach((x) => x !== z && x.classList.remove("drop-hot"));
-      z.classList.add("drop-hot");
-    };
-    page.ondrop = (e) => {
-      const z = e.target.closest("[data-drop]"), d = drag;
-      drag = null;
-      if (!z || !d) return;
-      e.preventDefault();
-      if (d.kind === "frame") return act("/api/groups/move", { photo: d.id, target: Number(z.dataset.drop) }, "Moved into that stack.");
-      act("/api/groups/merge", { photos: [d.id, Number(z.dataset.drop)] }, "Merged into one stack.");
-    };
-    page.ondragend=()=>{drag=null;$$('.drop-hot',page).forEach(tile=>tile.classList.remove('drop-hot'));for(const tile of mounted)restCard(tile);};
-  }
-  function bindDates(){
-    const select=$('[data-date-jump]',main);if(!select)return;
-    const jump=day=>{main.innerHTML=LOADING();load(false,false,day);};
-    select.onchange=()=>jump(select.value);
-    for(const button of $$('[data-date-step]',main))button.onclick=()=>{const i=dates.findIndex(d=>d.date===select.value)+Number(button.dataset.dateStep);if(dates[i])jump(dates[i].date);};
-  }
-  function twinsRail(){return pairs.length?`<aside class="screen-rail"><div class="rail-card grow"><h3>🧐 Possible twins</h3>
-    <div class="twin-list">${pairs.map(x=>`<a class="twin-row" href="#stacks?check=1" title="${Math.round(x.similarity*100)}% alike">
-    <img src="${T(x.a)}" alt=""><span>≈</span><img src="${T(x.b)}" alt=""><span class="muted small">${Math.round(x.similarity*100)}%</span></a>`).join('')}</div></div></aside>`:'';}
-  function twinsAction(){return twins?`<a class="btn primary big" href="#stacks?check=1">🎮 Twin check <span class="btn-sub">${fmt(twins)} to check</span> <kbd>Enter</kbd></a>`:'';}
-  async function act(path, payload, msg) {
-    try { await api(path, payload); toastOnce(msg, `${msg} Z undoes it.`); Sound.play("pick"); } catch (e) { toast(e.message); return; }
-    await load(true);
-    refreshHud(true);
-  }
-  S.onKey = (e) => { if (["z", "Z", "Backspace"].includes(e.key) && !e.repeat) { e.preventDefault(); drawUndo(() => load(true)); } };
-  main.innerHTML = LOADING();
-  await load();
-}
-
 // Twin check (the Stacks minigame): two shots that look like the same shot but weren't stacked. → same shot (stack
 // them), ← different. Same layout as every game screen.
 async function twinCheck(main) {
@@ -4295,8 +4041,8 @@ async function twinCheck(main) {
     const k = e.key;
     if (k === "Escape") { e.preventDefault(); location.hash = "#stacks"; }
     else if (!queue[0] && k === "Enter") { e.preventDefault(); location.hash = "#duel?stage=stacks"; }
-    else if (k === "ArrowRight" || k === "Enter" || k === "d" || k === "D") { e.preventDefault(); call(true); }
-    else if (k === "ArrowLeft" || k === "a" || k === "A") { e.preventDefault(); call(false); }
+    else if (k === "ArrowRight" || k === "Enter") { e.preventDefault(); call(true); }
+    else if (k === "ArrowLeft") { e.preventDefault(); call(false); }
     else if (k === " ") { e.preventDefault(); skip(); }
     else if (k.toLowerCase() === "x") { e.preventDefault(); toss(); }
     else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); undo(); }
@@ -4391,7 +4137,7 @@ function emojiPicker(anchor, pick) {
 }
 
 // "?" in a screen's top strip: the explanation a page would spell out in a paragraph, there when you want it.
-const helpBtn = (html) => `<button class="help-btn" data-help="${esc(html + "<br><br><b>WASD</b> = arrow keys · <b>Space</b> skips · <b>Z</b> undoes · <b>X</b> tosses the focused photo · <b>C</b> auto-crops · <b>F</b> enhances.")}" aria-label="How this works" aria-expanded="false">?</button>`;
+const helpBtn = (html) => `<button class="help-btn" data-help="${esc(html + "<br><br><b>Arrows</b> make choices · <b>A</b> auto-aligns · <b>Space</b> skips · <b>Z</b> undoes · <b>X</b> tosses the focused photo · <b>C</b> auto-crops · <b>F</b> enhances.")}" aria-label="How this works" aria-expanded="false">?</button>`;
 function closeHelp(focus=false) {
   const source=$("[data-help][aria-expanded=true],#game-help[aria-expanded=true]");
   $$(".help-pop").forEach(pop=>pop.remove());
@@ -5710,7 +5456,7 @@ async function drawPlay(main, tid) {
     $("#dctl").innerHTML = `<div class="bar-left">${btn(left_)}</div>
       <div class="bar-mid">${middle.map((b) => `<button class="btn ${b.cls || "ghost"}" data-c="${b.c}">${b.label}</button>`).join("")}</div>
       <div class="bar-right">${btn(right)}</div>`;
-    $("#dctl").title = "WASD or arrows · Space skips · Z undoes · X tosses";
+    $("#dctl").title = "Arrows choose · A aligns · C crops · F enhances · Space skips · Z undoes · X tosses";
     $$("[data-c]", $("#dctl")).forEach((b) => (b.onclick = () => command(b.dataset.c)));
   }
   const UNDO = { c: "undo", label: "<kbd>Z</kbd> Undo" };
@@ -5947,14 +5693,14 @@ async function drawPlay(main, tid) {
       return renameBin($$("#bins [data-bin]")[pcur], g.id === tid ? { ...g, name: theme.name } : g, () => (g.id === tid ? load() : paintBins()));
     }
     const forward = { thin: deck.cards[0] ? "done" : "next", bulk: "bulkin", pick: null }[mode] ?? "in";
-    if (k === "ArrowRight" || k === "d" || k === "D") { e.preventDefault(); if (forward) command(forward); }
+    if (k === "ArrowRight") { e.preventDefault(); if (forward) command(forward); }
     else if (k === "Enter") { e.preventDefault(); if (forward) command(forward); }  // Enter confirms, like →
     else if (k === "Escape" && mode !== "pick") { e.preventDefault(); done(); }
-    else if (k === "ArrowLeft" || k === "a" || k === "A") {
+    else if (k === "ArrowLeft") {
       e.preventDefault();
       command({ thin: "dig", bulk: "onebyone", pick: "cancel", card: "pick" }[mode] || "");
     } else if (k === "Escape") { if (mode === "pick") { e.preventDefault(); cancelPick(); } }
-    else if (k === "ArrowUp" || k === "w" || k === "W") { e.preventDefault(); act("twin"); }
+    else if (k === "ArrowUp") { e.preventDefault(); act("twin"); }
     else if (k === "n" || k === "N") { if (mode === "card" || mode === "pick") { e.preventDefault(); place("new"); } }
     else if (k === "z" || k === "Z" || k === "Backspace") { e.preventDefault(); undo(); }
     else if (k === "r" || k === "R") { e.preventDefault(); reroll(); }
@@ -6694,7 +6440,7 @@ const World = {
     this.draftCamera?.close();
     if (this.handlers && mode !== "live") {  // the Groups page let go of the sea: back to the plain world
       this.handlers = null;
-      Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null, onSelectMatches:null }, this.plain);
+      Object.assign(this.sea, { onSelect: null, onDrop: null, onCircle: null, onLasso: null, onSelectMatches:null,onFocus:null }, this.plain);
       this.sea.select([]);
       this.sea.highlight(null);
       this.stale = true;
@@ -6810,7 +6556,7 @@ const World = {
       if(source!==S.lib?.source)return;
       for(const id of photos.keys())if(!seen.has(id)){photos.delete(id);this.sprites.delete(id);}
       this.photosSource = source;
-      if(this.looksPolled!==source&&[...photos.values()].some(p=>!p.auto_look))this.pollLooks(source);
+      if(this.looksPolled!==source&&[...photos.values()].some(p=>(p.auto_look?.version||0)<AutoLook.version))this.pollLooks(source);
       onPage?.();
     })();
     this.photoLoading=loading;
@@ -6819,9 +6565,12 @@ const World = {
   async pollLooks(source){
     this.looksPolled=source;
     try{
-      let working=true;while(working&&source===S.lib?.source){await sleep(2000);working=(await api('/api/auto-looks')).working;}
-      if(source!==S.lib?.source)return;
-      this.photosSource=null;await this.allPhotos();paintFilters();PhotoNotes.scan();
+      let after=0,more=false,working=true;
+      while((working||more)&&source===S.lib?.source){
+        if(!more)await sleep(2000);
+        const page=await api(`/api/auto-looks?after=${after}&per=250`);if(source!==S.lib?.source)return;
+        after=page.after??after;working=page.working;more=page.more;AutoLook.upgrade(page.recipes||[]);
+      }
     }catch(_){/* cached recipes will be picked up on the next open */}
   },
   extras(items) {
@@ -7189,6 +6938,7 @@ const World = {
     };
   },
   release(root) {
+    if(this.stackStage){this.stackStage.close();this.stackStage=null;}
     // Focus is an activity, not library state. Carrying it into the next stage grows unrelated photos over play.
     this.sea?.releaseFocus();
     if(this.sea){this.sea.mouse.x=this.sea.mouse.y=-1e5;this.sea.hold(null);this.sea.select([]);}
@@ -7220,7 +6970,7 @@ const WORLD_SOLID = ["#main .screen-head", "#main .screen-bar", "#main .screen-r
   "#main .finals-done", "#main .an-panel", "#main .save-grid", "#main .onboard-body > *", "#main .sections", "#main .tb-section",
   "#main .people", "#main .screen-body > h2", "#main .map-note", "#main .title-road", "#main .tag-call", "#main .stage-results", "#main .vn-catalog",
   "#game-help", "#game-help-hint", "#main .shot-select", "#main .tile-frames-bar", "#main .photo-fan > .ftile", "#main [data-solid]"].join(", ");
-const WORLD_MODES = { home: "ambient", ready: "ambient", duel: "focus", sweep: "focus", finals: "focus", stacks: "dim", shortlist: "dim",
+const WORLD_MODES = { home: "ambient", ready: "ambient", duel: "focus", sweep: "focus", finals: "focus", stacks: "live", shortlist: "dim",
   leaderboard: "dim", reveal: "dim", cuts: "dim", people: "dim" };
 
 // ---------------------------------------------------------------- boot

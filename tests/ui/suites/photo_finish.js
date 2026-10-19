@@ -5,8 +5,8 @@ const {BASE,LINK,LIB,OUT}=process.env;
   const browser=await chromium.launch({headless:true}),page=await browser.newPage({viewport:{width:1440,height:900}}),problems=[];
   let votes=0;page.on('pageerror',e=>problems.push(e.message));page.on('request',r=>{if(r.method()==='POST'&&/\/api\/vote\b/.test(r.url()))votes++;});
   await page.goto(LINK);await page.fill('#path',LIB);await page.click('#use-path');await page.waitForSelector('#an-go',{timeout:300000});await page.click('#an-go');await page.waitForSelector('.journey');
-  await page.goto(BASE+'/#stacks');await page.waitForSelector('.shot-select img.pile-cover');
-  const pid=Number(/\/img\/[tp]\/(\d+)/.exec(await page.locator('.shot-select img.pile-cover').first().getAttribute('src'))[1]);
+  await page.goto(BASE+'/#stacks');await page.waitForSelector('.stack-field .ps-item:not(.take) .pile-cover');
+  const pid=Number(/\/img\/[tp]\/(\d+)/.exec(await page.locator('.stack-field .ps-item:not(.take) .pile-cover').first().getAttribute('src'))[1]);
   const data=await page.evaluate(id=>api(`/api/photo/${id}/notes`),pid);
   // A flat synthetic proof makes it possible to verify the displayed mask numerically, without owner media.
   const png=execFileSync('../../.venv/bin/python',['-c','from PIL import Image;import sys;Image.new("RGB",(int(sys.argv[1]),int(sys.argv[2])),(100,100,100)).save(sys.stdout.buffer,"PNG")',String(data.width),String(data.height)]);

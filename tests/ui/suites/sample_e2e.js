@@ -40,8 +40,8 @@ const {BASE,LINK,OUT}=process.env;
   const state=await page.evaluate(async()=>({sample:await api('/api/sample'),journey:await api('/api/journey')}));
   assert.equal(state.sample.state,'done');assert.equal(state.sample.total,13);assert.equal(await page.evaluate(()=>World.total),13);
   assert(state.journey.progress.shots>=4,'The sample must leave enough shots for a bracket');
-  await page.goto(BASE+'/#stacks');await page.waitForSelector('.tile.stacked');await page.waitForTimeout(700);
-  assert(await page.locator('.tile.stacked .pile-take').count()>0);
+  await page.goto(BASE+'/#stacks');await page.waitForFunction(()=>World.sea.arrangement&&World.sea.settled);
+  assert(await page.locator('.stack-field .ps-item:not(.take) .under').count()>0);
   await page.screenshot({path:OUT+'/D-sample-stacks.png'});
   await page.goto(BASE+'/#finals');await page.waitForSelector('#journey-next.ready');await page.click('#journey-next');
   for(let k=0;k<8;k++){

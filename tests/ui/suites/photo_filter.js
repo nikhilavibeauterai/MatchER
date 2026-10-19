@@ -10,10 +10,11 @@ const {LINK,OUT}=process.env;
     const c=document.createElement('canvas');c.width=400;c.height=200;const x=c.getContext('2d');
     x.fillStyle='#c64422';x.fillRect(0,0,400,200);x.fillStyle='white';x.fillRect(180,0,40,200);return c.toDataURL().split(',')[1];
   });
-  await page.route('**/img/t/900001.jpg',r=>r.fulfill({contentType:'image/png',body:Buffer.from(fixture,'base64')}));
+  // Keep this legacy bare-image proof out of the automatic card wrapper, which handles real photo URLs.
+  await page.route('**/filter-test-picture.png',r=>r.fulfill({contentType:'image/png',body:Buffer.from(fixture,'base64')}));
   await page.evaluate(()=>{
     const host=document.createElement('div');host.id='filter-proof';host.style.cssText='position:fixed;left:200px;top:100px;width:300px;height:400px;z-index:99999;background:#123';
-    host.innerHTML='<img src="/img/t/900001.jpg" alt="Filter proof" style="width:300px;height:400px;padding:16.5px 16.5px 51px;object-fit:contain;object-position:center top;box-sizing:border-box;background:var(--paper);animation:none">';
+    host.innerHTML='<img src="/filter-test-picture.png" alt="Filter proof" style="width:300px;height:400px;padding:16.5px 16.5px 51px;object-fit:contain;object-position:center top;box-sizing:border-box;background:var(--paper);animation:none">';
     document.querySelector('#main').append(host);
   });
   const img=page.locator('#filter-proof img');await img.evaluate(e=>e.decode());

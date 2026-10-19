@@ -12,12 +12,14 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.waitForSelector('#an-go',{timeout:300000});await page.click('#an-go');await page.waitForSelector('.journey');
   await api('/api/stacks/auto',{});
   await page.goto(BASE+'/#duel?stage=open');await page.waitForFunction(()=>S.current?.type==='duel'&&!S.busy);
-  // WASD is translated before activity dispatch; a held key cannot cast extra votes.
-  let start=writes.length;await page.keyboard.press('w');await page.waitForFunction(()=>S.current?.type==='duel'&&!S.busy);
+  // Arrows make choices. Former WASD keys are inert, and A only changes alignment.
+  let start=writes.length;for(const key of ['w','s','d'])await page.keyboard.press(key);assert.equal(writes.length,start);
+  const align=await page.evaluate(()=>S.align);await page.keyboard.press('a');assert.equal(await page.evaluate(()=>S.align),!align);assert.equal(writes.length,start);
+  await page.keyboard.press('ArrowUp');await page.waitForFunction(()=>S.current?.type==='duel'&&!S.busy);
   assert.equal(writes.slice(start).filter(r=>r.url==='/api/vote')[0].body.outcome,'great');
-  start=writes.length;await page.evaluate(()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'w',repeat:true,bubbles:true,cancelable:true})));
+  start=writes.length;await page.evaluate(()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',repeat:true,bubbles:true,cancelable:true})));
   await page.waitForTimeout(120);assert.equal(writes.length,start);
-  start=writes.length;await page.keyboard.press('s');await page.waitForFunction(()=>S.current?.type==='duel'&&!S.busy);
+  start=writes.length;await page.keyboard.press('ArrowDown');await page.waitForFunction(()=>S.current?.type==='duel'&&!S.busy);
   assert.equal(writes.slice(start).filter(r=>r.url==='/api/vote')[0].body.outcome,'meh');
   const filter=await page.evaluate(()=>S.filter);await page.keyboard.press('f');assert.equal(await page.evaluate(()=>S.filter),!filter);
   const crop=await page.evaluate(()=>S.crop);await page.keyboard.press('c');const cropNext=await page.evaluate(()=>S.crop);assert.notEqual(cropNext,crop);  // C cycles the crop modes
@@ -44,12 +46,12 @@ const {BASE,LINK,LIB,OUT}=process.env;
   await page.keyboard.press('Space');assert.equal(await page.locator('.twin-arena .side').first().getAttribute('data-photo'),String(photos[2]));assert.equal(writes.length,start);
   await page.keyboard.press('Space');assert.equal(await page.locator('.twin-arena .side').first().getAttribute('data-photo'),String(photos[0]));
   await page.waitForTimeout(700);await page.screenshot({path:OUT+'/GK-twins-desktop.png'});
-  // Tag calls retain native typing, support A/D, and skip without creating a tag edit.
+  // Tag calls retain native typing, support arrows, and skip without creating a tag edit.
   const tags=await api('/api/tags?all=1');const tag=tags.tags.find(t=>t.count>2);assert(tag);
   await page.goto(BASE+'/#tags?play='+encodeURIComponent(tag.key));await page.waitForSelector('#tag-call img');
   const photo=()=>page.locator('#tag-call img').getAttribute('src');const first=await photo();start=writes.length;
   await page.keyboard.press('Space');assert.notEqual(await photo(),first);assert.equal(writes.length,start);
-  start=writes.length;await page.keyboard.press('a');await page.waitForTimeout(400);
+  start=writes.length;await page.keyboard.press('ArrowLeft');await page.waitForTimeout(400);
   assert(writes.slice(start).some(r=>r.url==='/api/tags/set'&&r.body.off.includes(tag.key)));
   await page.keyboard.press('z');await page.waitForTimeout(250);
   // Bracket deferral advances only to another available match and never creates a result.
@@ -64,5 +66,5 @@ const {BASE,LINK,LIB,OUT}=process.env;
   const restored=await api('/api/finals');assert.deepEqual(restored.finals.seeds,after.finals.seeds,'X then Z restores the same bracket field');
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(350);await page.screenshot({path:OUT+'/GK-finals-phone.png'});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  assert.deepEqual(problems,[]);console.log(JSON.stringify({controls:'WASD, Space, Z, X, C, F',problems}));await browser.close();
+  assert.deepEqual(problems,[]);console.log(JSON.stringify({controls:'Arrows, Space, Z, X, A, C, F',problems}));await browser.close();
 })().catch(e=>{console.error(e.stack);process.exit(1);});

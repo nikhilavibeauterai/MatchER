@@ -51,17 +51,15 @@ const {LINK,LIB,OUT}=process.env;
   await page.waitForTimeout(350);await page.waitForFunction(()=>World.sea.settled);
   await page.evaluate(()=>World.sea.zoomToPrint(clipItem));await page.waitForSelector('.sea-photo-detail [data-open-stack]');
   await pull(page.locator('.sea-photo-detail [data-open-stack]'),'phone');await page.setViewportSize({width:1440,height:900});
-  await page.evaluate(()=>location.hash='#stacks');await page.waitForSelector('.stacker .shot-pile .stack-clip');
-  const tile=page.locator(`.stacker [data-drag-shot="${shot.id}"]`),clip=tile.locator('[data-expand]');
-  assert.equal(await clip.locator('.stack-slip').innerText(),String(shot.n));assert.equal(await tile.locator('.stack-clip').count(),1,'Each pile has one clip');
-  assert.equal(await clip.locator('input,button').count(),0,'The clip is one control without nested inputs or buttons');
-  await page.screenshot({path:OUT+'/clip-stacks.png'});
-  await clip.click();await page.waitForSelector('.tile.open .ftile');await page.waitForFunction(()=>!World.flights.size);assert.equal(await clip.getAttribute('aria-expanded'),'true');
-  await page.waitForTimeout(700); // Let the fan's entry animation finish before reviewing its screenshot.
+  await page.evaluate(()=>location.hash='#stacks');await page.waitForFunction(()=>World.sea.arrangement&&World.sea.settled);
+  await page.evaluate(id=>{const sea=World.sea;sea.promote(id);sea.zoomToPrint(sea.items.get(id));},shot.id);await page.waitForFunction(()=>!World.sea.cameraGlide);
+  const tile=page.locator(`#world [data-id="${shot.id}"]`),clip=tile.locator('[data-open-stack]');
+  assert.equal(await clip.locator('.stack-slip').innerText(),String(shot.n));assert.equal(await tile.locator('.stack-clip').count(),1);
+  await clip.click();await page.waitForFunction(()=>!!document.querySelector('#world').dataset.stackFan&&World.sea.settled&&!World.sea.cameraGlide);
+  assert.equal(await page.evaluate(()=>[...World.sea.items.values()].filter(it=>it.el.classList.contains('stack-fan-take')).length),shot.n);
   await page.screenshot({path:OUT+'/clip-stack-open.png'});
-  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(250);await clip.scrollIntoViewIfNeeded();
-  assert(await clip.isVisible());await page.screenshot({path:OUT+'/clip-stack-phone.png'});
-  await clip.click();await page.waitForSelector('.tile.open',{state:'detached'});
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(500);await page.screenshot({path:OUT+'/clip-stack-phone.png'});
+  await page.click('[data-stack-action=close]');await page.waitForFunction(()=>!document.querySelector('#world').dataset.stackFan);
   // Four-digit piles still fit their slip, and a single never acquires a count.
   const sizes=await page.evaluate(async()=>{
     const host=document.createElement('div');host.className='print';host.style.cssText='position:fixed;left:60px;top:200px;width:240px;height:320px;z-index:1000';

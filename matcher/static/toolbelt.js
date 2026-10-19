@@ -83,7 +83,7 @@ const Toolbelt = {
     window.addEventListener('hashchange',()=>{this.cancel();this.cursor?.remove();this.cursor=null;});
     window.addEventListener('blur',()=>this.cancel());
     document.addEventListener('keydown',e=>{
-      if(!this.gesture||e.target.closest('input,textarea,select')||!['Escape','z','Z',' ','Enter','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','w','a','s','d'].includes(e.key))return;
+      if(!this.gesture||e.target.closest('input,textarea,select')||!['Escape','z','Z',' ','Enter','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','A','c','C','f','F'].includes(e.key))return;
       e.preventDefault();e.stopImmediatePropagation();if(e.key==='Escape'||e.key.toLowerCase()==='z')this.cancel();
     },true);
     // Panes come and go with every screen: whatever shows a photo's card is armed as it appears.

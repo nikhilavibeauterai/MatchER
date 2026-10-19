@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import auto_look, finishing, imageio
+from . import alignment, auto_look, finishing, imageio
 
 PROOF = 64                 # the look is measured on a 64px-wide proof, like the on-screen filter
 LOW, HIGH = 0.005, 0.995   # black and white points
@@ -107,6 +107,7 @@ def tuned(how: dict, look=None) -> dict:
     k = knobs_of(look)
     slope = 1 + 0.6 * k["contrast"]
     return {"levels": [(1 + (a - 1) * k["levels"], b * k["levels"]) for a, b in how["levels"]],
+            "curve": auto_look.mix_curve(how.get("curve"), k["levels"]),
             "gamma": min(2.2, max(0.4, how["gamma"] * (1 - 0.45 * k["light"]))),
             "contrast": (slope, (1 - slope) / 2), "saturation": max(0.0, how["saturation"] * k["colour"]),
             "warmth": k["warmth"]}
@@ -151,7 +152,10 @@ def apply(im: Image.Image, how: dict | None = None, look_knobs=None) -> Image.Im
     slope, icpt = t["contrast"]
     lut: list[int] = []
     for a, b in t["levels"]:
-        y = np.clip(np.clip(a * x + b, 0, 1) ** t["gamma"] * slope + icpt, 0, 1)
+        y = np.clip(a * x + b, 0, 1)
+        if t["curve"]:
+            y = np.interp(y, np.linspace(0, 1, len(t["curve"])), t["curve"])
+        y = np.clip(y ** t["gamma"] * slope + icpt, 0, 1)
         lut.extend(int(v) for v in np.clip(np.round(y * 255), 0, 255))
     out = im.point(lut)
     s, w = t["saturation"], t["warmth"]
@@ -204,7 +208,7 @@ def touch_up(src: str | Path, dst: str | Path, edits: dict | None = None, box=No
     if baseline:
         out = finishing.apply(out, baseline, original_size, rectangle, rotate)
     out = finishing.apply(out, e, original_size, rectangle, rotate)
-    out = finishing.straighten(out, e.get("straighten", 0))
+    out = finishing.straighten(out, alignment.angle(recipe, e))
     if exif:
         out.save(dst, "JPEG", quality=quality, exif=exif)
     else:

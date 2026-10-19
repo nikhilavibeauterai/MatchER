@@ -34,9 +34,9 @@ let pg = null;
   await page.click('#journey-next');
   // Stacks
   await page.waitForSelector(".stacker");
-  res.stacksTools = await text(".screen-bar .bar-right .btn.primary");
+  res.stacksTools = await text("#journey-next");
   await shot("stacks");
-  if (await page.$('a[href="#stacks?check=1"]')) {
+  if (await page.locator('a[href="#stacks?check=1"]').first().isVisible()) {
     await page.click('a[href="#stacks?check=1"]');
     await page.waitForSelector(".twin-arena, .big-emoji");
     if (await page.$(".twin-arena")) await shot("twins");
@@ -121,7 +121,16 @@ let pg = null;
   await page.waitForTimeout(250);const afterUndo=await offset();assert(Math.abs(afterUndo-afterSplit)<4,`Undo moved its row from ${afterSplit} to ${afterUndo}`);
   res.splitFan={beforeSplit,afterSplit,afterUndo,takes:original.members.length};
   await shot('groups-split-undo');await page.click(`.tile.open [data-expand="${original.rep}"]`);
-  const pair=page.locator('.tile.stacked').filter({has:page.locator('[data-expand]',{hasText:'⧉ 2'})}).first();
+  const pair=page.locator('.tile.stacked').filter({has:page.locator('[data-expand][aria-label="Open stack of 2 takes"]')}).first();
+  if(!await pair.count()){
+    // A two-take split must not depend on Twin check happening to offer a pair in this public sample.
+    await page.evaluate(async()=>{
+      const board=await api('/api/draw/board?per=400&uper=400'),ids=[...board.groups.flatMap(g=>g.shots),...board.unsorted.shots].filter(s=>s.members.length===1).slice(0,2).map(s=>s.rep);
+      if(ids.length!==2)throw new Error('The public fixture needs two loose photos for the split check');
+      await api('/api/groups/merge',{photos:ids});await api('/api/frame',{photo:ids[0]});
+    });
+    await page.reload();await page.waitForSelector('#sections');
+  }
   await pair.locator('[data-expand]').click();await page.waitForSelector('.tile.open .photo-fan');
   const pairIds=await page.locator('.tile.open [data-split]').evaluateAll(es=>es.map(e=>Number(e.dataset.split))),pairRep=Number(await page.locator('.tile.open').getAttribute('data-sel'));
   const splitPair=page.locator(`.tile.open [data-split="${pairRep}"]`);

@@ -153,9 +153,11 @@ class Session:
     def _fill_looks(self) -> None:
         if self._looks_thread is not None:
             return
+        self._looks_after = 0
         def run():
             try:
-                auto_look.fill_missing(self.store, self.workdir, cancel=lambda: self.closed)
+                auto_look.fill_missing(self.store, self.workdir, cancel=lambda: self.closed,
+                                       on_photo=lambda pid: setattr(self, "_looks_after", pid))
             except (ClosedStoreError, OSError):
                 pass  # closing a library cancels its cache upgrade
         self._looks_thread = threading.Thread(target=run, name="auto-looks", daemon=True)
@@ -2331,6 +2333,13 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                 edits["enhance"] = b["enhance"]
             else:
                 abort(400, "Enhance is on or off.")
+        if "auto_align" in b:
+            if b["auto_align"] is None:
+                edits.pop("auto_align", None)
+            elif isinstance(b["auto_align"], bool):
+                edits["auto_align"] = b["auto_align"]
+            else:
+                abort(400, "Auto-align is on or off.")
         if "auto_amount" in b:
             try:
                 amount = finishing.number(b["auto_amount"], 0, 1.5) if b["auto_amount"] is not None else 1
@@ -2375,7 +2384,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                          else finishing.number(b[key], -45, 45) if b[key] is not None else None)
             except ValueError as error:
                 abort(400, str(error))
-            if value:
+            if value or key == "straighten" and value is not None:
                 edits[key] = value
             else:
                 edits.pop(key, None)
@@ -3352,7 +3361,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                         "rescued": r["override"] == "keep", "box": s.view.get(r["id"], {}).get("box"),
                         "dims": [r["width"] or 1, r["height"] or 1],
                         "auto_look": json.loads(r["auto_look"] or "null"),
-                        "render_edits": {k: v for k, v in json.loads(r["edits"] or "{}").items() if k in {"enhance", "look", "grade", "auto_amount", "auto_parts"}},
+                        "render_edits": {k: v for k, v in json.loads(r["edits"] or "{}").items() if k in {"enhance", "look", "grade", "auto_amount", "auto_parts", "auto_align", "straighten"}},
                         "taken": r["taken"],
                         "measurements": sea_axes.measurements(r, face=faces.get(r["id"]), stack=g, theme=themes.get(r["theme_id"]),
                                                              post=s.ranker.post, index=index, tag_count=len(sets.get(r["id"], []))),
@@ -3365,7 +3374,17 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
     @locked
     def auto_looks():
         s = sess()
-        return jsonify(working=bool(s._looks_thread and s._looks_thread.is_alive()))
+        working = bool(s._looks_thread and s._looks_thread.is_alive())
+        after = max(0, request.args.get("after", 0, type=int))
+        per = min(250, max(1, request.args.get("per", 250, type=int)))
+        # The worker advances in id order. Fence each page at what it has committed so later updates cannot
+        # appear behind the browser's cursor while a large collection is still upgrading.
+        through = getattr(s, "_looks_after", 0) if working else s.store.one("SELECT MAX(id) AS n FROM photos")["n"] or 0
+        rows = s.store.q("SELECT id,auto_look FROM photos WHERE id>? AND id<=? AND auto_version>=? AND auto_look IS NOT NULL ORDER BY id LIMIT ?",
+                         (after, through, auto_look.VERSION, per))
+        after = rows[-1]["id"] if rows else max(after, through)
+        return jsonify(working=working, version=auto_look.VERSION, after=after, more=len(rows) == per and after < through,
+                       recipes=[{"id": r["id"], "recipe": json.loads(r["auto_look"])} for r in rows])
 
     @flask_app.get("/api/tags")
     def tags_page():

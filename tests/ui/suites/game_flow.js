@@ -119,7 +119,7 @@ let page;const res={},problems=[];
   await page.click('#journey-next');await page.waitForSelector('.stacker');
   assert.equal(await page.locator('#track [aria-current=step]').getAttribute('data-stage'),'stacks');
   await page.waitForSelector('#track [data-stage=filter].done');
-  assert(await page.locator('.screen-bar a[href="#filter"]').isVisible());
+  assert(await page.locator('#journey-prev').isVisible());
   const editor=async(name)=>{
     await page.waitForTimeout(450);await page.waitForFunction(()=>!document.querySelector('.world-fly'));
     const geometry=await page.evaluate(()=>{
@@ -131,7 +131,7 @@ let page;const res={},problems=[];
     assert(geometry.bar<=65&&geometry.body>=160,`${name}: compact footer leaves photos room ${JSON.stringify(geometry)}`);
     await page.screenshot({path:`${OUT}/GF-${name}-phone.png`});return geometry;
   };
-  res.stacks=await editor('stacks');await page.goto(BASE+'/#draw');await page.waitForSelector('.screen.sorter');res.groups=await editor('groups');
+  res.stacks=assert(await page.locator('.stack-toolbar').isVisible());await page.goto(BASE+'/#draw');await page.waitForSelector('.screen.sorter');res.groups=await editor('groups');
   await page.click('[data-mode="sea"]');await page.waitForSelector('#sea-head');await page.waitForSelector('#more-circles');res.sea=await editor('groups-sea');
   // The short phone rail has one scrollport; useful rows cannot collapse behind their headings.
   const rail=page.locator('#venn-rail'),railBar=await page.locator('.screen-bar').boundingBox();

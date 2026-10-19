@@ -9,14 +9,14 @@ const PhotoCrop = {
       <div class="crop-work"><div class="crop-stage"><div class="crop-card"><img src="${P(photo.id)}" alt="Photo to crop" draggable="false"></div></div>
       <form class="crop-controls rail-card"><fieldset><legend>Exact crop <small>(%)</small></legend><div class="crop-fields">${['Left','Top','Width','Height'].map((name,i)=>`<label>${name}<input type="number" data-crop-param="${i}" min="${i<2?0:.1}" max="100" step="any" inputmode="decimal" required></label>`).join('')}</div></fieldset>
         <fieldset class="crop-aspect"><legend>Aspect ratio</legend><div class="crop-ratio-fields"><label><input type="number" name="ratio-width" aria-label="Ratio width" min="0.001" step="any" inputmode="decimal" placeholder="Width"></label><span>:</span><label><input type="number" name="ratio-height" aria-label="Ratio height" min="0.001" step="any" inputmode="decimal" placeholder="Height"></label><button type="button" class="btn ghost" data-swap-ratio aria-label="Swap ratio width and height">⇄</button></div><div class="crop-ratio-presets" role="group" aria-label="Aspect ratio presets">${['Free','Original','1:1','3:2','4:5','16:9'].map(name=>`<button type="button" class="btn ghost" data-ratio="${name}">${name}</button>`).join('')}</div></fieldset>
-        <fieldset><legend>Alignment</legend><div class="straighten-control"><label for="crop-straighten">Straighten</label><output for="crop-straighten" data-straighten-angle></output><input id="crop-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${photo.edits?.straighten||0}"></div><div class="crop-actions"><button type="button" class="btn ghost" data-horizon>Align horizon</button><button type="button" class="btn ghost" data-level>Reset angle</button></div><p class="crop-horizon-help" hidden>Draw along a horizon or another line that should be level.</p></fieldset>
+        <fieldset><legend>Alignment</legend><div class="straighten-control"><label for="crop-straighten">Straighten</label><output for="crop-straighten" data-straighten-angle></output><input id="crop-straighten" name="straighten" type="range" min="-45" max="45" step="0.01" value="${AutoLook.angle(photo.auto_look,{...photo.edits,auto_align:photo.edits?.auto_align??S.align})}"></div><div class="crop-actions"><button type="button" class="btn ghost" data-horizon>Align horizon</button><button type="button" class="btn ghost" data-level>Reset angle</button></div><p class="crop-horizon-help" hidden>Draw along a horizon or another line that should be level.</p></fieldset>
         <button type="button" class="btn" data-preview-crop aria-pressed="false">Preview crop & alignment</button>
         <div class="crop-actions"><button type="button" class="btn" data-draw-crop>Draw crop</button><button type="button" class="btn ghost" data-whole>Whole photo</button></div><p class="crop-size" aria-live="polite"></p><p class="crop-error" role="alert"></p>
         <div class="crop-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn primary" disabled>Apply crop</button></div></form></div>`;
     document.body.append(dialog);this.dialog=dialog;
     const card=$('.crop-card',dialog),img=$('img',card),form=$('form',dialog),fields=$$('[data-crop-param]',form),apply=$('[type=submit]',form),ratioFields=$$('.crop-ratio-fields input',form),error=$('.crop-error',form);
     let box=rotateBox(photo.edits?.crop_box||[0,0,1,1],turn),drag=null,ratio=null,ready=false,saving=false,drawing=!photo.edits?.crop_box,
-      straighten=photo.edits?.straighten||0,horizon=false,previewing=false;
+      straighten=AutoLook.angle(photo.auto_look,{...photo.edits,auto_align:photo.edits?.auto_align??S.align}),angleTouched=false,horizon=false,previewing=false;
     const dims=turn%180?[photo.height,photo.width]:[photo.width,photo.height],clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
     card.dataset.photo=photo.id;Cards.focus(card);
     const overlay=document.createElement('div');overlay.className='crop-viewport';overlay.setAttribute('aria-describedby','crop-help');
@@ -74,7 +74,7 @@ const PhotoCrop = {
       if(drag.horizon&&event.type==='pointerup'){
         const [x,y]=point(event),dx=(x-drag.p[0])*dims[0],dy=(y-drag.p[1])*dims[1];
         if(Math.hypot(dx,dy)>5){let degrees=-Math.atan2(dy,dx)*180/Math.PI;while(degrees>90)degrees-=180;while(degrees< -90)degrees+=180;
-          straighten=Number(clamp(degrees,-45,45).toFixed(2));angle.value=String(straighten);horizon=false;previewing=true;}
+          straighten=Number(clamp(degrees,-45,45).toFixed(2));angleTouched=true;angle.value=String(straighten);horizon=false;previewing=true;}
       }
       drag=null;drawing=false;if(overlay.hasPointerCapture(event.pointerId))overlay.releasePointerCapture(event.pointerId);fit();};
     for(const type of ['pointerup','pointercancel','lostpointercapture'])overlay.addEventListener(type,release);
@@ -109,12 +109,13 @@ const PhotoCrop = {
     $('[data-whole]',form).onclick=()=>{box=[0,0,1,1];free();fit();};
     $('[data-draw-crop]',form).onclick=()=>{drawing=!drawing;horizon=false;previewing=false;fit();};
     $('[data-horizon]',form).onclick=()=>{horizon=!horizon;previewing=false;drawing=false;line.setAttribute('x2',line.getAttribute('x1')||0);line.setAttribute('y2',line.getAttribute('y1')||0);fit();};
-    $('[data-level]',form).onclick=()=>{straighten=0;angle.value='0';fit();};
-    angle.oninput=()=>{if(angle.value!==''&&angle.checkValidity()){straighten=angle.valueAsNumber;previewing=true;horizon=false;fit();}};
+    $('[data-level]',form).onclick=()=>{straighten=0;angleTouched=true;angle.value='0';fit();};
+    angle.oninput=()=>{if(angle.value!==''&&angle.checkValidity()){straighten=angle.valueAsNumber;angleTouched=true;previewing=true;horizon=false;fit();}};
     $('[data-preview-crop]',form).onclick=()=>{previewing=!previewing;horizon=false;fit();};
     form.onsubmit=async event=>{
       event.preventDefault();if(!ready||saving)return;saving=true;apply.disabled=true;error.textContent='';
-      try{const saved=await save({crop:'custom',crop_box:rotateBox(box,(360-turn)%360).map(v=>Number(v.toFixed(6))),straighten});
+      // Framing alone must not turn an inherited automatic angle into a manual override.
+      try{const saved=await save({crop:'custom',crop_box:rotateBox(box,(360-turn)%360).map(v=>Number(v.toFixed(6))),...(angleTouched?{straighten}:{})});
         if(saved===false)throw new Error('Couldn’t save this crop. Your selection is still here; try again.');dialog.close();}
       catch(e){error.textContent=e.message;}finally{saving=false;apply.disabled=false;}
     };

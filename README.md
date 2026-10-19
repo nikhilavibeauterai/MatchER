@@ -24,6 +24,8 @@ favourites into a tournament. You make quick, small choices; it learns what you 
 - **Sort a trip, a pet obsession or your entire camera roll.** Gallery mode groups landscapes, people,
   animals, food and more into cups of their own.
 - **Find your next profile photo.** Profile mode recognizes you and helps compare expressions, light and framing.
+- **Stack without leaving the sea.** Arrange the same prints by similarity or date, drag them together and
+  pull a paperclip to spread the takes in place. Loose photos belong here too. Zoom, notes and Undo follow along.
 - **Make the collection yours.** Drag photos together, edit tags, draw on prints and leave sticky notes.
   Pull out a focused photo's paper stack and click its handwritten corners to bring a sheet forward.
   Right-click a photo to open its notes; right-click it again to tuck them away.
@@ -36,9 +38,10 @@ favourites into a tournament. You make quick, small choices; it learns what you 
   Visual search runs locally using the understanding already saved during analysis.
 - **Find another way to see the collection.** Arrange the sea by machine ranking, your own preferences, hue,
   light, dates, expressions, camera, file details or groups. Search the axes or start with a preset.
-- **Give every photo a thoughtful starting edit.** A saved baseline balances light and colour while preserving
-  night scenes, warm light and monochrome. Adjust its amount and individual parts in the Look sheet, then add
-  your own grading, masks, crop and alignment. Hold for original; Undo brings every change back.
+- **Give every photo a thoughtful starting edit.** A saved per-photo tone curve corrects exposure, restores depth
+  and balances colour while preserving night scenes and monochrome. Adjust its amount and individual parts in the
+  Look sheet, then add your own grading, masks, crop and alignment. Auto-align checks structural edges and horizons; manual angles
+  win. Hold for original; Undo brings every change back.
 - **Finish with something useful.** Crown the best take in each stack, play groups and knockouts, then export
   your winners with their crop, alignment, enhancement, colour grading and masks. Your original files are never overwritten.
 
@@ -95,8 +98,8 @@ Switch on **Stacks only** when you want to concentrate on existing piles.
 
 | Organize piles and loose photos | Explore the collection |
 |---|---|
-| ![The Stacks overview with loose photos and paperclipped piles.](docs/images/stacks.png) | ![Searchable sea axes, grouped by colour, ranking, time, subjects and collection.](docs/images/axes.png) |
-| Drag photos together; pull the clip to open a stack. | Change the axes without changing your photos or votes. |
+| ![A paperclip spreads the stack’s own takes in place in the sea.](docs/images/stack-fan.png) | ![Searchable sea axes, grouped by colour, ranking, time, subjects and collection.](docs/images/axes.png) |
+| Drag photos together; spread their takes in place. | Change the axes without changing your photos or votes. |
 
 All screenshots use the [bundled public-domain demo](matcher/demo/manifest.json).
 

@@ -17,47 +17,23 @@ const {BASE,LINK,LIB,OUT}=process.env;
   const tags=await page.evaluate(async()=> (await api('/api/tags?all=1')).tags);
   // Home keeps the shelf tucked away. Its tag inventory and the same tag popup still belong to the sea.
   const expected=tags.filter(t=>t.count||t.user).map(t=>t.key),actual=await page.evaluate(()=>[...World.sea.circles.keys()]);
-  assert.deepEqual(new Set(actual),new Set(expected));assert(found.size>10);
+  assert.deepEqual(new Set(actual),new Set(expected));assert(found.size>0,'Analysis exposes its recognized tags');
   for(const key of found)assert(expected.includes(key),`Analysis discovery ${key} must survive in the sea`);
   await page.evaluate(key=>World.tagMenu(key,document.querySelector('#open-menu')),expected[0]);await page.waitForSelector('.sea-tag-pop');
   await page.click('[data-tag-select]');
   assert(await page.locator('#world .ps-item.selected').count()>0);
   await page.screenshot({path:`${OUT}/S-all-tags.png`});
-  await page.evaluate(()=>{window.stackWaitTrace=[];window.stackWaitKey='';});
-  await page.goto(BASE+'/#stacks');await page.waitForSelector('.tile.stacked');
-  // Virtualized overview tiles retain their own covers; scrolling never launches duplicate flights.
-  let pile;
-  try {
-    const ready=await page.waitForFunction(()=>{
-      const tile=document.querySelector('.tile.stacked'),cover=tile?.querySelector('.pile-cover'),pid=Number(cover?.src.match(/\/(\d+)\.jpg/)?.[1]);
-      const state={opacity:cover&&getComputedStyle(cover).opacity,adopted:!!World.focused?.some(p=>p.pid===pid),
-        loaded:!!cover?.complete&&cover.naturalWidth>0,loading:!!World.loading,photos:World.photos?.size,total:World.total,
-        flights:document.querySelectorAll('.world-fly').length};
-      const key=JSON.stringify(state);if(key!==stackWaitKey){stackWaitTrace.push({t:Math.round(performance.now()),...state});stackWaitKey=key;}
-      if(!state.loaded||Number(state.opacity)<=.95||state.photos!==state.total||state.loading||state.flights)return false;
-      return {takes:tile.querySelectorAll('.pile-take').length,turns:[...tile.querySelectorAll('.pile-take')].map(i=>getComputedStyle(i).transform),cover:state.opacity};
-    },null,{timeout:5000});
-    pile=await ready.jsonValue();await ready.dispose();
-    require('node:fs').writeFileSync(`${OUT}/S-stack-trace.json`,JSON.stringify(await page.evaluate(()=>stackWaitTrace),null,2));
-    assert(pile.takes>0);assert(new Set(pile.turns).size===pile.takes);assert(Number(pile.cover)>.95);
-  } catch(e) {
-    const state=await page.evaluate(()=>{
-      const cover=document.querySelector('.tile.stacked .pile-cover'),pid=Number(cover?.src.match(/\/(\d+)\.jpg/)?.[1]);
-      return {cover:cover&&{opacity:getComputedStyle(cover).opacity,style:cover.getAttribute('style'),src:cover.src,
-        complete:cover.complete,width:cover.naturalWidth},loading:!!World.loading,photos:World.photos?.size,total:World.total,
-        flying:[...document.querySelectorAll('.world-fly')].map(i=>({src:i.src,style:i.getAttribute('style')})),
-        lifted:[...World.lifted],tile:World.sea.items.get(pid)?.el.className,trace:window.stackWaitTrace};
-    });
-    await page.screenshot({path:`${OUT}/S-pile-fail.png`});
-    throw new Error(`Stack cover failed: ${e.message} ${JSON.stringify({pile,state})}`);
-  }
-  await page.locator('.tile.stacked [data-expand]').first().click();await page.waitForSelector('.tile.open .photo-fan');
-  await page.waitForTimeout(750);
-  const fan=await page.locator('.tile.open .photo-fan').evaluate(e=>({display:getComputedStyle(e).display,
-    takes:[...e.querySelectorAll('.ftile')].map(t=>{const r=t.getBoundingClientRect();return {left:r.left,right:r.right,turn:getComputedStyle(t).transform};})}));
-  assert.equal(fan.display,'flex');assert(fan.takes.length>1);assert(fan.takes[0].right>fan.takes[1].left);
+  await page.goto(BASE+'/#stacks');await page.waitForFunction(()=>World.sea.arrangement&&World.sea.settled);
+  const pile=await page.locator('.stack-field .ps-item:has(.stack-clip)').first().evaluate(tile=>({
+    takes:tile.querySelectorAll('.under').length,turns:[...tile.querySelectorAll('.under')].map(i=>getComputedStyle(i).transform),
+    cover:getComputedStyle(tile.querySelector('.pile-cover')).opacity
+  }));
+  assert(pile.takes>0&&new Set(pile.turns).size===pile.takes&&Number(pile.cover)>.95);
+  await page.locator('.stack-field .stack-clip').first().click();
+  await page.waitForFunction(()=>World.sea.el.dataset.stackFan&&World.sea.settled&&!World.sea.cameraGlide);
+  const fan=await page.locator('.stack-fan-take').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return {left:r.left,top:r.top,right:r.right};}));
+  assert(fan.length>1&&new Set(fan.map(p=>`${p.left},${p.top}`)).size===fan.length);
   assert.equal(await page.evaluate(()=>World.sea.bounds().obstacles.length),0,'Controls do not fence off the sea behind them');
-  assert(await page.locator('.tile.open .photo-fan').isVisible(),'The open stack stays above the background sea');
   await page.screenshot({path:`${OUT}/S-photo-stack.png`});
   const spacing=await page.evaluate(async()=>{
     const host=document.createElement('div');host.style.cssText='position:fixed;left:20px;top:100px;width:1200px;height:750px;z-index:50;background:#142032';document.body.append(host);

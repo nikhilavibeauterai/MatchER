@@ -83,7 +83,7 @@ the suites in step with deliberate UI changes (see `tests/ui/README.md` for what
   on the map as in the editor. Digit keys count from the numpad too.
   Help starts on only before the first manual preference and persists per save. Key hints and explanations obey
   that toggle. Undo/Redo surface only after a history action, with thumbnails, then fade away. No full-width bars.
-- **Keys:** arrows make the visible, context-specific choices; WASD does the same. Space defers without deciding,
+- **Keys:** arrows make the visible, context-specific choices. A toggles auto-alignment; WASD is not directional. Space defers without deciding,
   awarding a win or eliminating a contender; the unresolved take or match returns later. Z undoes, X tosses the
   current take (or the explicitly hovered/focused photo in a pair), C toggles auto-crop, F toggles enhancement.
   Never guess which side X should toss. On the Stacks page X sets the open or selected stack aside with every
@@ -91,8 +91,8 @@ the suites in step with deliberate UI changes (see `tests/ui/README.md` for what
   fill width; on a tie focus subject wins), focus subject (zoomed in on the likely subject: the main face, else the
   salient region the analysis kept, so a dog, a car or a person from behind count too), fill height, fill width,
   off. The modes reach every picture, stack tiles and fans included (`frameTileImage` through `object-view-box`). On the Leaderboard F,
-  C and R are that shot's own enhance, crop mode and quarter turn (saved, undoable, baked into Save my best);
-  everywhere else F and C are the global preview toggles. Enter = forward. Esc dismisses a selection or overlay first, backs out
+  A, C and R are that shot's own enhance, auto-align, crop mode and quarter turn (saved, undoable, baked into Save my best);
+  everywhere else A, F and C are the global preview toggles. Enter = forward. Esc dismisses a selection or overlay first, backs out
   of nested menus, then pauses/resumes. Native typing and focused controls keep their own keys; held keys must
   not repeat decisions. Editors retain group keys 1–9, 0 = 10th, Alt+digit = 11–20, arrow navigation,
   Shift+arrows to reorder and E to rename.
@@ -130,7 +130,8 @@ the suites in step with deliberate UI changes (see `tests/ui/README.md` for what
 - **Every photo is the same polaroid.** One 3:4 portrait paper card (sides 5.5% of its width, a 17% chin, a
   dark window with the picture contained inside) everywhere a photo appears: sea prints at every zoom, atlas
   sprites, focused and held prints, tiles, thumbnails, Filter's spotlight, Stacks, Groups, duels, Finals, the
-  podium and flights between them. A landscape and a portrait compare as equals; a stack is a pile of the same
+  podium and flights between them. Loading annotations, stickies or notes never shrinks a focused comparison.
+  A landscape and a portrait compare as equals; a stack is a pile of the same
   cards, held by a metal paperclip at the top-left with the count handwritten on a small paper slip. The clip
   pulls up the whole stack with all its takes open (in place in the tile editors); other captions and seeds sit on the chin. Faces and avatars are the only round images. The card's
   rounding, paper and window are proportional to the card, so zoom never changes the look, and the window behind a
