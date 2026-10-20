@@ -58,5 +58,5 @@ def measurements(photo, *, face=None, stack=None, theme=None, post=None, index=N
         "category": p.get("category"), "stack_size": len((stack or {}).get("members") or [p.get("id")]),
         "tag_count": tag_count, "group": (theme or {}).get("name"),
         "decision": 0 if p.get("cut") or p.get("override") == "toss" else 2 if p.get("override") == "keep" else 1,
-        "edited": sum(k in edits for k in ("enhance", "look", "grade", "masks", "crop", "rotate", "straighten", "auto_amount", "auto_parts")),
+        "edited": sum(k in edits for k in ("enhance", "look", "grade", "masks", "crop", "rotate", "straighten", "auto_amount", "auto_parts", "auto_skew", "skew", "composition")),
     }

@@ -43,7 +43,7 @@ const PhotoMask = {
     const label=input=>{const output=input.parentElement.querySelector('output');if(output)output.textContent=input.name==='brush-size'?`${Number(input.value)}%`:input.name==='exposure'?`${Number(input.value)>0?'+':''}${Number(input.value).toFixed(2)} EV`:['opacity','feather','saturation'].includes(input.name)?`${Math.round(Number(input.value)*100)}%`:Number(input.value).toFixed(2);};
     const draw=()=>{
       frame=0;if(!ready||!dialog.open)return;
-      framePhoto(card,{dims:[photo.width,photo.height]},{crop:'off',rotate:turn,straighten:0,enhance:photo.edits?.enhance??S.filter,knobs:photo.edits?.look,
+      framePhoto(card,{dims:[photo.width,photo.height]},{crop:'off',rotate:turn,straighten:0,geometry:{auto_skew:false},enhance:photo.edits?.enhance??S.filter,knobs:photo.edits?.look,
         finishing:{grade:photo.edits?.grade,masks:layers}});
       const r=img.getBoundingClientRect(),c=card.getBoundingClientRect();
       Object.assign(paint.style,{left:`${r.left-c.left}px`,top:`${r.top-c.top}px`,width:`${r.width}px`,height:`${r.height}px`});

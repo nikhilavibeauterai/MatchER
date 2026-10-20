@@ -7,8 +7,8 @@ const {boot}=require('./stack-helpers.cjs');const {BASE,OUT}=process.env;
   page.on('pageerror',e=>problems.push(e.message));page.on('request',r=>{if(r.method()==='POST')writes.push(new URL(r.url()).pathname);});
   await boot(page);const pid=await page.evaluate(()=>[...World.sea.items.values()].find(it=>!it.take).id);
   // Geometry is deterministic here; the estimator itself is tested against tilted structural edges in Python.
-  await page.route(`**/api/photo/${pid}/notes`,async r=>{const response=await r.fetch(),p=await response.json();return r.fulfill({response,json:{...p,auto_look:{...p.auto_look,straighten:-4,alignment:{degrees:-4,perimeter:2,agreement:.98}}}});});
-  await page.evaluate(id=>{const r={...AutoLook.recipes.get(id),straighten:-4};AutoLook.recipes.set(id,r);World.photos.get(id).auto_look=r;for(const p of AutoLook.pages.values())p.variants.clear();AutoLook.repaint();World.sea.zoomToPrint(World.sea.items.get(id));},pid);
+  await page.route(`**/api/photo/${pid}/notes`,async r=>{const response=await r.fetch(),p=await response.json();return r.fulfill({response,json:{...p,auto_look:{...p.auto_look,straighten:-4,skew:null,composition:null,alignment:{degrees:-4,perimeter:2,agreement:.98}}}});});
+  await page.evaluate(id=>{const r={...AutoLook.recipes.get(id),straighten:-4,skew:null,composition:null};AutoLook.recipes.set(id,r);World.photos.get(id).auto_look=r;for(const p of AutoLook.pages.values())p.variants.clear();AutoLook.repaint();World.sea.zoomToPrint(World.sea.items.get(id));},pid);
   await page.waitForSelector('.sea-photo-detail .photo-notes-tab');await page.waitForFunction(id=>World.sea.items.get(id).el.querySelector('.picture img')?.style.transform.includes('-4deg'),pid);
   const paper=await page.evaluate(id=>World.sea.items.get(id).el.querySelector('.paper').getBoundingClientRect().toJSON(),pid),start=writes.length;
   await page.keyboard.press('a');await page.waitForFunction(id=>!World.sea.items.get(id).el.querySelector('.window img').style.transform.includes('-4deg'),pid);

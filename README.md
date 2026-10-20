@@ -42,8 +42,9 @@ favourites into a tournament. You make quick, small choices; it learns what you 
   light, dates, expressions, camera, file details or groups. Search the axes or start with a preset.
 - **Give every photo a thoughtful starting edit.** A saved per-photo tone curve corrects exposure, restores depth
   and balances colour while preserving night scenes and monochrome. Adjust its amount and individual parts in the
-  Look sheet, then add your own grading, masks, crop and alignment. Auto-align checks structural edges and horizons; manual angles
-  win. Hold for original; Undo brings every change back.
+  Look sheet, then add your own grading, masks, crop and alignment. **Align & perspective** offers Natural, Upright
+  and Expressive compositions: automatic rotation and horizontal/vertical perspective balance structure against
+  depth, subject placement and what gets cropped away. Manual sliders take priority. Hold for original; Undo brings every change back.
 - **Finish with something useful.** Crown the best take in each stack, play groups and knockouts, then export
   your winners with their crop, alignment, enhancement, colour grading and masks. Your original files are never overwritten.
 

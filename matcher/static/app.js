@@ -1690,9 +1690,11 @@ function framePhoto(side, info, opts = {}) {
   const style=win&&getComputedStyle(win),W=parseFloat(style?.width),H=parseFloat(style?.height);
   if (!img || !W || !H) return;
   const rotate = (((opts.rotate || 0) % 360) + 360) % 360, enhance = opts.enhance ?? S.filter, mode = normCrop(opts.crop ?? S.crop);
+  let geometryEdits=opts.geometry;try{geometryEdits??=JSON.parse(side.dataset.geometry||'{}');}catch(_){geometryEdits={};}
   const manualAngle=opts.straighten??(side.dataset.straighten!==''?side.dataset.straighten:undefined),
-    straighten=AutoLook.angle(AutoLook.recipes.get(Number(side.dataset.photo)),{straighten:manualAngle==null?null:Number(manualAngle),
-      auto_align:opts.autoAlign??(side.dataset.autoAlign?side.dataset.autoAlign==='on':S.align)});
+    geometry=AutoLook.geometry(AutoLook.recipes.get(Number(side.dataset.photo)),{...geometryEdits,straighten:manualAngle==null?null:Number(manualAngle),
+      auto_align:opts.autoAlign??geometryEdits.auto_align??(side.dataset.autoAlign?side.dataset.autoAlign==='on':S.align)}),straighten=geometry.straighten;
+  delete img.dataset.geometryScale;
   let finishing=opts.finishing;
   if(!finishing){try{finishing=JSON.parse(side.dataset.finishing||'null');}catch(_){/* no local adjustments */}}
   let manual=null;try{manual=mode==='custom'?(opts.cropBox??JSON.parse(side.dataset.cropBox||'null')):null;}catch(_){/* no saved rectangle */}
@@ -1717,6 +1719,18 @@ function framePhoto(side, info, opts = {}) {
   const basis=Number(side.dataset.imageScale)||1;
   const { x, y, w, h } = frameRect(W/basis, H/basis, iw, ih, b, mode);
   let picture=img.parentElement.matches('.picture')?img.parentElement:null;
+  if(geometry.horizontal||geometry.vertical){
+    if(!picture){picture=document.createElement('div');picture.className='picture';img.before(picture);picture.append(img);}
+    const scale=w/iw,roi=manual?b:[Math.max(0,-x/scale)/iw,Math.max(0,-y/scale)/ih,Math.min(iw,w>W/basis?W/basis/scale:iw)/iw,Math.min(ih,h>H/basis?H/basis/scale:ih)/ih],
+      rw=roi[2]*iw,rh=roi[3]*ih,result=PhotoGeometry.frame(info.dims,geometry,rotate,roi),
+      k=Math.min(W/(rw*result.trim),H/(rh*result.trim)),pw=rw*result.trim*k,ph=rh*result.trim*k,
+      matrix=result.matrix;
+    picture.style.cssText=`position:absolute;overflow:hidden;left:${(W-pw)/2/W*100}%;top:0;width:${pw/W*100}%;height:${ph/H*100}%`;
+    img.style.cssText=base+`width:100%;height:100%;transform-origin:0 0;transform:${PhotoGeometry.css(matrix,pw,ph)}`;
+    const centre=PhotoGeometry.point(PhotoGeometry.inverse(matrix),[.5,.5]),p=PhotoGeometry.point(matrix,centre),q=PhotoGeometry.point(matrix,[centre[0]+.001,centre[1]]);
+    img.dataset.geometryScale=String(Math.hypot(q[0]-p[0],(q[1]-p[1])*ph/pw)/.001);
+    paintFilter(img,Number(side.dataset.photo),enhance,opts.knobs||null,finishing);photoSampling(img,opts.pixelScale??((Number(side.dataset.viewerZoom)||1)/basis));return;
+  }
   if(straighten){
     if(!picture){picture=document.createElement('div');picture.className='picture';img.before(picture);picture.append(img);}
     const scale=w/iw,roi=manual?b:[Math.max(0,-x/scale)/iw,Math.max(0,-y/scale)/ih,Math.min(iw,w>W/basis?W/basis/scale:iw)/iw,Math.min(ih,h>H/basis?H/basis/scale:ih)/ih],
@@ -1738,7 +1752,7 @@ function framePhoto(side, info, opts = {}) {
 function photoSampling(img,scale=1) {
   if(!img)return;
   const original=img.getAttribute('src')?.includes('m=full')&&img.naturalWidth,
-    width=original?parseFloat(getComputedStyle(img).width)*scale*(devicePixelRatio||1):0;
+    width=original?parseFloat(getComputedStyle(img).width)*scale*(Number(img.dataset.geometryScale)||1)*(devicePixelRatio||1):0;
   img.classList.toggle('photo-pixels',!!original&&width>=img.naturalWidth-.5);
 }
 // Where a picture of iw×ih goes in a W×H window (CSS px): "off" contains it at the top; "best" fills the window
@@ -1955,11 +1969,11 @@ function frameTileImage(img) {
     if (!iw || !ih || !img.isConnected) return;
     const pid=Number(/\/img\/[pt]\/(\d+)\.jpg/.exec(img.getAttribute('src')||'')?.[1]),
       host=img.closest('.polaroid,.shot-select,.ftile'),edits=Toolbelt.edits.get(pid)||World.photos?.get(pid)?.render_edits||{},
-      angle=AutoLook.angle(AutoLook.recipes.get(pid),{...edits,auto_align:edits.auto_align??S.align});
-    if(host&&(angle||host.querySelector(':scope > .paper'))){
+      geometry=AutoLook.geometry(AutoLook.recipes.get(pid),{...edits,auto_align:edits.auto_align??S.align});
+    if(host&&(geometry.straighten||geometry.horizontal||geometry.vertical||host.querySelector(':scope > .paper'))){
       let box=null;try{box=JSON.parse(img.dataset.box||'null');}catch(_){/* no subject */}
       img.style.objectViewBox='';host.dataset.photo=pid;Cards.focus(host);
-      framePhoto(host,{dims:World.photos?.get(pid)?.dims||[iw,ih],box},{crop:edits.crop??S.crop,rotate:edits.rotate||0,straighten:angle,
+      framePhoto(host,{dims:World.photos?.get(pid)?.dims||[iw,ih],box},{crop:edits.crop??S.crop,rotate:edits.rotate||0,geometry:edits,straighten:geometry.straighten,
         enhance:edits.enhance??S.filter,knobs:edits.look?knobsOf(edits.look):null,finishing:edits});return;
     }
     const refresh=()=>{const id=Number(/\/img\/[pt]\/(\d+)\.jpg/.exec(img.getAttribute('src')||'')?.[1]);if(id)paintFilter(img,id);};
@@ -3752,7 +3766,7 @@ async function viewShortlist(main) {
 function cardData(it, global = false) {
   const e = it?.edits || {}, crop = e.crop!=null?normCrop(e.crop):"";
   return `data-frame="own" data-photo="${it.photo}" data-box="${esc(JSON.stringify(it.box || null))}" data-crop="${crop}" data-crop-default="${global ? "global" : "off"}"
-    data-enhance="${e.enhance === false ? "off" : e.enhance === true ? "on" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}" data-crop-box="${esc(JSON.stringify(e.crop_box||null))}" data-straighten="${e.straighten??''}" data-auto-align="${e.auto_align==null?'':e.auto_align?'on':'off'}" data-finishing="${esc(JSON.stringify({grade:e.grade,masks:e.masks,auto_amount:e.auto_amount,auto_parts:e.auto_parts}))}"`;
+    data-enhance="${e.enhance === false ? "off" : e.enhance === true ? "on" : global && !e.look ? "" : "on"}" data-rotate="${e.rotate || 0}" data-look="${esc(JSON.stringify(e.look || null))}" data-crop-box="${esc(JSON.stringify(e.crop_box||null))}" data-straighten="${e.straighten??''}" data-auto-align="${e.auto_align==null?'':e.auto_align?'on':'off'}" data-geometry="${esc(JSON.stringify({composition:e.composition,skew:e.skew,auto_skew:e.auto_skew}))}" data-finishing="${esc(JSON.stringify({grade:e.grade,masks:e.masks,auto_amount:e.auto_amount,auto_parts:e.auto_parts}))}"`;
 }
 // A card frames its picture by its own data attributes (see cardData), falling back to the global toggles.
 function frameBoardCard(card) {

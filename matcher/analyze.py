@@ -122,7 +122,7 @@ def analyze_one(task: tuple[int, str, str, str, str]) -> dict:
                     row.update(m)
             out["faces"].append(row)
         out["n_faces"] = len(faces)
-        out["auto_look"] = json.dumps(auto_look.measure(im, out["faces"]))
+        out["auto_look"] = json.dumps(auto_look.measure(im, out["faces"], json.loads(out["salient"])))
         out["auto_version"] = auto_look.VERSION
         out["status"] = "analyzed"
     except Exception as e:  # one bad file must not stop 2,000 others

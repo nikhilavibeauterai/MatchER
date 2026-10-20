@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import alignment, auto_look, finishing, imageio
+from . import auto_look, finishing, geometry, imageio
 
 PROOF = 64                 # the look is measured on a 64px-wide proof, like the on-screen filter
 LOW, HIGH = 0.005, 0.995   # black and white points
@@ -208,7 +208,10 @@ def touch_up(src: str | Path, dst: str | Path, edits: dict | None = None, box=No
     if baseline:
         out = finishing.apply(out, baseline, original_size, rectangle, rotate)
     out = finishing.apply(out, e, original_size, rectangle, rotate)
-    out = finishing.straighten(out, alignment.angle(recipe, e))
+    full_w, full_h = original_size[::-1] if rotate % 180 else original_size
+    x0, y0, x1, y1 = rectangle
+    view = geometry.region(geometry.resolve(recipe, e), rotate, (x0 / full_w, y0 / full_h, (x1-x0) / full_w, (y1-y0) / full_h))
+    out = finishing.perspective(out, view)
     if exif:
         out.save(dst, "JPEG", quality=quality, exif=exif)
     else:

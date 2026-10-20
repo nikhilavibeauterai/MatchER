@@ -195,12 +195,18 @@ When the last winner returns in the next comparison, it stays on the same side a
   components off; **Adjust light & colour** and **Colour grading** open the manual controls below it.
   **Auto** restores that baseline without clearing your own light knobs, colour wheels, masks or framing.
   A backlit-subject mask can be copied into the mask painter for editing. All your adjustments are undoable.
-- **Auto-align** looks for agreement between long, independent horizontal and vertical references across the
-  picture, or a single clear horizon. Repeated detections of one edge count once, tiny texture is excluded, and
-  conflicting angles leave the original angle intact. `A` toggles the preview separately
-  from Enhance and Crop. **Notes → Look → Align & turn** offers a per-photo switch, manual slider and return to
-  the automatic angle. Manual zero also overrides the automatic correction. Alignment turns and trims only the
-  picture inside its paper; the same correction reaches thumbnails, full-size viewing and edited exports.
+- **Auto-align & perspective** chooses a composition from the saved preview. Open **Notes → Look → Align & perspective**:
+  **Natural** balances level structure with depth and breathing room; **Upright** favours straight architecture;
+  **Expressive** can strengthen a clear diagonal already in the scene. The chooser weighs independent edges,
+  subject placement, faces, distortion and how much of the photo survives. It can preserve the original view when
+  correction would harm it. The paper tells you why it chose that view and how much remains before your crop.
+  `A` toggles automatic alignment separately from Enhance and Crop. Auto-skew has its own per-photo switch;
+  until you choose otherwise it follows alignment. Manual Straighten, Horizontal perspective and Vertical perspective
+  sliders take priority on the axes you adjust, including a deliberate zero. They stay horizontal and vertical on
+  screen after a quarter turn. **Use automatic angle/perspective** restores the suggestion; choosing a composition
+  resets those manual overrides together as one undoable edit. The same geometry reaches small sea prints,
+  full-size viewing, the crop editor and edited exports. Corners are trimmed without inventing replacement pixels.
+  This is a local composition heuristic, and the three tastes can suggest the same view. [How it chooses](composition.md).
 - **Auto-crop** (on by default for profile pics) frames every photo the same way around the face, in a
   4:5 window with the overflow fading inside its own pane. A photo without a face gets its frame around whatever
   stands out in it instead (a dog, a flower, a car, someone seen from behind: the analysis keeps the salient region;

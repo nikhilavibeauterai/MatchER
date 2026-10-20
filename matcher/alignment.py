@@ -12,17 +12,17 @@ def _median(values, weights):
     return float(np.array(values)[order][np.searchsorted(np.cumsum(np.array(weights)[order]), sum(weights) / 2)])
 
 
-def measure(im):
+def detect(im, max_angle=12):
     proof = im.convert("L").copy()
     proof.thumbnail((800, 800))
     gray = np.asarray(proof)
     h, w = gray.shape
     short = min(h, w)
     if short < 32:
-        return None
+        return (w, h), []
     detected = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD).detect(gray)[0]
     if detected is None:
-        return None
+        return (w, h), []
     lines = []
     for x0, y0, x1, y1 in detected.reshape(-1, 4):
         a, b = np.array([x0, y0]), np.array([x1, y1])
@@ -35,7 +35,7 @@ def measure(im):
         vertical = abs(direction[1]) > abs(direction[0])
         # The image border, a letterbox or a vignette is not evidence about the scene's level.
         border = midpoint[0] < w * .025 or midpoint[0] > w * .975 if vertical else midpoint[1] < h * .025 or midpoint[1] > h * .975
-        if abs(angle) > 12 or border:
+        if abs(angle) > max_angle or border:
             continue
         lines.append(dict(a=a, b=b, length=length, direction=direction, angle=angle, mid=midpoint, vertical=vertical))
     # One edge often produces two detections. Repeated edges and long fragments of the same line get one vote.
@@ -56,6 +56,13 @@ def measure(im):
             unique.append(line)
         if len(unique) >= 80:
             break
+    return (w, h), unique
+
+
+def measure(im, evidence=None):
+    (w, h), unique = evidence if evidence is not None else detect(im)
+    unique = [s for s in unique if abs(s["angle"]) <= 12]
+    short = min(w, h)
     candidates = []
     for reference in unique:
         group = [s for s in unique if abs(s["angle"] - reference["angle"]) < 1.3]
@@ -100,8 +107,5 @@ def measure(im):
 
 def angle(recipe, edits=None):
     """Manual zero is a choice too. Alignment is independent of colour enhancement and cropping."""
-    e = edits or {}
-    if e.get("straighten") is not None:
-        return e["straighten"]
-    r = recipe or {}
-    return (r.get("straighten") or 0) if e.get("auto_align", True) and r.get("version", 3) >= 3 else 0
+    from .geometry import resolve
+    return resolve(recipe, edits)["straighten"]

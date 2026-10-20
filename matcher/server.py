@@ -2352,13 +2352,36 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                 edits["enhance"] = b["enhance"]
             else:
                 abort(400, "Enhance is on or off.")
-        if "auto_align" in b:
-            if b["auto_align"] is None:
-                edits.pop("auto_align", None)
-            elif isinstance(b["auto_align"], bool):
-                edits["auto_align"] = b["auto_align"]
+        for field, label in (("auto_align", "Auto-align"), ("auto_skew", "Auto-skew")):
+            if field in b:
+                if b[field] is None:
+                    edits.pop(field, None)
+                elif isinstance(b[field], bool):
+                    edits[field] = b[field]
+                else:
+                    abort(400, f"{label} is on or off.")
+        if "composition" in b:
+            if b["composition"] is None:
+                edits.pop("composition", None)
+            elif b["composition"] in ("natural", "upright", "expressive"):
+                edits["composition"] = b["composition"]
             else:
-                abort(400, "Auto-align is on or off.")
+                abort(400, "Choose Natural, Upright or Expressive composition.")
+        if "skew" in b:
+            value = b["skew"]
+            if value is None:
+                edits.pop("skew", None)
+            else:
+                if not isinstance(value, dict) or set(value) - {"horizontal", "vertical"}:
+                    abort(400, "Perspective has horizontal and vertical adjustments.")
+                try:
+                    skew = {key: finishing.number(v, -.6, .6) for key, v in value.items()}
+                except ValueError as error:
+                    abort(400, str(error))
+                if skew:
+                    edits["skew"] = skew
+                else:
+                    edits.pop("skew", None)
         if "auto_amount" in b:
             try:
                 amount = finishing.number(b["auto_amount"], 0, 1.5) if b["auto_amount"] is not None else 1
@@ -3391,7 +3414,7 @@ def create_app(data_dir: Path = DATA_DIR, secret: str | None = None, allowed_hos
                         "rescued": r["override"] == "keep", "box": s.view.get(r["id"], {}).get("box"),
                         "dims": [r["width"] or 1, r["height"] or 1],
                         "auto_look": json.loads(r["auto_look"] or "null"),
-                        "render_edits": {k: v for k, v in json.loads(r["edits"] or "{}").items() if k in {"enhance", "look", "grade", "auto_amount", "auto_parts", "auto_align", "straighten"}},
+                        "render_edits": {k: v for k, v in json.loads(r["edits"] or "{}").items() if k in {"enhance", "look", "grade", "auto_amount", "auto_parts", "auto_align", "straighten", "auto_skew", "skew", "composition", "rotate", "crop", "crop_box"}},
                         "taken": r["taken"],
                         "measurements": sea_axes.measurements(r, face=faces.get(r["id"]), stack=g, theme=themes.get(r["theme_id"]),
                                                              post=s.ranker.post, index=index, tag_count=len(sets.get(r["id"], []))),

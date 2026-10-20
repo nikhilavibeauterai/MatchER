@@ -185,3 +185,17 @@ def straighten(im, degrees):
     return im.transform((ow, oh), Image.Transform.AFFINE,
                         (c, s, w / 2 - c * ow / 2 - s * oh / 2, -s, c, h / 2 + s * ow / 2 - c * oh / 2),
                         Image.Resampling.BICUBIC)
+
+
+def perspective(im, value):
+    """Resample the final geometry once, at source resolution. A zero correction keeps every pixel."""
+    from .geometry import matrix
+    degrees, x, y = (value.get(key, 0) for key in ("straighten", "horizontal", "vertical"))
+    if not (x or y):
+        return straighten(im, degrees)
+    w, h = im.size
+    transform, trim = matrix(w, h, degrees, x, y)
+    ow, oh = max(1, math.floor(w * trim)), max(1, math.floor(h * trim))
+    inverse = np.diag([w, h, 1]) @ np.linalg.inv(transform) @ np.diag([1 / ow, 1 / oh, 1])
+    inverse /= inverse[2, 2]
+    return im.transform((ow, oh), Image.Transform.PERSPECTIVE, tuple(inverse.ravel()[:8]), Image.Resampling.BICUBIC)

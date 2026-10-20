@@ -135,7 +135,7 @@ class PhotoSea {
     const size=(it.size||this.s)*this.camera.zoom;it.el.classList.toggle('is-tiny',size<this.tuning.tinyMax);it.el.classList.toggle('is-small',size<this.tuning.badgeMin);
     Object.assign(it.el.dataset,{frame:'own',box:JSON.stringify(it.box||null),crop:edits.crop??'',cropDefault:'global',
       rotate:String(edits.rotate||0),enhance:edits.enhance==null?'':edits.enhance?'on':'off',look:JSON.stringify(edits.look||null),cropBox:JSON.stringify(edits.crop_box||null),
-      straighten:String(edits.straighten??''),autoAlign:edits.auto_align==null?'':edits.auto_align?'on':'off',finishing:JSON.stringify({grade:edits.grade,masks:edits.masks,auto_amount:edits.auto_amount,auto_parts:edits.auto_parts})});
+      straighten:String(edits.straighten??''),autoAlign:edits.auto_align==null?'':edits.auto_align?'on':'off',geometry:JSON.stringify({composition:edits.composition,skew:edits.skew,auto_skew:edits.auto_skew}),finishing:JSON.stringify({grade:edits.grade,masks:edits.masks,auto_amount:edits.auto_amount,auto_parts:edits.auto_parts})});
     if(it.el.classList.contains('stack-fan-take')&&!it.el.querySelector('[data-copy-path]'))it.el.insertAdjacentHTML('beforeend',photoPathButton(it.photo));
     const dims=it.dims?.[0]>0&&it.dims?.[1]>0?it.dims:[img.naturalWidth,img.naturalHeight];
     framePhoto(it.el,{dims,box:it.box},

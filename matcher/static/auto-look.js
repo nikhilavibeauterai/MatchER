@@ -1,6 +1,6 @@
 // A photo's saved baseline survives every change of image resolution. Manual finishing always follows it.
 const AutoLook={
-  version:3,
+  version:4,
   recipes:new Map(),pages:new Map(),source:null,
   sync(){if(this.source!==S.lib?.source){this.source=S.lib?.source;this.recipes.clear();this.pages.clear();}},
   know(pid,recipe){
@@ -38,9 +38,9 @@ const AutoLook={
     return curve[i]+(curve[i+1]-curve[i])*(p-i);
   },
   angle(recipe,edits={}){
-    if(edits.straighten!=null)return Number(edits.straighten)||0;
-    return edits.auto_align===false||(recipe?.version??3)<3?0:recipe?.straighten||0;
+    return this.geometry(recipe,edits).straighten;
   },
+  geometry(recipe,edits={}){return (typeof PhotoGeometry==='undefined'?require('./photo-geometry.js').PhotoGeometry:PhotoGeometry).resolve(recipe,edits);},
   detailMarkup(detail,dims){
     const smooth=detail.smooth||0,sharp=detail.sharp||0;if(!smooth&&!sharp)return '';
     const radius=.7/Math.max(1,detail.basis||800),max=Math.max(...dims),x=radius*max/dims[0],y=radius*max/dims[1];
@@ -51,15 +51,15 @@ const AutoLook={
   sheet(image,photos){
     const page={image,photos,variants:new Map(),signatures:new Map(photos.map(p=>[p.id,this.signature(p)]))};this.pages.set(image,page);return this.paintPage(page);
   },
-  signature(photo){const e=Toolbelt.edits.get(photo.id)||photo.render_edits||{};return JSON.stringify(['enhance','look','grade','auto_amount','auto_parts','auto_align','straighten'].map(k=>e[k]??null));},
+  signature(photo){const e=Toolbelt.edits.get(photo.id)||photo.render_edits||{};return JSON.stringify(['enhance','look','grade','auto_amount','auto_parts','auto_align','straighten','auto_skew','skew','composition','rotate','crop','crop_box'].map(k=>e[k]??null));},
   paintPage(page){
     const on=!!S.filter,key=`${on}/${!!S.align}`;let canvas=page.variants.get(key);
     if(!canvas){
       canvas=document.createElement('canvas');canvas.width=page.image.naturalWidth;canvas.height=page.image.naturalHeight;
       const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(page.image,0,0);
       page.photos.forEach((photo,index)=>{
-        const e=Toolbelt.edits.get(photo.id)||photo.render_edits||{},degrees=this.angle(this.recipes.get(photo.id),{...e,auto_align:e.auto_align??S.align});
-        if(!degrees)return;
+        const e=Toolbelt.edits.get(photo.id)||photo.render_edits||{},geometry=this.geometry(this.recipes.get(photo.id),{...e,auto_align:e.auto_align??S.align}),degrees=geometry.straighten;
+        if(!degrees||geometry.horizontal||geometry.vertical||e.rotate||e.crop==='custom')return;
         const cell=World.sea.atlasCell(page.image,index,photo.dims),[w,h]=photo.dims,a=degrees*Math.PI/180,c=Math.cos(a),s=Math.sin(a),
           trim=Math.min(w/(w*Math.abs(c)+h*Math.abs(s)),h/(w*Math.abs(s)+h*Math.abs(c)));
         ctx.save();ctx.beginPath();ctx.rect(cell.x,cell.y,16,16);ctx.clip();
@@ -67,6 +67,20 @@ const AutoLook={
         ctx.drawImage(page.image,cell.x,cell.y,16,16,-8,-8,16,16);ctx.restore();
       });
       const pixels=ctx.getImageData(0,0,canvas.width,canvas.height),d=pixels.data;
+      // Projective atlas proofs are only 16×16. Sample the inverse once per recipe/edit, never per frame.
+      const source=new Uint8ClampedArray(d);
+      page.photos.forEach((photo,index)=>{
+        const e=Toolbelt.edits.get(photo.id)||photo.render_edits||{},g=this.geometry(this.recipes.get(photo.id),{...e,auto_align:e.auto_align??S.align});
+        if(!g.horizontal&&!g.vertical&&!e.rotate&&e.crop!=='custom')return;
+        const turn=e.rotate||0,roi=e.crop==='custom'&&e.crop_box?rotateBox(e.crop_box,turn):[0,0,1,1],
+          inverse=PhotoGeometry.inverse(PhotoGeometry.frame(photo.dims,g,turn,roi).matrix),cell=World.sea.atlasCell(page.image,index,photo.dims);
+        for(let y=0;y<16;y++)for(let x=0;x<16;x++){
+          const p=PhotoGeometry.point(inverse,[(x+.5)/16,(y+.5)/16]),sx=Math.max(0,Math.min(15,p[0]*16-.5)),sy=Math.max(0,Math.min(15,p[1]*16-.5)),
+            x0=Math.floor(sx),y0=Math.floor(sy),dx=sx-x0,dy=sy-y0,at=(px,py,c)=>source[((cell.y+py)*canvas.width+cell.x+px)*4+c];
+          for(let c=0;c<4;c++)d[((cell.y+y)*canvas.width+cell.x+x)*4+c]=
+            at(x0,y0,c)*(1-dx)*(1-dy)+at(Math.min(15,x0+1),y0,c)*dx*(1-dy)+at(x0,Math.min(15,y0+1),c)*(1-dx)*dy+at(Math.min(15,x0+1),Math.min(15,y0+1),c)*dx*dy;
+        }
+      });
       page.photos.forEach((photo,index)=>{
         const e=Toolbelt.edits.get(photo.id)||photo.render_edits||{},enabled=e.enhance??on,r=this.recipes.get(photo.id),base=this.resolve(r,e),t=enabled&&r?tunedLook(base,e.look):null;
         const grades=[...(enabled&&r&&base.grade?[PhotoFinish.tables(base.grade)]:[]),...(e.grade?[PhotoFinish.tables(e.grade)]:[])];
@@ -85,7 +99,11 @@ const AutoLook={
       });
       ctx.putImageData(pixels,0,0);page.variants.set(key,canvas);
     }
-    page.photos.forEach((p,i)=>World.sprites.set(p.id,World.sea.atlasCell(canvas,i,p.dims)));
+    page.photos.forEach((p,i)=>{
+      const e=Toolbelt.edits.get(p.id)||p.render_edits||{},dims=e.rotate%180?[p.dims[1],p.dims[0]]:p.dims,
+        roi=e.crop==='custom'&&e.crop_box?rotateBox(e.crop_box,e.rotate||0):[0,0,1,1];
+      World.sprites.set(p.id,World.sea.atlasCell(canvas,i,[dims[0]*roi[2],dims[1]*roi[3]]));
+    });
     World.sea.spritesDirty=World.sea.densityDirty=true;World.sea.kick();return canvas;
   },
   repaint(pid){

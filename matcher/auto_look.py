@@ -13,9 +13,9 @@ import cv2
 import numpy as np
 from PIL import Image, ImageFilter
 
-from . import alignment
+from . import composition
 
-VERSION = 3
+VERSION = 4
 PARTS = ("tone", "colour", "grade", "detail", "subject")
 IDENTITY = {"lin": [[1, 0]] * 3, "gamma": 1, "sat": 1}
 
@@ -70,7 +70,7 @@ def _balance(rgb, y, mono):
     return np.clip(gains, .80, 1.25), confidence
 
 
-def measure(im, faces=()):
+def measure(im, faces=(), subject=None):
     proof = im.convert("RGB").copy()
     proof.thumbnail((256, 256), Image.Resampling.BOX)
     rgb = np.asarray(proof, dtype=float) / 255
@@ -166,12 +166,13 @@ def measure(im, faces=()):
                       "adjust": {"exposure": round(lift, 3)}, "strokes": [{"mode": "paint", "r": min(.3, max(f["w"], f["h"]) * .85),
                       "p": [[f["x"] + f["w"] / 2, f["y"] + f["h"] / 2]]}]})
         reasons.append("Open the backlit face without lifting the whole scene")
-    boundary = alignment.measure(im)
+    view = composition.measure(im, faces, subject)
+    natural = view["views"]["natural"]
     return {"version": VERSION, "label": label, "reasons": reasons, "lin": [[1, 0]] * 3, "wb": [round(float(g), 6) for g in gains],
             "curve": [round(float(v), 6) for v in curve], "gamma": 1, "sat": round(saturation, 6),
             "measured": {"exposure": round(exposure, 2), "neutral_confidence": round(confidence, 2)},
-            "grade": grade, "detail": detail, "masks": masks, "straighten": boundary["degrees"] if boundary else None,
-            "alignment": boundary}
+            "grade": grade, "detail": detail, "masks": masks, "straighten": natural["straighten"], "skew": natural["skew"],
+            "alignment": view.pop("alignment"), "composition": view}
 
 
 def mix_curve(curve, amount):
@@ -219,7 +220,7 @@ def fill_missing(store, workdir, cancel=lambda: False, on_photo=lambda _pid: Non
     """Upgrade old libraries from cached previews in small batches; never re-run analysis or open originals."""
     after, count = 0, 0
     while not cancel():
-        rows = store.q("SELECT id FROM photos WHERE id>? AND status='analyzed' AND auto_version<? ORDER BY id LIMIT 40", (after, VERSION))
+        rows = store.q("SELECT id,salient FROM photos WHERE id>? AND status='analyzed' AND auto_version<? ORDER BY id LIMIT 40", (after, VERSION))
         if not rows:
             break
         for row in rows:
@@ -228,7 +229,7 @@ def fill_missing(store, workdir, cancel=lambda: False, on_photo=lambda _pid: Non
             after = row["id"]
             try:
                 with Image.open(workdir / "previews" / f"{after}.jpg") as im:
-                    recipe = measure(im, store.q("SELECT x,y,w,h,luma FROM faces WHERE photo_id=? ORDER BY w*h DESC LIMIT 1", (after,)))
+                    recipe = measure(im, store.q("SELECT x,y,w,h,luma FROM faces WHERE photo_id=? ORDER BY w*h DESC LIMIT 12", (after,)), json.loads(row["salient"] or "null"))
             except (OSError, ValueError):
                 continue  # missing caches remain eligible on the next open
             with store.tx() as c:

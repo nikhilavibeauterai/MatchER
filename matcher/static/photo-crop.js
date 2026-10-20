@@ -15,7 +15,8 @@ const PhotoCrop = {
         <div class="crop-actions"><button type="button" class="btn" data-cancel>Cancel</button><button type="submit" class="btn primary" disabled>Apply crop</button></div></form></div>`;
     document.body.append(dialog);this.dialog=dialog;
     const card=$('.crop-card',dialog),img=$('img',card),form=$('form',dialog),fields=$$('[data-crop-param]',form),apply=$('[type=submit]',form),ratioFields=$$('.crop-ratio-fields input',form),error=$('.crop-error',form);
-    let box=rotateBox(photo.edits?.crop_box||[0,0,1,1],turn),drag=null,ratio=null,ready=false,saving=false,drawing=!photo.edits?.crop_box,
+    const geometry=AutoLook.geometry(photo.auto_look,{...photo.edits,auto_align:photo.edits?.auto_align??S.align});
+    let box=rotateBox(photo.edits?.crop_box||[0,0,1,1],turn),drag=null,ratio=null,ready=false,saving=false,drawing=!photo.edits?.crop_box,geometryLayout=null,
       straighten=AutoLook.angle(photo.auto_look,{...photo.edits,auto_align:photo.edits?.auto_align??S.align}),angleTouched=false,horizon=false,previewing=false;
     const dims=turn%180?[photo.height,photo.width]:[photo.width,photo.height],clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
     card.dataset.photo=photo.id;Cards.focus(card);
@@ -37,8 +38,20 @@ const PhotoCrop = {
     const fit=()=>{
       if(!ready||!dialog.open)return;
       framePhoto(card,{dims:[photo.width,photo.height]},{crop:previewing?'custom':'off',cropBox:rotateBox(box,(360-turn)%360),rotate:turn,straighten:previewing?straighten:0,enhance:false,
-        finishing:{grade:photo.edits?.grade,masks:photo.edits?.masks}});
+        geometry:previewing?photo.edits:{auto_skew:false},finishing:{grade:photo.edits?.grade,masks:photo.edits?.masks}});
       if(previewing){render();return;}
+      if(geometry.horizontal||geometry.vertical){
+        const win=$('.window',card),style=getComputedStyle(win),W=parseFloat(style.width),H=parseFloat(style.height),
+          local=PhotoGeometry.region({...geometry,straighten},turn),matrix=PhotoGeometry.matrix(...dims,local).matrix,
+          corners=[[0,0],[1,0],[1,1],[0,1]].map(p=>PhotoGeometry.point(matrix,p)),
+          xs=corners.map(p=>p[0]),ys=corners.map(p=>p[1]),left=Math.min(...xs),top=Math.min(...ys),bw=Math.max(...xs)-left,bh=Math.max(...ys)-top,
+          k=Math.min(W/(bw*dims[0]),H/(bh*dims[1])),w=dims[0]*k,h=dims[1]*k,x=(W-bw*w)/2-left*w,y=(H-bh*h)/2-top*h,
+          r=win.getBoundingClientRect(),base=card.getBoundingClientRect();
+        img.style.cssText=`position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;max-width:none;object-fit:fill;transform-origin:0 0;transform:${PhotoGeometry.css(PhotoGeometry.multiply(matrix,PhotoGeometry.turn(turn)),w,h)}`;
+        Object.assign(overlay.style,{left:`${r.left-base.left+x}px`,top:`${r.top-base.top+y}px`,width:`${w}px`,height:`${h}px`,transformOrigin:'0 0',transform:PhotoGeometry.css(matrix,w,h)});
+        geometryLayout={inverse:PhotoGeometry.inverse(matrix),x:r.left+x,y:r.top+y,w,h};render();return;
+      }
+      geometryLayout=null;
       // Keep the current angle visible while choosing the source rectangle, not only behind the preview
       // toggle. Fit its whole rotated perimeter so the corners remain available to the crop handles.
       const win=$('.window',card),style=getComputedStyle(win),W=parseFloat(style.width),H=parseFloat(style.height),
@@ -52,6 +65,7 @@ const PhotoCrop = {
     img.addEventListener('load',()=>{ready=true;apply.disabled=false;fit();},{once:true});
     if(img.complete&&img.naturalWidth){ready=true;apply.disabled=false;fit();}
     const point=event=>{
+      if(geometryLayout){const {inverse,x,y,w,h}=geometryLayout;return PhotoGeometry.point(inverse,[(event.clientX-x)/w,(event.clientY-y)/h]).map(v=>clamp(v,0,1));}
       const r=overlay.getBoundingClientRect(),dx=event.clientX-(r.left+r.width/2),dy=event.clientY-(r.top+r.height/2),
         a=straighten*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
       return [clamp(.5+(dx*c+dy*s)/parseFloat(overlay.style.width),0,1),clamp(.5+(-dx*s+dy*c)/parseFloat(overlay.style.height),0,1)];
@@ -82,7 +96,8 @@ const PhotoCrop = {
     };
     const release=event=>{if(!drag||event.pointerId!==drag.id)return;
       if(drag.horizon&&event.type==='pointerup'){
-        const [x,y]=point(event),dx=(x-drag.p[0])*dims[0],dy=(y-drag.p[1])*dims[1];
+        const [x,y]=point(event),local=PhotoGeometry.region({...geometry,straighten:0},turn),matrix=PhotoGeometry.matrix(...dims,local).matrix,
+          p=PhotoGeometry.point(matrix,drag.p),q=PhotoGeometry.point(matrix,[x,y]),dx=(q[0]-p[0])*dims[0],dy=(q[1]-p[1])*dims[1];
         if(Math.hypot(dx,dy)>5){let degrees=-Math.atan2(dy,dx)*180/Math.PI;while(degrees>90)degrees-=180;while(degrees< -90)degrees+=180;
           straighten=Number(clamp(degrees,-45,45).toFixed(2));angleTouched=true;angle.value=String(straighten);horizon=false;previewing=true;}
       }

@@ -114,7 +114,7 @@ body.sea-panning .photo-note-sheet,.viewer-stage.panning .photo-note-sheet { cur
 .photo-notes-paper legend { font:700 24px/1.2 var(--hand);padding:0 0 6px; }
 .sheet-seg { display:flex;flex-wrap:wrap;gap:6px; }
 .photo-notes-paper .sheet-seg .btn { min-height:44px;font-size:16px;flex:1 0 auto; }
-.photo-notes-paper [data-crop][aria-pressed=true],.photo-notes-paper [data-edit=enhance][aria-pressed=true] { background:var(--highlight)!important;border-radius:5px 8px 4px 6px!important; }
+.photo-notes-paper :is([data-crop],[data-composition],[data-auto-align],[data-auto-skew],[data-edit=enhance])[aria-pressed=true] { background:var(--highlight)!important;border-radius:5px 8px 4px 6px!important; }
 .photo-notes-paper .sheet-row { display:flex;flex-wrap:wrap;gap:8px;align-items:center; }
 .notes-look-intro { position:sticky;top:-12px;z-index:4;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;padding:8px 0 10px;background:var(--paper);border-bottom:1px solid var(--rule); }
 .notes-look-intro .notes-intro { margin:0;flex:1 1 130px; }
